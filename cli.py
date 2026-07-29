@@ -26,6 +26,7 @@ from core import trace as trace_store
 from core.browser import Browser
 from core.describer import describe_node_red, describe_screenshot, poll_image_loaded
 from core.navigator import run_step
+from core.output import RunOutput
 from core.resolver import (
     list_model_settings,
     list_models,
@@ -177,9 +178,9 @@ COMPOSITE_JS = """
 """
 
 
-def _export_layer(browser, layer: dict, dest_base: Path) -> dict:
-    """Save one viewer layer (img source fetch or canvas bitmap export).
-    Returns {method, file, source_url?, error?}."""
+def _fetch_layer(browser, layer: dict) -> dict:
+    """Fetch one viewer layer's bytes (img source fetch or canvas bitmap
+    export). Returns {content, ext, method, source_url?} or {error}."""
     import base64 as b64
     from urllib.parse import urljoin
 
@@ -190,36 +191,34 @@ def _export_layer(browser, layer: dict, dest_base: Path) -> dict:
             out["source_url"] = src
             if src.startswith("data:"):
                 header, data = src.split(",", 1)
-                content = b64.standard_b64decode(data)
-                ext = ".png" if "png" in header else ".jpg"
+                out["content"] = b64.standard_b64decode(data)
+                out["ext"] = ".png" if "png" in header else ".jpg"
             else:
                 resp = browser.page.request.get(urljoin(browser.page.url, src))
                 if not resp.ok:
                     out["error"] = f"fetch of img src returned {resp.status}"
                     return out
-                content = resp.body()
+                out["content"] = resp.body()
                 ctype = resp.headers.get("content-type", "")
-                ext = ".png" if "png" in ctype else ".jpg" if "jpe" in ctype or "jpg" in ctype else ".png"
+                out["ext"] = ".png" if "png" in ctype else ".jpg" if "jpe" in ctype or "jpg" in ctype else ".png"
             out["method"] = "img_src"
         else:
             # Throws on a tainted canvas (cross-origin content) — reported, not guessed.
             data_url = browser.page.evaluate(CANVAS_EXPORT_JS, layer["idx"])
-            content = b64.standard_b64decode(data_url.split(",", 1)[1])
-            ext = ".png"
+            out["content"] = b64.standard_b64decode(data_url.split(",", 1)[1])
+            out["ext"] = ".png"
             out["method"] = "canvas_export"
-        dest = dest_base.with_name(dest_base.name + ext)
-        dest.write_bytes(content)
-        out["file"] = dest.name
     except Exception as e:
         out["error"] = str(e)
     return out
 
 
-def download_main_image(browser, run_dir: Path, base_name: str) -> dict:
+def download_main_image(browser, out: RunOutput, base_name: str, step_id: str) -> dict:
     """Save the images shown in the page's main viewer at native resolution:
-    the photo layer as <base>_raw.*, plus every other stacked layer (e.g. the
-    annotation overlay canvas) as <base>_overlay*.png. Returns metadata with
-    per-layer provenance and errors."""
+    the photo layer as <base>_raw.* (deliverable), every other stacked layer
+    as <base>_overlay*.png (archive), and — when layered — the flattened
+    <base>_composite.png (deliverable). File paths in the returned metadata
+    are run-dir-relative."""
     probe = browser.page.evaluate(MAIN_IMAGE_PROBE_JS)
     if not probe:
         return {"method": None, "error": "no canvas/img viewer element found"}
@@ -235,8 +234,17 @@ def download_main_image(browser, run_dir: Path, base_name: str) -> dict:
             {k: l[k] for k in ("tag", "variance", "readable")} for l in layers
         ],
     }
-    raw = _export_layer(browser, best, run_dir / f"{base_name}_raw")
-    info.update({"method": raw.get("method"), **{k: raw[k] for k in raw if k != "method"}})
+    raw = _fetch_layer(browser, best)
+    info["method"] = raw.get("method")
+    for k in ("source_url", "error"):
+        if k in raw:
+            info[k] = raw[k]
+    if "content" in raw:
+        dest = out.save(
+            f"{base_name}_raw{raw['ext']}", raw["content"],
+            kind="image", role="deliverable", step=step_id, item="raw viewer image",
+        )
+        info["file"] = out.rel(dest)
 
     overlays = []
     n = 0
@@ -245,16 +253,23 @@ def download_main_image(browser, run_dir: Path, base_name: str) -> dict:
             continue
         n += 1
         suffix = "_overlay" if n == 1 else f"_overlay{n}"
-        result = _export_layer(browser, layer, run_dir / f"{base_name}{suffix}")
-        overlays.append(
-            {
-                "tag": layer["tag"],
-                "variance": layer["variance"],
-                "native_width": layer["nativeW"],
-                "native_height": layer["nativeH"],
-                **result,
-            }
-        )
+        fetched = _fetch_layer(browser, layer)
+        entry = {
+            "tag": layer["tag"],
+            "variance": layer["variance"],
+            "native_width": layer["nativeW"],
+            "native_height": layer["nativeH"],
+        }
+        for k in ("method", "source_url", "error"):
+            if k in fetched:
+                entry[k] = fetched[k]
+        if "content" in fetched:
+            dest = out.save(
+                f"{base_name}{suffix}{fetched['ext']}", fetched["content"],
+                kind="image", role="archive", step=step_id, item="viewer overlay layer",
+            )
+            entry["file"] = out.rel(dest)
+        overlays.append(entry)
     if overlays:
         info["overlays"] = overlays
         # Also save the layers flattened in stacking order — what the UI shows.
@@ -262,15 +277,19 @@ def download_main_image(browser, run_dir: Path, base_name: str) -> dict:
 
         try:
             data_url = browser.page.evaluate(COMPOSITE_JS)
-            dest = run_dir / f"{base_name}_composite.png"
-            dest.write_bytes(b64.standard_b64decode(data_url.split(",", 1)[1]))
-            info["composite"] = {"file": dest.name}
+            dest = out.save(
+                f"{base_name}_composite.png",
+                b64.standard_b64decode(data_url.split(",", 1)[1]),
+                kind="image", role="deliverable", step=step_id,
+                item="viewer layers flattened (as shown in UI)",
+            )
+            info["composite"] = {"file": out.rel(dest)}
         except Exception as e:
             info["composite"] = {"error": str(e)}
     return info
 
 
-def compose_imaging_with_template(run_dir: Path, meta: dict, manifest: dict) -> dict | None:
+def compose_imaging_with_template(out: RunOutput, meta: dict, manifest: dict) -> dict | None:
     """If we know the imaging screen's viewer bbox and have the aligner's raw
     image, render the raw image into that bbox on the imaging screenshot — a
     synthesized view of the imaging screen showing the template capture."""
@@ -284,10 +303,12 @@ def compose_imaging_with_template(run_dir: Path, meta: dict, manifest: dict) -> 
     shot_name = (step or {}).get("screenshot")
     if not shot_name:
         return None
-    base_path = run_dir / shot_name
-    raw_path = run_dir / raw_name
+    base_path = out.run_dir / shot_name
+    raw_path = out.run_dir / raw_name
     if not base_path.exists() or not raw_path.exists():
         return None
+    import io
+
     from PIL import Image
 
     base = Image.open(base_path).convert("RGBA")
@@ -296,10 +317,15 @@ def compose_imaging_with_template(run_dir: Path, meta: dict, manifest: dict) -> 
     # alpha_composite (not paste): transparent raw regions show the screenshot
     # beneath instead of rendering black.
     base.alpha_composite(raw, (bbox["x"], bbox["y"]))
-    out = run_dir / f"{base_path.stem}_with_template.png"
-    base.convert("RGB").save(out)
+    buf = io.BytesIO()
+    base.convert("RGB").save(buf, format="PNG")
+    dest = out.save(
+        f"{base_path.stem}_with_template.png", buf.getvalue(),
+        kind="image", role="deliverable", step="imaging_setup",
+        item="imaging screen with template image composited into viewer bbox",
+    )
     return {
-        "file": out.name,
+        "file": out.rel(dest),
         "base": shot_name,
         "source": raw_name,
         "bbox": {k: bbox[k] for k in ("x", "y", "width", "height")},
@@ -350,7 +376,7 @@ def _click_scoped(browser, entry_text: str, scope_hint: str) -> bool:
 
 
 def capture_reports(
-    browser, step: dict, run_dir: Path, step_record: dict, desc_queue: list, base_ctx: dict
+    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict
 ):
     """For steps with foreach_reports: open each model's training report (where
     available), wait for it to load, and screenshot as <model-name>_<model-type>.png."""
@@ -379,13 +405,18 @@ def capture_reports(
         ok, msg = poll_image_loaded(browser, max_wait_s=60, interval_s=5)
         if not ok:
             print(f"  warning: training report for \"{m['name']}\" {msg}")
-        shot = run_dir / f"{slugify(m['name'])}_{slugify(m['type'])}.png"
-        shot.write_bytes(browser.screenshot_bytes(full_page=True))
-        shots.append(shot.name)
+        name = f"{slugify(m['name'])}_{slugify(m['type'])}.png"
+        shot = out.save(
+            name, browser.screenshot_bytes(full_page=True),
+            kind="screenshot", role="deliverable", step=step["id"],
+            item=f"training report for model {m['name']} ({m['type']})",
+            description_key=name,
+        )
+        shots.append(out.rel(shot))
         desc_queue.append(
             (shot, {**base_ctx, "item": f"training report for model {m['name']} ({m['type']})"})
         )
-        print(f"  report \"{m['name']}\" ({m['type']}) -> {shot.name}")
+        print(f"  report \"{m['name']}\" ({m['type']}) -> {name}")
         _close_report(browser)
     step_record["screenshots"] = shots
 
@@ -394,7 +425,7 @@ SETTINGS_LOAD_WAIT_MS = 1_000
 
 
 def capture_settings(
-    browser, step: dict, run_dir: Path, step_record: dict, desc_queue: list, base_ctx: dict
+    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict
 ):
     """For steps with foreach_settings: open each model's settings, screenshot
     as <model-name>_<model-type>_settings.png, close, repeat.
@@ -430,13 +461,18 @@ def capture_settings(
                     f"could not open settings for {target['name']}: {result.evidence}"
                 )
         browser.page.wait_for_timeout(SETTINGS_LOAD_WAIT_MS)
-        shot = run_dir / f"{slugify(target['name'])}_{slugify(target['type'])}_settings.png"
-        shot.write_bytes(browser.screenshot_bytes(full_page=True))
-        shots.append(shot.name)
+        name = f"{slugify(target['name'])}_{slugify(target['type'])}_settings.png"
+        shot = out.save(
+            name, browser.screenshot_bytes(full_page=True),
+            kind="screenshot", role="deliverable", step=step["id"],
+            item=f"settings dialog for model {target['name']} ({target['type']})",
+            description_key=name,
+        )
+        shots.append(out.rel(shot))
         desc_queue.append(
             (shot, {**base_ctx, "item": f"settings dialog for model {target['name']} ({target['type']})"})
         )
-        print(f"  settings \"{target['name']}\" ({target['type']}) -> {shot.name}")
+        print(f"  settings \"{target['name']}\" ({target['type']}) -> {name}")
         _close_report(browser)
     step_record["screenshots"] = shots
 
@@ -455,19 +491,23 @@ def _close_report(browser):
 
 
 def capture_per_model(
-    browser, step: dict, run_dir: Path, step_record: dict, desc_queue: list, base_ctx: dict
+    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict
 ):
     """For steps with foreach_models: one screenshot per model on the page,
     named after the model; a single default screenshot when there are none."""
     models = list_models(_stable_snapshot(browser))
     step_record["models"] = [m["name"] for m in models]
     if not models:
-        shot = run_dir / f"{step['screenshot']}.png"
+        name = f"{step['screenshot']}.png"
         browser.page.wait_for_timeout(1500)
-        shot.write_bytes(browser.screenshot_bytes(full_page=True))
-        step_record["screenshot"] = shot.name
+        shot = out.save(
+            name, browser.screenshot_bytes(full_page=True),
+            kind="screenshot", role="deliverable", step=step["id"],
+            item="default view (no models configured)", description_key=name,
+        )
+        step_record["screenshot"] = out.rel(shot)
         desc_queue.append((shot, {**base_ctx, "item": "default view (no models configured)"}))
-        print(f"  no models configured; default screenshot -> {shot.name}")
+        print(f"  no models configured; default screenshot -> {name}")
         return
     shots = []
     for m in models:
@@ -486,11 +526,15 @@ def capture_per_model(
         ok, msg = poll_image_loaded(browser)
         if not ok:
             print(f"  warning: ROI view for \"{m['name']}\" {msg}")
-        shot = run_dir / f"{step['screenshot']}_{slugify(m['name'])}.png"
-        shot.write_bytes(browser.screenshot_bytes(full_page=True))
-        shots.append(shot.name)
+        name = f"{step['screenshot']}_{slugify(m['name'])}.png"
+        shot = out.save(
+            name, browser.screenshot_bytes(full_page=True),
+            kind="screenshot", role="deliverable", step=step["id"],
+            item=f"ROI setup for model {m['name']}", description_key=name,
+        )
+        shots.append(out.rel(shot))
         desc_queue.append((shot, {**base_ctx, "item": f"ROI setup for model {m['name']}"}))
-        print(f"  model \"{m['name']}\" -> {shot.name}")
+        print(f"  model \"{m['name']}\" -> {name}")
     step_record["screenshots"] = shots
 
 
@@ -549,6 +593,7 @@ def main() -> int:
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = ROOT / "runs" / f"{ts}"
     run_dir.mkdir(parents=True)
+    out = RunOutput(run_dir)
     manifest: dict = {
         "url": origin,
         "recipe_input": args.recipe,
@@ -683,18 +728,20 @@ def main() -> int:
                 "intent": step.get("goal", ""),
             }
             if step.get("expect_download") and browser.downloads:
-                dest = run_dir / step.get(
+                dl_name = step.get(
                     "download_as", browser.downloads[-1].suggested_filename
                 )
+                dest = out.folder_for("data", "data") / dl_name
                 browser.downloads[-1].save_as(dest)
-                step_record["download"] = dest.name
-                print(f"  saved download -> {dest.name}")
+                out.register(dest, kind="data", role="data", step=step_id)
+                step_record["download"] = out.rel(dest)
+                print(f"  saved download -> {out.rel(dest)}")
             if step.get("foreach_models"):
-                capture_per_model(browser, step, run_dir, step_record, desc_queue, base_ctx)
+                capture_per_model(browser, step, out, step_record, desc_queue, base_ctx)
             elif step.get("foreach_reports"):
-                capture_reports(browser, step, run_dir, step_record, desc_queue, base_ctx)
+                capture_reports(browser, step, out, step_record, desc_queue, base_ctx)
             elif step.get("foreach_settings"):
-                capture_settings(browser, step, run_dir, step_record, desc_queue, base_ctx)
+                capture_settings(browser, step, out, step_record, desc_queue, base_ctx)
             elif step.get("screenshot"):
                 wait_cfg = step.get("wait_image_loaded")
                 if wait_cfg:
@@ -709,10 +756,14 @@ def main() -> int:
                         print(f"  warning: {step_id} image {msg}")
                 else:
                     browser.page.wait_for_timeout(1500)
-                shot = run_dir / f"{step['screenshot']}.png"
+                name = f"{step['screenshot']}.png"
                 png = browser.screenshot_bytes(full_page=True)
-                shot.write_bytes(png)
-                step_record["screenshot"] = shot.name
+                shot = out.save(
+                    name, png, kind="screenshot",
+                    role=step.get("screenshot_role", "deliverable"),
+                    step=step_id, description_key=name,
+                )
+                step_record["screenshot"] = out.rel(shot)
                 desc_queue.append((shot, base_ctx))
                 if step.get("capture_image_bbox"):
                     bbox = main_image_bbox(browser, png)
@@ -722,7 +773,7 @@ def main() -> int:
                     else:
                         print(f"  warning: no main image area found for {step_id} bbox")
                 if step.get("download_main_image"):
-                    img_info = download_main_image(browser, run_dir, step["screenshot"])
+                    img_info = download_main_image(browser, out, step["screenshot"], step_id)
                     meta[f"{step_id}_main_image"] = img_info
                     if img_info.get("file"):
                         step_record["main_image"] = img_info["file"]
@@ -746,8 +797,11 @@ def main() -> int:
         print(f"\nFAILED: {e}", file=sys.stderr)
         manifest["error"] = str(e)
         try:
-            (run_dir / "failure.png").write_bytes(browser.screenshot_bytes(full_page=True))
-            (run_dir / "failure_snapshot.txt").write_text(browser.snapshot())
+            out.save(
+                "failure.png", browser.screenshot_bytes(full_page=True),
+                kind="debug", role="debug",
+            )
+            out.save("failure_snapshot.txt", browser.snapshot(), kind="debug", role="debug")
         except Exception:
             pass
         exit_code = 1
@@ -768,40 +822,46 @@ def main() -> int:
                 except Exception as e:
                     descriptions[shot_path.name] = f"[description failed: {e}]"
                     print(f"  FAILED to describe {shot_path.name}: {e}", file=sys.stderr)
-            (run_dir / "descriptions.json").write_text(
-                json.dumps(descriptions, indent=2)
+            out.save(
+                "descriptions.json", json.dumps(descriptions, indent=2),
+                kind="report", role="deliverable",
             )
-            manifest["descriptions"] = "descriptions.json"
+            manifest["descriptions"] = "deliverables/report/descriptions.json"
             manifest["descriptions_duration_s"] = round(time.monotonic() - desc_t0, 1)
-        flow_path = run_dir / "node_red_flow.json"
+        flow_path = run_dir / "data" / "node_red_flow.json"
         if flow_path.exists() and not args.skip_descriptions:
             nr_t0 = time.monotonic()
             print("describing node-red flow...")
             try:
-                (run_dir / "node_red_description.md").write_text(
+                out.save(
+                    "node_red_description.md",
                     describe_node_red(
                         flow_path.read_text(),
                         {"variant": manifest.get("variant"), "recipe": manifest.get("recipe_input")},
-                    )
+                    ),
+                    kind="report", role="deliverable",
                 )
-                manifest["node_red_description"] = "node_red_description.md"
+                manifest["node_red_description"] = "deliverables/report/node_red_description.md"
                 manifest["node_red_duration_s"] = round(time.monotonic() - nr_t0, 1)
                 print("  node_red_description.md written")
             except Exception as e:
                 print(f"  FAILED to describe node-red flow: {e}", file=sys.stderr)
         try:
-            composed = compose_imaging_with_template(run_dir, meta, manifest)
+            composed = compose_imaging_with_template(out, meta, manifest)
             if composed:
                 meta["imaging_setup_with_template"] = composed
                 print(f"composed imaging+template -> {composed['file']}")
         except Exception as e:
             print(f"FAILED to compose imaging+template: {e}", file=sys.stderr)
         if meta:
-            (run_dir / "meta.json").write_text(json.dumps(meta, indent=2))
-            manifest["meta"] = "meta.json"
+            out.save("meta.json", json.dumps(meta, indent=2), kind="data", role="data")
+            manifest["meta"] = "data/meta.json"
+        manifest["assets"] = out.assets
         manifest["duration_s"] = round(time.monotonic() - run_t0, 1)
         manifest["finished"] = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        (out.folder_for("data", "data") / "manifest.json").write_text(
+            json.dumps(manifest, indent=2)
+        )
         browser.close()
         step_times = ", ".join(
             f"{s['id']}={s.get('duration_s', '?')}s" for s in manifest["steps"]

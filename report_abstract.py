@@ -60,13 +60,22 @@ accuracies, region counts. Skip housekeeping numbers (capture-store totals, time
 {node_red}"""
 
 
+def _find(run_dir: Path, name: str) -> Path:
+    """Locate a report artifact in the organized layout, falling back to the
+    old flat layout for pre-reorganization runs."""
+    for candidate in (run_dir / "deliverables" / "report" / name, run_dir / name):
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"{name} not found in {run_dir}")
+
+
 def main() -> int:
     if len(sys.argv) > 1:
         run_dir = Path(sys.argv[1])
     else:
         run_dir = sorted((Path(__file__).parent / "runs").iterdir())[-1]
-    descriptions = json.loads((run_dir / "descriptions.json").read_text())
-    node_red = (run_dir / "node_red_description.md").read_text()
+    descriptions = json.loads(_find(run_dir, "descriptions.json").read_text())
+    node_red = _find(run_dir, "node_red_description.md").read_text()
 
     desc_text = "\n\n".join(f"### {name}\n{text}" for name, text in descriptions.items())
     client = anthropic.Anthropic()
@@ -86,7 +95,8 @@ def main() -> int:
         return 1
     abstract = "".join(b.text for b in response.content if b.type == "text").strip()
 
-    out = run_dir / "report_abstract.md"
+    report_dir = run_dir / "deliverables" / "report"
+    out = (report_dir if report_dir.is_dir() else run_dir) / "report_abstract.md"
     out.write_text(f"# Test Report Abstract\n\n{abstract}\n")
     print(f"saved -> {out}\n")
     print(abstract)
