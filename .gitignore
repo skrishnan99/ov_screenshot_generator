@@ -25,3 +25,4 @@ wheels/
 
 # OS noise
 .DS_Store
+deck_outputs/

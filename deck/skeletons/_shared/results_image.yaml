@@ -1,0 +1,12 @@
+# Content-hole descriptions for results_image.pptx.
+# Two side-by-side placeholders; the deck spec's `expects` refines these
+# per use (e.g. the inspection-overview slide pairs raw vs overlaid part).
+image_slots:
+  - name: primary_view
+    expects: >
+      The primary image for this slide: a clear, real capture of the
+      inspected part relevant to the slide's subject.
+  - name: secondary_view
+    expects: >
+      A complementary image for the same subject — typically the same part
+      or screen with additional detail (overlays, regions, or annotations).

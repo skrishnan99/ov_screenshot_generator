@@ -1,0 +1,8 @@
+# Content-hole descriptions for roi_setup.pptx.
+image_slots:
+  - name: roi_screen
+    expects: >
+      The Inspection Setup / ROI screen: the part image with the inspection
+      regions (ROI boxes) drawn on it and the list of regions assigned to
+      models. An overview of where the recipe inspects — not a single model's
+      training view.

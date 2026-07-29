@@ -491,12 +491,24 @@ def _close_report(browser):
 
 
 def capture_per_model(
-    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict
+    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list,
+    base_ctx: dict, meta: dict,
 ):
     """For steps with foreach_models: one screenshot per model on the page,
-    named after the model; a single default screenshot when there are none."""
+    named after the model; a single default screenshot when there are none.
+
+    Also writes the structured model envelope (meta["models"]) — the one
+    sanctioned structured contract downstream consumers may key on."""
     models = list_models(_stable_snapshot(browser))
     step_record["models"] = [m["name"] for m in models]
+    meta["models"] = [
+        {
+            "name": m["name"],
+            "type": m.get("model_type", ""),
+            "slug": slugify(m["name"]),
+        }
+        for m in models
+    ]
     if not models:
         name = f"{step['screenshot']}.png"
         browser.page.wait_for_timeout(1500)
@@ -533,6 +545,9 @@ def capture_per_model(
             item=f"ROI setup for model {m['name']}", description_key=name,
         )
         shots.append(out.rel(shot))
+        for entry in meta["models"]:
+            if entry["name"] == m["name"]:
+                entry["roi_screenshot"] = out.rel(shot)
         desc_queue.append((shot, {**base_ctx, "item": f"ROI setup for model {m['name']}"}))
         print(f"  model \"{m['name']}\" -> {name}")
     step_record["screenshots"] = shots
@@ -737,7 +752,9 @@ def main() -> int:
                 step_record["download"] = out.rel(dest)
                 print(f"  saved download -> {out.rel(dest)}")
             if step.get("foreach_models"):
-                capture_per_model(browser, step, out, step_record, desc_queue, base_ctx)
+                capture_per_model(
+                    browser, step, out, step_record, desc_queue, base_ctx, meta
+                )
             elif step.get("foreach_reports"):
                 capture_reports(browser, step, out, step_record, desc_queue, base_ctx)
             elif step.get("foreach_settings"):
@@ -815,10 +832,13 @@ def main() -> int:
             descriptions = {}
             for shot_path, ctx in desc_queue:
                 try:
-                    descriptions[shot_path.name] = describe_screenshot(
-                        shot_path.read_bytes(), ctx
-                    )
-                    print(f"  described {shot_path.name}")
+                    result = describe_screenshot(shot_path.read_bytes(), ctx)
+                    descriptions[shot_path.name] = result["description"]
+                    for fact in result.get("facts", []):
+                        meta.setdefault("facts", []).append(
+                            {**fact, "source": shot_path.name}
+                        )
+                    print(f"  described {shot_path.name} (+{len(result.get('facts', []))} facts)")
                 except Exception as e:
                     descriptions[shot_path.name] = f"[description failed: {e}]"
                     print(f"  FAILED to describe {shot_path.name}: {e}", file=sys.stderr)
@@ -833,14 +853,18 @@ def main() -> int:
             nr_t0 = time.monotonic()
             print("describing node-red flow...")
             try:
+                nr = describe_node_red(
+                    flow_path.read_text(),
+                    {"variant": manifest.get("variant"), "recipe": manifest.get("recipe_input")},
+                )
                 out.save(
-                    "node_red_description.md",
-                    describe_node_red(
-                        flow_path.read_text(),
-                        {"variant": manifest.get("variant"), "recipe": manifest.get("recipe_input")},
-                    ),
+                    "node_red_description.md", nr["markdown"],
                     kind="report", role="deliverable",
                 )
+                for fact in nr.get("facts", []):
+                    meta.setdefault("facts", []).append(
+                        {**fact, "source": "node_red_flow.json"}
+                    )
                 manifest["node_red_description"] = "deliverables/report/node_red_description.md"
                 manifest["node_red_duration_s"] = round(time.monotonic() - nr_t0, 1)
                 print("  node_red_description.md written")

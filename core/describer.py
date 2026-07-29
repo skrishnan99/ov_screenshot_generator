@@ -62,7 +62,41 @@ populated).
 which defects/classes, with what approach).
 
 Do not speculate beyond what is visible, and do not omit details because they seem minor. \
-Write flowing prose (no markdown headers), roughly 150-400 words."""
+Write flowing prose (no markdown headers), roughly 150-400 words.
+
+Alongside the prose, extract `facts`: every discrete, checkable value visible on the screen, \
+as {{subject, property, value}} entries with values copied VERBATIM from the UI. Subjects: \
+"recipe", "camera", "model: <model name>", "class: <model name>/<class name>". Suggested \
+property vocabulary (use these names when they fit; add others freely): train_accuracy, \
+val_accuracy, training_loss, mean_iou, training_images, iterations, class_count, roi_count, \
+label_count, class_color, capture_count, capture_id, plc_recipe_id, recipe_status, \
+trigger_mode, resolution, exposure_ms, gain, gamma, white_balance, firmware_version, serial, \
+last_trained, deployment_status. Only facts actually visible — an empty list is valid."""
+
+DESCRIBE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "description": {
+            "type": "string",
+            "description": "The thorough prose description, per the instructions.",
+        },
+        "facts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string"},
+                    "property": {"type": "string"},
+                    "value": {"type": "string"},
+                },
+                "required": ["subject", "property", "value"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["description", "facts"],
+    "additionalProperties": False,
+}
 
 
 IMAGE_LOADED_SCHEMA = {
@@ -185,13 +219,45 @@ configuration (IPs, topics, pin numbers), and anything that looks unfinished or 
 Be accurate and exhaustive — downstream consumers rely on this summary instead of reading the \
 JSON. Do not speculate beyond what the configuration contains.
 
+Alongside the markdown, extract `facts`: the discrete decision-logic values as \
+{{subject, property, value}} entries, values verbatim from the flow. Suggested properties: \
+pass_rule (one per rule, stated plainly), blob_area_threshold_px, plc_output (what is written \
+and its meaning), plc_protocol, master_endpoint, mqtt_topic, camera_role. Subject is usually \
+"io_logic". Only facts present in the configuration.
+
 Node-RED flow JSON:
 ```json
 {flow_json}
 ```"""
 
+NODE_RED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "markdown": {
+            "type": "string",
+            "description": "The thorough Markdown summary, per the instructions.",
+        },
+        "facts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string"},
+                    "property": {"type": "string"},
+                    "value": {"type": "string"},
+                },
+                "required": ["subject", "property", "value"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["markdown", "facts"],
+    "additionalProperties": False,
+}
 
-def describe_node_red(flow_json: str, context: dict) -> str:
+
+def describe_node_red(flow_json: str, context: dict) -> dict:
+    """Returns {"markdown": analysis, "facts": [{subject, property, value}]}."""
     client = anthropic.Anthropic()
     prompt = NODE_RED_PROMPT.format(
         variant=context.get("variant", "unknown variant"),
@@ -199,15 +265,21 @@ def describe_node_red(flow_json: str, context: dict) -> str:
         flow_json=flow_json,
     )
     with client.messages.stream(
-        model=MODEL, max_tokens=8000, messages=[{"role": "user", "content": prompt}]
+        model=MODEL,
+        max_tokens=10000,
+        output_config={"format": {"type": "json_schema", "schema": NODE_RED_SCHEMA}},
+        messages=[{"role": "user", "content": prompt}],
     ) as stream:
         response = stream.get_final_message()
     if response.stop_reason == "refusal":
-        return "[node-red description refused by model]"
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+        return {"markdown": "[node-red description refused by model]", "facts": []}
+    import json as _json
+
+    return _json.loads("".join(b.text for b in response.content if b.type == "text"))
 
 
-def describe_screenshot(png_bytes: bytes, context: dict) -> str:
+def describe_screenshot(png_bytes: bytes, context: dict) -> dict:
+    """Returns {"description": prose, "facts": [{subject, property, value}]}."""
     item = context.get("item")
     item_line = f"- Specific item captured: {item}\n" if item else ""
     prompt = PROMPT.format(
@@ -220,7 +292,8 @@ def describe_screenshot(png_bytes: bytes, context: dict) -> str:
     client = anthropic.Anthropic()
     response = client.messages.create(
         model=MODEL,
-        max_tokens=3000,
+        max_tokens=4000,
+        output_config={"format": {"type": "json_schema", "schema": DESCRIBE_SCHEMA}},
         messages=[
             {
                 "role": "user",
@@ -239,5 +312,7 @@ def describe_screenshot(png_bytes: bytes, context: dict) -> str:
         ],
     )
     if response.stop_reason == "refusal":
-        return "[description refused by model]"
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+        return {"description": "[description refused by model]", "facts": []}
+    import json as _json
+
+    return _json.loads("".join(b.text for b in response.content if b.type == "text"))

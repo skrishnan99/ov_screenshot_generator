@@ -1,0 +1,7 @@
+# Content-hole descriptions for cls_rois_setup.pptx.
+image_slots:
+  - name: dataset_screen
+    expects: >
+      The per-model ROI / dataset view for the classification model this
+      slide is about: the inspection regions or labeled example crops
+      belonging to THAT model, showing what its training data looks like.

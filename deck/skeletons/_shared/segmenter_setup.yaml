@@ -1,0 +1,8 @@
+# Content-hole descriptions for segmenter_setup.pptx.
+image_slots:
+  - name: segmenter_screen
+    expects: >
+      The Segmentation block screen for the segmentation model this slide is
+      about: a part image with pixel-level defect masks / colored annotation
+      overlays and the defect class list. Must be a segmentation view, not
+      classification.

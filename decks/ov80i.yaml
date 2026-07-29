@@ -1,0 +1,243 @@
+# Slide sequence: head (title, problem/solution, inspection overview) ->
+# configuring (imaging, aligner) -> one block of slides PER MODEL in
+# models-list order (ROI setup, model setup, view-all-ROIs, training
+# settings, training report, concise results — robust to any mix of
+# classifier/segmenter models) -> Node-RED -> library -> static tail.
+variant: ov80i
+slides:
+  # --- Head ---------------------------------------------------------------
+  - id: title
+    skeleton: recipe_title.pptx
+    tokens:
+      recipe_title: {source: recipe}
+
+  - id: problem_solution
+    skeleton: problem_solution.pptx
+    tokens:
+      problem:
+        llm: >
+          3-4 crisp sentences: what part/product is being inspected, which
+          defects or conditions are checked, and the production context.
+      solution:
+        llm: >
+          3-4 crisp sentences: how the AI vision system solves it — the key
+          stages and what each decides — and how it worked out (training
+          outcomes, integration in plain terms).
+
+  - id: overview
+    skeleton: results_image.pptx
+    tokens:
+      recipe_name: {source: recipe}
+      brief_description:
+        llm: >
+          One short sentence summarizing the overall inspection this recipe
+          performs (the part and what is checked on it).
+    images:
+      - select:
+          - {step: library, kind: image, path_contains: "_raw"}
+        expects: >
+          The raw camera capture of the inspected part with NO overlays — the
+          clean part image as photographed.
+      - select:
+          - {step: library, kind: image, path_contains: "_composite"}
+        expects: >
+          The same part image WITH inspection overlays (ROI boxes, masks,
+          annotations) as shown in the camera UI.
+
+  # --- Configuring --------------------------------------------------------
+  - id: configuring
+    skeleton: configuring_ov80i.pptx
+
+  - id: imaging
+    skeleton: imaging_setup.pptx
+    step_counter: true
+    tokens:
+      setup_text:
+        llm: >
+          1-2 short sentences describing the camera and lighting setup used
+          (resolution class, trigger mode in plain language). No config
+          minutiae.
+    image: {select: {step: imaging_setup, kind: screenshot}}
+
+  - id: aligner
+    skeleton: aligner_setup.pptx
+    step_counter: true
+    tokens:
+      setup_text:
+        llm: >
+          1-2 short sentences describing the template image / alignment
+          configuration (e.g. alignment skipped for fixtured parts, search
+          areas defined).
+    image: {select: {step: template_image, kind: screenshot}}
+
+  # --- Per-model blocks (models-list order, any mix of types) -------------
+  - id: model_block
+    repeat_for: models
+    slides:
+      - id: model_rois
+        skeleton: roi_setup.pptx
+        step_counter: true
+        tokens:
+          setup_text:
+            llm: >
+              1-2 short sentences describing the inspection regions this
+              model checks and what they cover on the part.
+        image:
+          select:
+            - {path: "{model_roi_screenshot}"}
+            - {step: inspection_rois, kind: screenshot, path_contains: "{model_slug}"}
+            - {step: inspection_rois, kind: screenshot}
+          expects: >
+            The ROI / inspection-region view belonging to model
+            "{model_label}", showing the regions this model checks on the
+            part.
+
+      - id: model_setup_cls
+        only_type: classification
+        skeleton: classifier_setup.pptx
+        step_counter: true
+        tokens:
+          setup_text:
+            llm: >
+              1-2 short sentences describing this classification model: what
+              it classifies and its class names.
+        image:
+          select: {step: classification_block, kind: screenshot}
+          expects: >
+            The classification result view for model "{model_name}": a part
+            image with this model's predicted class shown.
+
+      - id: model_setup_seg
+        only_type: segmentation
+        skeleton: segmenter_setup.pptx
+        step_counter: true
+        tokens:
+          setup_text:
+            llm: >
+              1-2 short sentences describing this segmentation model: its
+              defect classes and pixel-level detection role.
+        image:
+          select: {step: segmentation_block, kind: screenshot}
+          expects: >
+            The segmentation result view for model "{model_name}": a part
+            image with this model's pixel-level defect masks overlaid.
+
+      - id: model_view_rois
+        freeform:
+          title: "All labeled regions — {model_name}"
+          body:
+            llm: >
+              2-3 short sentences describing this model's labeled-regions
+              view: what the grid of ROIs shows, roughly how many labeled
+              examples are visible, and what the labels mean for the
+              inspection.
+        image:
+          select:
+            - {step: "view_all_rois_{model_type}", kind: screenshot}
+            - {step: view_all_rois, kind: screenshot}
+          expects: >
+            The "View All ROIs" grid for the {model_type} model
+            "{model_name}": a thumbnail grid of labeled inspection regions.
+
+      - id: model_training_settings
+        freeform:
+          title: "Training settings — {model_name}"
+          body:
+            llm: >
+              3-6 short newline-separated lines summarizing this model's
+              training settings as shown in its settings dialog (only
+              settings actually present in the material, plain values).
+        image:
+          select:
+            - {step: model_settings, kind: screenshot, path_contains: "{model_slug}"}
+          expects: >
+            The settings dialog for model "{model_label}" showing its
+            training/model configuration.
+
+      - id: model_training_report
+        freeform:
+          title: "Training report — {model_name}"
+          body:
+            llm: >
+              3-5 short newline-separated lines of training results for this
+              model: accuracy or loss/IoU, number of training images,
+              per-class counts with class names. Only facts from the
+              material, plain values like "Training accuracy: 100%".
+        image:
+          select:
+            - {step: training_reports, kind: screenshot, path_contains: "{model_slug}"}
+          expects: >
+            The training report for model "{model_label}" with its metrics
+            and charts.
+
+      - id: model_results_cls
+        only_type: classification
+        skeleton: concise_results_classifier.pptx
+        tokens:
+          train_acc:
+            llm: >
+              This model's training accuracy as a short value, e.g. "100%".
+          train_imgs:
+            llm: >
+              Number of training images used by this model, as a short value
+              like "83"; "—" if not stated.
+          deployment_time:
+            llm: >
+              Deployment/setup time ONLY if the engineer's notes explicitly
+              state it, formatted like "3 days". Otherwise exactly "—".
+
+      - id: model_results_seg
+        only_type: segmentation
+        skeleton: concise_results_segmenter.pptx
+        tokens:
+          mean_iou:
+            llm: >
+              This model's mean IoU if stated; otherwise its final training
+              loss as e.g. "0.028 loss". Keep short.
+          train_imgs:
+            llm: >
+              Number of training images used by this model, short value; "—"
+              if not stated.
+          deployment_time:
+            llm: >
+              Deployment/setup time ONLY if the engineer's notes explicitly
+              state it, formatted like "3 days". Otherwise exactly "—".
+
+  # --- Tail ---------------------------------------------------------------
+  - id: nodered
+    skeleton: nodered_setup.pptx
+    step_counter: true
+    tokens:
+      setup_text:
+        llm: >
+          2-3 short sentences: the crux of the pass/fail decision rule and how
+          results reach the plant's systems (PLC / line controller), in plain
+          language. No node or variable names.
+
+  - id: library
+    skeleton: library.pptx
+    image: {select: {step: library, kind: screenshot}}
+
+  - id: results_static
+    skeleton: results.pptx
+
+  - id: basic_camera_info
+    skeleton: basic_camera_info.pptx
+
+  - id: advanced_camera_info
+    skeleton: advanced_camera_info.pptx
+
+  - id: unique_factors
+    skeleton: unique_factors.pptx
+
+  - id: defect_generator_info
+    skeleton: defect_generator_info.pptx
+
+  - id: integration_info
+    skeleton: integration_info.pptx
+
+  - id: team_and_locations
+    skeleton: team_and_locations.pptx
+
+  - id: contact
+    skeleton: contact.pptx

@@ -1,0 +1,8 @@
+# Content-hole descriptions for classifier_setup.pptx.
+image_slots:
+  - name: classifier_screen
+    expects: >
+      The Classification block screen for the classification model this slide
+      is about: a part image with the model's class prediction, and the class
+      list (class names with counts/colors) in the side panel. Must be a
+      classification view, not segmentation.

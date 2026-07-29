@@ -1,0 +1,7 @@
+# Content-hole descriptions for library.pptx.
+image_slots:
+  - name: library_screen
+    expects: >
+      The Library screen of the camera UI: the on-device image store showing
+      a grid of captured/production images with filters or capture metadata.
+      Demonstrates on-camera storage of training and production data.

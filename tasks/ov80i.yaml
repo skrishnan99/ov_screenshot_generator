@@ -131,7 +131,7 @@ steps:
     always_agent: true
     screenshot: "05_segmentation"
 
-  - id: view_all_rois
+  - id: view_all_rois_segmentation
     # No path: continues from the segmentation page opened by the previous step.
     goal: |
       You are on the Segmentation page of a recipe (a capture view may already be
@@ -142,13 +142,15 @@ steps:
       When it reports loaded, finish. If it reports the view still not loaded after
       its maximum wait, take a screenshot yourself to judge the state, then finish.
 
-      If the "View All ROIs" button is disabled or absent, finish on the page as it is.
+      If the "View All ROIs" button is disabled or absent (for example because the
+      recipe has no segmentation model and you are on the editor overview), finish on
+      the page as it is.
     postcondition: |
       Either the View All ROIs view is open and fully loaded (ROI content rendered,
       no loading indicators), or — if the button was disabled or absent — the
-      segmentation page is unchanged.
+      page is unchanged.
     always_agent: true
-    screenshot: "06_view_all_rois"
+    screenshot: "06_view_all_rois_segmentation"
 
   - id: classification_block
     # No path: continues from wherever the previous step ended (possibly with the
@@ -187,9 +189,31 @@ steps:
     always_agent: true
     screenshot: "07_classification"
 
+  - id: view_all_rois_classification
+    # No path: continues from the classification page opened by the previous step.
+    goal: |
+      You are on the Classification page of a recipe (a capture view may already be
+      loaded). Click the "View All ROIs" button if it is present and clickable.
+
+      After clicking, call wait_for_image_load to wait until the ROI view has finished
+      loading (it polls a vision model until the thumbnail grid is fully rendered).
+      When it reports loaded, finish. If it reports the view still not loaded after
+      its maximum wait, take a screenshot yourself to judge the state, then finish.
+
+      If the "View All ROIs" button is disabled or absent (for example because the
+      recipe has no classification model and you are on the editor overview), finish on
+      the page as it is.
+    postcondition: |
+      Either the View All ROIs view is open and fully loaded (ROI content rendered,
+      no loading indicators), or — if the button was disabled or absent — the
+      page is unchanged.
+    always_agent: true
+    screenshot: "08_view_all_rois_classification"
+
   - id: train_models
-    # No path: continues from wherever the previous step ended (classification page,
-    # or the editor overview when the recipe had no classification model).
+    # No path: continues from wherever the previous step ended (the classification
+    # view-all-ROIs modal may still be open, or the editor overview when the recipe
+    # had no classification model).
     goal: |
       If any modal is open, close it first (Ok / Close / X). Then, unless you are
       already there, go back to the Recipe Editor overview page for this same recipe
@@ -203,7 +227,7 @@ steps:
       the option that proceeds; do not cancel or abandon the flow.
     postcondition: |
       The Train Models page is open and fully loaded.
-    screenshot: "08_train_models"
+    screenshot: "09_train_models"
 
   - id: training_reports
     # No path: continues from the Train Models page opened by the previous step.
@@ -219,7 +243,7 @@ steps:
     # screenshotted as <model-name>_<model-type>.png (only models whose report
     # "View" control is available); no reports -> no screenshots.
     foreach_reports: true
-    screenshot: "09_training_reports"
+    screenshot: "10_training_reports"
 
   - id: model_settings
     # No path: continues from the Train Models page (step may end with a report
@@ -235,7 +259,7 @@ steps:
     # Each model's settings are enumerated from live data every run and
     # screenshotted as <model-name>_<model-type>_settings.png.
     foreach_settings: true
-    screenshot: "10_model_settings"
+    screenshot: "11_model_settings"
 
   - id: io_node_red
     # No path: continues from the Train Models page (a settings dialog may still
@@ -283,4 +307,4 @@ steps:
     check_recipe: false
     # Save the main viewer image (raw + overlays + composite) like the template step.
     download_main_image: true
-    screenshot: "11_library"
+    screenshot: "12_library"
