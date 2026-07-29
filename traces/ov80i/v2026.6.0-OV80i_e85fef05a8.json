@@ -1,0 +1,186 @@
+{
+  "steps": {
+    "enter_recipe_editor": {
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "branch": "active",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Edit",
+          "ctx": "#4 Camera 56959 Tail Active Description for Recipe 1 (imported 4x) PLC Recipe ID: 007 PLC Trigger Mode Created",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Edit",
+          "ctx": "Active Description for Recipe 1 (imported 4x) PLC Recipe ID: 007 PLC Trigger Mode Created 2026-04-10 10:22 (4 ",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click_text",
+          "text": "Open Editor",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "imaging_setup": {
+      "matched_recipe": "70% real ng data + 4 synthetic (imported)",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "Configure Imaging",
+          "ctx": "Imaging Setup Trigger Settings Manual HMI Trigger Mode Exposure (ms) 5ms Gain 1 Gamma 50 Configure Imaging",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "template_image": {
+      "matched_recipe": "70% real ng data + 4 synthetic (imported)",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "70% real ng data + 4 synthetic (imported)",
+          "ctx": "",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "div",
+          "text": "Template Image and Alignment Use it to track the orientation of an object in an image. The tool can track the object regardless of where it is on the image even",
+          "ctx": "",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "inspection_rois": {
+      "matched_recipe": "70% real ng data + 4 synthetic (imported)",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "70% real ng data + 4 synthetic (imported)",
+          "ctx": "",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "div",
+          "text": "Inspection Parameters Use it to define parts of the image that you want to focus on and make decisions.",
+          "ctx": "",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "segmentation_block": {
+      "matched_recipe": "70% real ng data + 4 synthetic (imported)",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "70% real ng data + 4 synthetic (imported)",
+          "ctx": "",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "div",
+          "text": "Segmentation (1 Model) Use it to segment defects at pixel level to enable precise control and detailed inspection.",
+          "ctx": "",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "train_models": {
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "#4 Camera 56959 Tail",
+          "ctx": "",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Train Models",
+          "ctx": "AI Blocks Train Models Classification (2 Models) Use it to categorize an image into different classes based on",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "library": {
+      "matched_recipe": "",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "Library",
+          "ctx": "All Recipes Recipe Editor Recipe Backtesting HMI Library Haystack Industrial Ethernet I/O Live Monitor Users a",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "io_node_red": {
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "#4 Camera 56959 Tail",
+          "ctx": "",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "Configure IO",
+          "ctx": "Set Pass/Fail & IO Logic Configure IO and Node-RED integrations here. Configure IO",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "",
+          "ctx": "#4 Camera 56959 Tail / Imaging Setup Template Image and Alignment Inspection Setup Classification Block Segmen",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "",
+          "ctx": "#4 Camera 56959 Tail / Imaging Setup Template Image and Alignment Inspection Setup Classification Block Segmen",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "",
+          "ctx": "Deploy Slave Camera 3 V5 All Block Outputs connected Process & Prepare Results \uf074 Inspection Pass/Fail connecte",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click_text",
+          "text": "Export",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click_text",
+          "text": "Download",
+          "recipe_scoped": false
+        }
+      ]
+    }
+  }
+}

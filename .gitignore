@@ -1,0 +1,27 @@
+# Secrets — never version
+.env
+.env.*
+*.pem
+*.key
+
+# Run outputs (screenshots, downloads, descriptions, manifests) — generated per run
+runs/
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS noise
+.DS_Store

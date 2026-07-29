@@ -1,0 +1,286 @@
+variant: ov80i
+# The app requires a visit to the origin first to establish its session;
+# hitting /recipes cold shows a permission error.
+entry_path: /
+steps:
+  - id: enter_recipe_editor
+    path: /recipes
+    goal: |
+      You are on the All Recipes page of an OV80i camera, which lists recipes with their
+      status (Active/Inactive) and per-row buttons.
+
+      Find the recipe that best matches this user-provided (approximate) name: "{recipe}"
+
+      Then open its editor:
+      - If that recipe is marked Active: click its "Edit" button, then click "Open Editor"
+        in the dialog that appears.
+      - If it is marked Inactive: click its "Activate" button, then in the dialog that
+        appears click the button that activates it and goes to the editor (labeled like
+        "Activate and go to editor").
+    postcondition: |
+      The Recipe Editor page for the matched recipe is open: the URL matches
+      /recipes/<number>/editor and the matched recipe's name is visible on the page.
+    success_url_regex: "/recipes/\\d+/editor"
+    screenshot: "01_recipe_editor"
+
+  - id: imaging_setup
+    # No path: continues from the recipe editor page opened by the previous step.
+    goal: |
+      You are on the Recipe Editor page for the recipe. Open its Imaging Setup page by
+      clicking "Configure Imaging" (in the Imaging Setup panel).
+
+      If any confirmation dialogs or modals appear along the way (for example warnings
+      about stopping a recipe, entering live imaging, or camera control), read them and
+      choose the option that proceeds to the imaging configuration; do not cancel or
+      abandon the flow. Wait until the imaging page has fully loaded before finishing.
+    postcondition: |
+      The Imaging Setup / Configure Imaging page is open and loaded: imaging controls
+      (such as exposure, gain, gamma, trigger settings, or a live camera view) are
+      visible, and this is no longer the editor overview page.
+    success_text:
+      - "Camera Settings"
+      - "Trigger Settings"
+    # Record the main image area's pixel bbox (relative to the screenshot)
+    # into meta.json as imaging_setup_img_bbox.
+    capture_image_bbox: true
+    screenshot: "02_imaging_setup"
+
+  - id: template_image
+    # No path: continues from the Imaging Setup page opened by the previous step.
+    goal: |
+      You are on the Imaging Setup page of a recipe. First go back to the Recipe Editor
+      overview page for this same recipe (for example via the recipe-name breadcrumb at
+      the top, or the "Recipe Editor" entry in the sidebar).
+
+      Once you are back on the Recipe Editor overview, open the "Template Image and
+      Alignment" page from there (it is listed under Image Alignment & Inspection Setup).
+
+      If any confirmation dialogs or modals appear along the way, read them and choose
+      the option that proceeds; do not cancel or abandon the flow. Wait until the page
+      has fully loaded before finishing.
+    postcondition: |
+      The Template Image and Alignment page is open and loaded (template image /
+      alignment configuration is visible), not the editor overview and not Imaging Setup.
+    success_text:
+      - "Re-Capture Template Image"
+      - "Skip Aligner"
+    # Poll (vision) until the template image has rendered before capturing.
+    wait_image_loaded:
+      interval_s: 7
+      max_wait_s: 60
+    # Also save the viewer's actual image at native resolution
+    # (03_template_image_raw.*) and record how in meta.json.
+    download_main_image: true
+    screenshot: "03_template_image"
+
+  - id: inspection_rois
+    # No path: continues from the Template Image page opened by the previous step.
+    goal: |
+      You are on the Template Image and Alignment page of a recipe. First go back to the
+      Recipe Editor overview page for this same recipe (for example via the recipe-name
+      breadcrumb at the top, or the "Recipe Editor" entry in the sidebar).
+
+      Once you are back on the Recipe Editor overview, open the "Inspection Parameters"
+      page from there (it is listed under Image Alignment & Inspection Setup).
+
+      If any confirmation dialogs or modals appear along the way, read them and choose
+      the option that proceeds; do not cancel or abandon the flow. Wait until the page
+      has fully loaded before finishing.
+    postcondition: |
+      The Inspection Setup / Inspection Editor page is open and loaded: the ROI editor
+      with its Models section is visible.
+    success_url_regex: "/recipes/\\d+/inspection"
+    success_text:
+      - "Inspection Editor"
+    foreach_models: true
+    screenshot: "04_roi"
+
+  - id: segmentation_block
+    # No path: continues from the Inspection Setup page opened by the previous step.
+    goal: |
+      You are on the Inspection Setup page of a recipe. First go back to the Recipe
+      Editor overview page for this same recipe (for example via the recipe-name
+      breadcrumb at the top).
+
+      On the Recipe Editor overview, look at the "AI Blocks" section:
+      - If a Segmentation model is present (for example "Segmentation (1 Model)"),
+        click on it to open the segmentation model page. Once you are on that page,
+        call wait_for_button_enabled with text "Previous" — capture data can take a
+        while to load, and the tool waits adaptively:
+        - If it reports Previous enabled, click Previous, then call
+          wait_for_image_load to wait until the capture image has fully rendered (it
+          polls a vision model). When it reports the image loaded, finish. If it
+          reports the image still not loaded after its maximum wait, take a screenshot
+          yourself to judge the state, then finish on the page as it is.
+        - If it reports Previous still disabled with the page settled (or no Previous
+          at all), finish on the page as it is.
+        - If it reports the ceiling was hit with the page still changing, take a fresh
+          snapshot to judge the state yourself, then proceed accordingly.
+      - If the AI Blocks section shows no Segmentation model (0 Models), stay on the
+        Recipe Editor overview and finish there.
+
+      If any confirmation dialogs or modals appear along the way, read them and choose
+      the option that proceeds; do not cancel or abandon the flow. Wait until the page
+      has fully loaded before finishing.
+    postcondition: |
+      Either the segmentation model page for this recipe is open and fully loaded (with
+      the previous view loaded if a clickable Previous button existed), or — when the
+      recipe has no segmentation model — the Recipe Editor overview is displayed.
+    # The flow branches on live data (segmentation model present? Previous button
+    # clickable?), which a recorded trace cannot re-evaluate — always use the agent.
+    always_agent: true
+    screenshot: "05_segmentation"
+
+  - id: view_all_rois
+    # No path: continues from the segmentation page opened by the previous step.
+    goal: |
+      You are on the Segmentation page of a recipe (a capture view may already be
+      loaded). Click the "View All ROIs" button if it is present and clickable.
+
+      After clicking, call wait_for_image_load to wait until the ROI view has finished
+      loading (it polls a vision model until the thumbnail grid is fully rendered).
+      When it reports loaded, finish. If it reports the view still not loaded after
+      its maximum wait, take a screenshot yourself to judge the state, then finish.
+
+      If the "View All ROIs" button is disabled or absent, finish on the page as it is.
+    postcondition: |
+      Either the View All ROIs view is open and fully loaded (ROI content rendered,
+      no loading indicators), or — if the button was disabled or absent — the
+      segmentation page is unchanged.
+    always_agent: true
+    screenshot: "06_view_all_rois"
+
+  - id: classification_block
+    # No path: continues from wherever the previous step ended (possibly with the
+    # View All ROIs modal still open).
+    goal: |
+      You may be on the Segmentation page of a recipe, possibly with a "View All ROIs"
+      modal open. If a modal is open, close it first (Ok / Close / X).
+
+      Then go back to the Recipe Editor overview page for this same recipe (for example
+      via the recipe-name breadcrumb at the top).
+
+      On the Recipe Editor overview, look at the "AI Blocks" section:
+      - If a Classification model is present (for example "Classification (1 Model)"),
+        click on it to open the classification model page. Once you are on that page,
+        call wait_for_button_enabled with text "Previous" — capture data can take a
+        while to load, and the tool waits adaptively:
+        - If it reports Previous enabled, click Previous, then call
+          wait_for_image_load to wait until the capture image has fully rendered (it
+          polls a vision model). When it reports the image loaded, finish. If it
+          reports the image still not loaded after its maximum wait, take a screenshot
+          yourself to judge the state, then finish on the page as it is.
+        - If it reports Previous still disabled with the page settled (or no Previous
+          at all), finish on the page as it is.
+        - If it reports the ceiling was hit with the page still changing, take a fresh
+          snapshot to judge the state yourself, then proceed accordingly.
+      - If the AI Blocks section shows no Classification model (0 Models), stay on the
+        Recipe Editor overview and finish there.
+
+      If any confirmation dialogs or modals appear along the way, read them and choose
+      the option that proceeds; do not cancel or abandon the flow.
+    postcondition: |
+      Either the classification model page for this recipe is open and fully loaded
+      (with the previous view loaded if a clickable Previous button existed), or —
+      when the recipe has no classification model — the Recipe Editor overview is
+      displayed.
+    always_agent: true
+    screenshot: "07_classification"
+
+  - id: train_models
+    # No path: continues from wherever the previous step ended (classification page,
+    # or the editor overview when the recipe had no classification model).
+    goal: |
+      If any modal is open, close it first (Ok / Close / X). Then, unless you are
+      already there, go back to the Recipe Editor overview page for this same recipe
+      (for example via the recipe-name breadcrumb at the top).
+
+      On the Recipe Editor overview, click the "Train Models" button (in the AI Blocks
+      section). Wait until the resulting page has fully loaded before finishing — if
+      content is still loading, use wait_seconds and check again.
+
+      If any confirmation dialogs or modals appear along the way, read them and choose
+      the option that proceeds; do not cancel or abandon the flow.
+    postcondition: |
+      The Train Models page is open and fully loaded.
+    screenshot: "08_train_models"
+
+  - id: training_reports
+    # No path: continues from the Train Models page opened by the previous step.
+    goal: |
+      You should be on the Train Models page of the recipe. If you are not (or a modal
+      is open), close any modal and navigate there: recipe-name breadcrumb to the
+      Recipe Editor overview, then click "Train Models". Wait until the page has fully
+      loaded before finishing. Do not open any training report yourself — just make
+      sure the Train Models page is displayed.
+    postcondition: |
+      The Train Models page is open and fully loaded, listing the recipe's models.
+    # Per-model training reports are enumerated from live data every run and
+    # screenshotted as <model-name>_<model-type>.png (only models whose report
+    # "View" control is available); no reports -> no screenshots.
+    foreach_reports: true
+    screenshot: "09_training_reports"
+
+  - id: model_settings
+    # No path: continues from the Train Models page (step may end with a report
+    # just closed).
+    goal: |
+      You should be on the Train Models page of the recipe. If you are not (or a
+      modal/report is open), close any modal and navigate there: recipe-name
+      breadcrumb to the Recipe Editor overview, then click "Train Models". Wait until
+      the page has fully loaded before finishing. Do not open any settings dialog
+      yourself — just make sure the Train Models page is displayed.
+    postcondition: |
+      The Train Models page is open and fully loaded, listing the recipe's models.
+    # Each model's settings are enumerated from live data every run and
+    # screenshotted as <model-name>_<model-type>_settings.png.
+    foreach_settings: true
+    screenshot: "10_model_settings"
+
+  - id: io_node_red
+    # No path: continues from the Train Models page (a settings dialog may still
+    # be open from the previous step). Produces a downloaded Node-RED flow JSON,
+    # not a screenshot.
+    goal: |
+      If any modal or settings dialog is open, close it first (Close / Ok / X / Cancel).
+
+      Go back to the Recipe Editor overview page for this same recipe (for example via
+      the recipe-name breadcrumb at the top). On the editor overview, click
+      "Configure IO" (in the "Set Pass/Fail & IO Logic" panel), and wait for the IO
+      page to fully load (use wait_seconds if needed — it can take a while).
+
+      On the IO page, click the breadcrumb control at the top right that opens the
+      Node-RED settings. In the Node-RED view (its content may be marked [iframe] in
+      snapshots), open "Export", and in the export dialog for the current flow click
+      "Download". This triggers a JSON file download of the current flow, which is
+      captured automatically — you do not need to look for the downloaded file.
+
+      If any confirmation dialogs appear along the way, read them and choose the
+      option that proceeds; do not cancel or abandon the flow.
+    postcondition: |
+      The Node-RED export dialog's Download was clicked for the current flow (a JSON
+      download was triggered).
+    check_recipe: false
+    expect_download: true
+    download_as: node_red_flow.json
+    # Icon-only buttons don't replay reliably (two flaky-replay incidents);
+    # the agent handles this flow consistently.
+    always_agent: true
+
+  - id: library
+    # No path: continues from the Node-RED / IO view left by the previous step.
+    goal: |
+      You may be in a Node-RED or IO configuration view. If any modal, export dialog,
+      or settings dialog is open, close it first (Close / Ok / X / Cancel).
+
+      Then click "Library" in the left sidebar to open the Library page. If the left
+      sidebar is not visible, first use any back/close/breadcrumb controls on the page
+      to return to the main camera UI. Wait until the page has fully loaded before
+      finishing — if content is still loading, use wait_seconds and check again.
+    postcondition: |
+      The Library page is open and fully loaded.
+    # The Library is a global page — the recipe name is not expected on it.
+    check_recipe: false
+    # Save the main viewer image (raw + overlays + composite) like the template step.
+    download_main_image: true
+    screenshot: "11_library"

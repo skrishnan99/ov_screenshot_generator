@@ -1,0 +1,817 @@
+"""OV camera screenshot generator.
+
+Usage:
+  uv run python cli.py --url http://<camera-host>/recipes --recipe "<approximate name>" [--headed] [--force-agent]
+
+Flow per step: replay the cached trace for this camera's UI version if one
+exists; otherwise (or on any replay failure) run the Claude navigator agent and
+record a fresh trace. Every step's postcondition is validated deterministically
+before its screenshot is taken.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import re
+import sys
+import time
+from pathlib import Path
+from urllib.parse import urlparse
+
+import yaml
+
+from core import trace as trace_store
+from core.browser import Browser
+from core.describer import describe_node_red, describe_screenshot, poll_image_loaded
+from core.navigator import run_step
+from core.resolver import (
+    list_model_settings,
+    list_models,
+    list_training_reports,
+    resolve_recipe,
+)
+from core.trace import _stable_snapshot
+from core.version import detect_ui_version, detect_variant
+
+ROOT = Path(__file__).resolve().parent
+
+
+def slugify(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "unnamed"
+
+
+BBOX_PROBE_JS = """
+() => {
+  const cands = [];
+  for (const el of document.querySelectorAll('canvas, img, video')) {
+    const r = el.getBoundingClientRect();
+    const s = window.getComputedStyle(el);
+    if (r.width < 50 || r.height < 50 || s.visibility === 'hidden' || s.display === 'none') continue;
+    cands.push({
+      x: r.x + window.scrollX, y: r.y + window.scrollY,
+      width: r.width, height: r.height,
+      tag: el.tagName.toLowerCase(),
+    });
+  }
+  cands.sort((a, b) => b.width * b.height - a.width * a.height);
+  return cands;
+}
+"""
+
+
+def main_image_bbox(browser, png_bytes: bytes) -> dict | None:
+    """Pixel-exact bbox of the page's main image area (largest visible
+    canvas/img/video — a semantic invariant of these viewer screens, not a
+    selector). Coordinates are page pixels, which map 1:1 onto our
+    device-scale-factor-1 full-page screenshots."""
+    import struct
+
+    shot_w, shot_h = struct.unpack(">II", png_bytes[16:24])
+    cands = browser.page.evaluate(BBOX_PROBE_JS)
+    if not cands:
+        return None
+    b = cands[0]
+    if b["width"] * b["height"] < 0.05 * shot_w * shot_h:
+        return None  # nothing viewer-sized on this page
+    return {
+        "x": round(b["x"]),
+        "y": round(b["y"]),
+        "width": round(b["width"]),
+        "height": round(b["height"]),
+        "element": b["tag"],
+        "screenshot": {"width": shot_w, "height": shot_h},
+        "normalized": {
+            "x": round(b["x"] / shot_w, 4),
+            "y": round(b["y"] / shot_h, 4),
+            "width": round(b["width"] / shot_w, 4),
+            "height": round(b["height"] / shot_h, 4),
+        },
+    }
+
+
+MAIN_IMAGE_PROBE_JS = """
+() => {
+  document.querySelectorAll('[data-sg-layer]').forEach(el => el.removeAttribute('data-sg-layer'));
+  const cands = [];
+  for (const el of document.querySelectorAll('canvas, img')) {
+    const r = el.getBoundingClientRect();
+    const s = window.getComputedStyle(el);
+    if (r.width < 50 || r.height < 50 || s.visibility === 'hidden' || s.display === 'none') continue;
+    cands.push({el, area: r.width * r.height});
+  }
+  if (!cands.length) return null;
+  // Viewers stack same-sized layers (photo canvas under an annotation canvas):
+  // consider every element at least half the largest area a candidate layer.
+  const maxArea = Math.max(...cands.map(c => c.area));
+  const scored = [];
+  for (const c of cands.filter(c => c.area >= maxArea * 0.5)) {
+    const tag = c.el.tagName.toLowerCase();
+    let variance = null, readable = true;
+    if (tag === 'canvas') {
+      try {
+        const off = document.createElement('canvas');
+        off.width = 32; off.height = 32;
+        const ctx = off.getContext('2d');
+        ctx.drawImage(c.el, 0, 0, 32, 32);
+        const d = ctx.getImageData(0, 0, 32, 32).data;
+        let sum = 0, sum2 = 0;
+        const n = d.length / 4;
+        for (let i = 0; i < d.length; i += 4) {
+          const v = (d[i] + d[i + 1] + d[i + 2]) / 3;
+          sum += v; sum2 += v * v;
+        }
+        const mean = sum / n;
+        variance = Math.round(sum2 / n - mean * mean);
+      } catch (e) { readable = false; }
+    }
+    scored.push({
+      c, tag, variance, readable,
+      src: tag === 'img' ? (c.el.currentSrc || c.el.src || null) : null,
+      nativeW: tag === 'img' ? c.el.naturalWidth : c.el.width,
+      nativeH: tag === 'img' ? c.el.naturalHeight : c.el.height,
+    });
+  }
+  // A real photograph has high pixel variance; a flat annotation overlay near zero.
+  let best = scored.find(x => x.tag === 'img' && x.src);
+  if (!best) {
+    const canvases = scored.filter(x => x.tag === 'canvas' && x.variance !== null);
+    canvases.sort((a, b) => b.variance - a.variance);
+    best = canvases[0] || scored[0];
+  }
+  scored.forEach((x, i) => x.c.el.setAttribute('data-sg-layer', String(i)));
+  return {
+    best: scored.indexOf(best),
+    layers: scored.map((x, i) => ({
+      idx: i, tag: x.tag, variance: x.variance, readable: x.readable,
+      src: x.src, nativeW: x.nativeW, nativeH: x.nativeH,
+    })),
+  };
+}
+"""
+
+CANVAS_EXPORT_JS = """
+(idx) => document.querySelector('[data-sg-layer="' + idx + '"]').toDataURL('image/png')
+"""
+
+COMPOSITE_JS = """
+() => {
+  const els = [...document.querySelectorAll('[data-sg-layer]')]
+    .sort((a, b) => (+a.getAttribute('data-sg-layer')) - (+b.getAttribute('data-sg-layer')));
+  if (!els.length) return null;
+  // Native size of the largest layer; others are scaled onto it, in DOM
+  // (stacking) order — the same compositing the UI itself performs.
+  let W = 0, H = 0;
+  for (const el of els) {
+    const w = el.tagName === 'IMG' ? el.naturalWidth : el.width;
+    const h = el.tagName === 'IMG' ? el.naturalHeight : el.height;
+    if (w * h > W * H) { W = w; H = h; }
+  }
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const ctx = off.getContext('2d');
+  for (const el of els) ctx.drawImage(el, 0, 0, W, H);
+  return off.toDataURL('image/png');
+}
+"""
+
+
+def _export_layer(browser, layer: dict, dest_base: Path) -> dict:
+    """Save one viewer layer (img source fetch or canvas bitmap export).
+    Returns {method, file, source_url?, error?}."""
+    import base64 as b64
+    from urllib.parse import urljoin
+
+    out: dict = {}
+    try:
+        if layer["tag"] == "img" and layer["src"]:
+            src = layer["src"]
+            out["source_url"] = src
+            if src.startswith("data:"):
+                header, data = src.split(",", 1)
+                content = b64.standard_b64decode(data)
+                ext = ".png" if "png" in header else ".jpg"
+            else:
+                resp = browser.page.request.get(urljoin(browser.page.url, src))
+                if not resp.ok:
+                    out["error"] = f"fetch of img src returned {resp.status}"
+                    return out
+                content = resp.body()
+                ctype = resp.headers.get("content-type", "")
+                ext = ".png" if "png" in ctype else ".jpg" if "jpe" in ctype or "jpg" in ctype else ".png"
+            out["method"] = "img_src"
+        else:
+            # Throws on a tainted canvas (cross-origin content) — reported, not guessed.
+            data_url = browser.page.evaluate(CANVAS_EXPORT_JS, layer["idx"])
+            content = b64.standard_b64decode(data_url.split(",", 1)[1])
+            ext = ".png"
+            out["method"] = "canvas_export"
+        dest = dest_base.with_name(dest_base.name + ext)
+        dest.write_bytes(content)
+        out["file"] = dest.name
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+
+def download_main_image(browser, run_dir: Path, base_name: str) -> dict:
+    """Save the images shown in the page's main viewer at native resolution:
+    the photo layer as <base>_raw.*, plus every other stacked layer (e.g. the
+    annotation overlay canvas) as <base>_overlay*.png. Returns metadata with
+    per-layer provenance and errors."""
+    probe = browser.page.evaluate(MAIN_IMAGE_PROBE_JS)
+    if not probe:
+        return {"method": None, "error": "no canvas/img viewer element found"}
+    layers = probe["layers"]
+    best = layers[probe["best"]]
+
+    info = {
+        "element": best["tag"],
+        "native_width": best["nativeW"],
+        "native_height": best["nativeH"],
+        "layer_variance": best["variance"],
+        "layers": [
+            {k: l[k] for k in ("tag", "variance", "readable")} for l in layers
+        ],
+    }
+    raw = _export_layer(browser, best, run_dir / f"{base_name}_raw")
+    info.update({"method": raw.get("method"), **{k: raw[k] for k in raw if k != "method"}})
+
+    overlays = []
+    n = 0
+    for layer in layers:
+        if layer["idx"] == best["idx"]:
+            continue
+        n += 1
+        suffix = "_overlay" if n == 1 else f"_overlay{n}"
+        result = _export_layer(browser, layer, run_dir / f"{base_name}{suffix}")
+        overlays.append(
+            {
+                "tag": layer["tag"],
+                "variance": layer["variance"],
+                "native_width": layer["nativeW"],
+                "native_height": layer["nativeH"],
+                **result,
+            }
+        )
+    if overlays:
+        info["overlays"] = overlays
+        # Also save the layers flattened in stacking order — what the UI shows.
+        import base64 as b64
+
+        try:
+            data_url = browser.page.evaluate(COMPOSITE_JS)
+            dest = run_dir / f"{base_name}_composite.png"
+            dest.write_bytes(b64.standard_b64decode(data_url.split(",", 1)[1]))
+            info["composite"] = {"file": dest.name}
+        except Exception as e:
+            info["composite"] = {"error": str(e)}
+    return info
+
+
+def compose_imaging_with_template(run_dir: Path, meta: dict, manifest: dict) -> dict | None:
+    """If we know the imaging screen's viewer bbox and have the aligner's raw
+    image, render the raw image into that bbox on the imaging screenshot — a
+    synthesized view of the imaging screen showing the template capture."""
+    bbox = meta.get("imaging_setup_img_bbox")
+    raw_name = (meta.get("template_image_main_image") or {}).get("file")
+    if not bbox or not raw_name:
+        return None
+    step = next(
+        (s for s in manifest.get("steps", []) if s.get("id") == "imaging_setup"), None
+    )
+    shot_name = (step or {}).get("screenshot")
+    if not shot_name:
+        return None
+    base_path = run_dir / shot_name
+    raw_path = run_dir / raw_name
+    if not base_path.exists() or not raw_path.exists():
+        return None
+    from PIL import Image
+
+    base = Image.open(base_path).convert("RGBA")
+    raw = Image.open(raw_path).convert("RGBA")
+    raw = raw.resize((bbox["width"], bbox["height"]), Image.LANCZOS)
+    # alpha_composite (not paste): transparent raw regions show the screenshot
+    # beneath instead of rendering black.
+    base.alpha_composite(raw, (bbox["x"], bbox["y"]))
+    out = run_dir / f"{base_path.stem}_with_template.png"
+    base.convert("RGB").save(out)
+    return {
+        "file": out.name,
+        "base": shot_name,
+        "source": raw_name,
+        "bbox": {k: bbox[k] for k in ("x", "y", "width", "height")},
+    }
+
+
+def goto_checked(browser, origin: str, url: str):
+    """Navigate, retrying once via the origin if the app's transient
+    permission-error page shows up (its session can be slow to establish)."""
+    browser.goto(url)
+    for _ in range(2):
+        browser.page.wait_for_timeout(1500)
+        if "You do not have permission" not in browser.page_text(4000):
+            return
+        print("  permission page shown; re-establishing session via origin")
+        browser.goto(origin)
+        browser.goto(url)
+
+
+def _click_model(browser, entry_text: str) -> bool:
+    for _ in range(3):
+        browser.snapshot()
+        cands = [it for it in browser.last_items.values() if it["text"] == entry_text]
+        if len(cands) == 1:
+            return not browser.click(cands[0]["ref"]).startswith("Error")
+        browser.page.wait_for_timeout(1500)
+    return False
+
+
+def _click_scoped(browser, entry_text: str, scope_hint: str) -> bool:
+    """Click the element with this exact text; when several match (e.g. one
+    'View' per model row), pick the one whose row context mentions scope_hint."""
+    for _ in range(3):
+        browser.snapshot()
+        cands = [it for it in browser.last_items.values() if it["text"] == entry_text]
+        if len(cands) > 1 and scope_hint:
+            scoped = [
+                it for it in cands if scope_hint.lower() in it.get("ctx", "").lower()
+            ]
+            if scoped:
+                cands = scoped
+        if len(cands) == 1:
+            return not browser.click(cands[0]["ref"]).startswith("Error")
+        browser.page.wait_for_timeout(1500)
+    return False
+
+
+
+
+def capture_reports(
+    browser, step: dict, run_dir: Path, step_record: dict, desc_queue: list, base_ctx: dict
+):
+    """For steps with foreach_reports: open each model's training report (where
+    available), wait for it to load, and screenshot as <model-name>_<model-type>.png."""
+    models = list_training_reports(_stable_snapshot(browser))
+    step_record["report_models"] = [f"{m['name']} ({m['type']})" for m in models]
+    if not models:
+        print("  no models with an available training report")
+        return
+    shots = []
+    for m in models:
+        if not _click_scoped(browser, m["entry_text"], m["name"]):
+            goal = (
+                "You are on (or near) the Train Models page of a recipe. If a training "
+                "report or any modal is currently open, close it first. Then click the "
+                f'"{m["entry_text"]}" control that opens the training report for the '
+                f'model "{m["name"]}" ({m["type"]}) — it is shown below that model\'s '
+                '"Last trained" information.'
+            )
+            result = run_step(
+                browser, goal, f'The training report for "{m["name"]}" is displayed.'
+            )
+            if result.status != "success":
+                raise RuntimeError(
+                    f"could not open training report for {m['name']}: {result.evidence}"
+                )
+        ok, msg = poll_image_loaded(browser, max_wait_s=60, interval_s=5)
+        if not ok:
+            print(f"  warning: training report for \"{m['name']}\" {msg}")
+        shot = run_dir / f"{slugify(m['name'])}_{slugify(m['type'])}.png"
+        shot.write_bytes(browser.screenshot_bytes(full_page=True))
+        shots.append(shot.name)
+        desc_queue.append(
+            (shot, {**base_ctx, "item": f"training report for model {m['name']} ({m['type']})"})
+        )
+        print(f"  report \"{m['name']}\" ({m['type']}) -> {shot.name}")
+        _close_report(browser)
+    step_record["screenshots"] = shots
+
+
+SETTINGS_LOAD_WAIT_MS = 1_000
+
+
+def capture_settings(
+    browser, step: dict, run_dir: Path, step_record: dict, desc_queue: list, base_ctx: dict
+):
+    """For steps with foreach_settings: open each model's settings, screenshot
+    as <model-name>_<model-type>_settings.png, close, repeat.
+
+    Settings controls are usually icon-only, so the enumerator returns the ref
+    of the control in the snapshot it saw; refs go stale once the page changes,
+    so each iteration re-enumerates on a fresh snapshot.
+    """
+    models = list_model_settings(_stable_snapshot(browser))
+    step_record["settings_models"] = [f"{m['name']} ({m['type']})" for m in models]
+    if not models:
+        print("  no models with an identifiable settings control")
+        return
+    shots = []
+    for i, target in enumerate(models):
+        clicked = False
+        current = models if i == 0 else list_model_settings(_stable_snapshot(browser))
+        match = next((m for m in current if m["name"] == target["name"]), None)
+        if match and match["settings_ref"] in browser.last_items:
+            clicked = not browser.click(match["settings_ref"]).startswith("Error")
+        if not clicked:
+            goal = (
+                "You are on (or near) the Train Models page of a recipe. If a settings "
+                "dialog, report, or any modal is currently open, close it first. Then "
+                f'open the settings for the model "{target["name"]}" ({target["type"]}) '
+                "— typically a gear/settings icon in that model's row."
+            )
+            result = run_step(
+                browser, goal, f'The settings for model "{target["name"]}" are displayed.'
+            )
+            if result.status != "success":
+                raise RuntimeError(
+                    f"could not open settings for {target['name']}: {result.evidence}"
+                )
+        browser.page.wait_for_timeout(SETTINGS_LOAD_WAIT_MS)
+        shot = run_dir / f"{slugify(target['name'])}_{slugify(target['type'])}_settings.png"
+        shot.write_bytes(browser.screenshot_bytes(full_page=True))
+        shots.append(shot.name)
+        desc_queue.append(
+            (shot, {**base_ctx, "item": f"settings dialog for model {target['name']} ({target['type']})"})
+        )
+        print(f"  settings \"{target['name']}\" ({target['type']}) -> {shot.name}")
+        _close_report(browser)
+    step_record["screenshots"] = shots
+
+
+def _close_report(browser):
+    """Best-effort return to the Train Models list; the next iteration's
+    click has agent fallback if this doesn't land."""
+    browser.snapshot()
+    for label in ("Close", "Ok", "Back"):
+        cands = [it for it in browser.last_items.values() if it["text"] == label]
+        if len(cands) == 1:
+            browser.click(cands[0]["ref"])
+            return
+    browser.page.keyboard.press("Escape")
+    browser.page.wait_for_timeout(1000)
+
+
+def capture_per_model(
+    browser, step: dict, run_dir: Path, step_record: dict, desc_queue: list, base_ctx: dict
+):
+    """For steps with foreach_models: one screenshot per model on the page,
+    named after the model; a single default screenshot when there are none."""
+    models = list_models(_stable_snapshot(browser))
+    step_record["models"] = [m["name"] for m in models]
+    if not models:
+        shot = run_dir / f"{step['screenshot']}.png"
+        browser.page.wait_for_timeout(1500)
+        shot.write_bytes(browser.screenshot_bytes(full_page=True))
+        step_record["screenshot"] = shot.name
+        desc_queue.append((shot, {**base_ctx, "item": "default view (no models configured)"}))
+        print(f"  no models configured; default screenshot -> {shot.name}")
+        return
+    shots = []
+    for m in models:
+        if not _click_model(browser, m["entry_text"]):
+            goal = (
+                "On the Inspection Setup page, in the Models section, click the model "
+                f'entry shown as "{m["entry_text"]}" to select it so its ROI setup is displayed.'
+            )
+            result = run_step(
+                browser, goal, f'The ROI setup for model "{m["name"]}" is displayed.'
+            )
+            if result.status != "success":
+                raise RuntimeError(
+                    f"could not select model {m['name']}: {result.evidence}"
+                )
+        ok, msg = poll_image_loaded(browser)
+        if not ok:
+            print(f"  warning: ROI view for \"{m['name']}\" {msg}")
+        shot = run_dir / f"{step['screenshot']}_{slugify(m['name'])}.png"
+        shot.write_bytes(browser.screenshot_bytes(full_page=True))
+        shots.append(shot.name)
+        desc_queue.append((shot, {**base_ctx, "item": f"ROI setup for model {m['name']}"}))
+        print(f"  model \"{m['name']}\" -> {shot.name}")
+    step_record["screenshots"] = shots
+
+
+def check_postcondition(
+    browser, step: dict, recipe_name: str | None, attempts: int = 6
+) -> tuple[bool, str]:
+    why = "ok"
+    for attempt in range(attempts):
+        if attempt:
+            # Pages render asynchronously; give them a moment before re-checking.
+            browser.page.wait_for_timeout(1500)
+        url_regex = step.get("success_url_regex")
+        if url_regex and not re.search(url_regex, browser.url()):
+            why = f"URL {browser.url()} does not match {url_regex}"
+            continue
+        if (
+            recipe_name
+            and step.get("check_recipe", True)
+            and recipe_name not in browser.page_text(20000)
+        ):
+            why = f'matched recipe "{recipe_name}" not visible on page'
+            continue
+        missing = [
+            t for t in step.get("success_text", []) if t not in browser.page_text(20000)
+        ]
+        if missing:
+            why = f"expected text not visible: {missing}"
+            continue
+        if step.get("expect_download") and not browser.downloads:
+            # The download event can lag the click; the retry loop covers it.
+            why = "expected a file download but none was captured"
+            continue
+        return True, "ok"
+    return False, why
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", required=True, help="Camera URL (any path; origin is used)")
+    ap.add_argument("--recipe", required=True, help="Approximate recipe name")
+    ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--force-agent", action="store_true", help="Skip trace replay")
+    ap.add_argument(
+        "--skip-descriptions",
+        action="store_true",
+        help="Do not generate vision descriptions of the screenshots",
+    )
+    ap.add_argument(
+        "--steps",
+        help="Comma-separated step ids to run (in spec order); others are skipped. "
+        "Note: later steps may depend on earlier steps' end state.",
+    )
+    args = ap.parse_args()
+
+    origin = "{0.scheme}://{0.netloc}".format(urlparse(args.url))
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = ROOT / "runs" / f"{ts}"
+    run_dir.mkdir(parents=True)
+    manifest: dict = {
+        "url": origin,
+        "recipe_input": args.recipe,
+        "started": ts,
+        "steps": [],
+    }
+
+    browser = Browser(headed=args.headed)
+    browser.start()
+    exit_code = 0
+    # (screenshot path, context) pairs, described after the steps finish.
+    desc_queue: list[tuple[Path, dict]] = []
+    # Extra per-run structured data (e.g. image-area bboxes) -> meta.json.
+    meta: dict = {}
+    try:
+        browser.goto(origin)
+
+        page_text = browser.page_text()
+        variant = detect_variant(browser.page.title(), page_text)
+        # Raw index.html, not the rendered DOM: lazily-loaded route chunks make
+        # the DOM's script list vary run-to-run.
+        raw_html = browser.page.request.get(origin).text()
+        version_key = detect_ui_version(page_text, raw_html)
+        manifest["variant"] = variant
+        manifest["ui_version"] = version_key
+        print(f"variant={variant} ui_version={version_key}")
+
+        spec_path = ROOT / "tasks" / f"{variant}.yaml"
+        if not spec_path.exists():
+            print(f"ERROR: no task spec for variant {variant} ({spec_path})", file=sys.stderr)
+            return 2
+        spec = yaml.safe_load(spec_path.read_text())
+        if args.steps:
+            wanted = {s.strip() for s in args.steps.split(",")}
+            unknown = wanted - {s["id"] for s in spec["steps"]}
+            if unknown:
+                print(f"ERROR: unknown step ids: {sorted(unknown)}", file=sys.stderr)
+                return 2
+            spec["steps"] = [s for s in spec["steps"] if s["id"] in wanted]
+
+        traces = trace_store.load(variant, version_key) or {"steps": {}}
+
+        # Exact on-screen recipe name, resolved once per run (LLM) and shared
+        # by all subsequent steps.
+        run_resolved: str | None = None
+        # URL where the previous step ended — the clean starting state for a
+        # path-less step, restored before an agent fallback so recorded traces
+        # are always complete flows.
+        checkpoint_url: str | None = None
+
+        run_t0 = time.monotonic()
+        for step in spec["steps"]:
+            step_id = step["id"]
+            step_t0 = time.monotonic()
+            print(f"\n== step: {step_id}")
+            browser.downloads.clear()
+            # Steps without a path continue from the previous step's end state.
+            if step.get("path"):
+                goto_checked(browser, origin, origin + step["path"])
+            step_record: dict = {"id": step_id}
+            recipe_name = None
+
+            cached = traces["steps"].get(step_id)
+            done = False
+            # Steps whose flow depends on live data (conditional branches the
+            # trace can't see) always run the agent.
+            if step.get("always_agent"):
+                cached = None
+            if cached and not args.force_agent:
+                ok, why, resolved = trace_store.replay(
+                    browser, cached, args.recipe, resolve_recipe, resolved=run_resolved
+                )
+                if resolved:
+                    run_resolved = resolved
+                if ok:
+                    recipe_name = resolved or run_resolved
+                    ok, why = check_postcondition(browser, step, recipe_name)
+                if ok:
+                    step_record["layer"] = "replay"
+                    done = True
+                else:
+                    print(f"  replay failed ({why}); falling back to agent")
+                    if step.get("path"):
+                        goto_checked(browser, origin, origin + step["path"])
+                    elif checkpoint_url:
+                        browser.goto(checkpoint_url)
+
+            if not done:
+                goal = step["goal"].format(recipe=args.recipe)
+                result = run_step(browser, goal, step["postcondition"])
+                step_record["layer"] = "agent"
+                step_record["model_calls"] = result.model_calls
+                step_record["agent_evidence"] = result.evidence
+                if result.status != "success":
+                    step_record["status"] = "failure"
+                    step_record["notes"] = result.notes
+                    step_record["duration_s"] = round(time.monotonic() - step_t0, 1)
+                    manifest["steps"].append(step_record)
+                    raise RuntimeError(f"agent failed step {step_id}: {result.evidence}")
+                recipe_name = run_resolved or result.matched_recipe or None
+                # Only the first resolution (the recipe-list step) is trusted as
+                # the canonical on-screen name; later steps sometimes report a
+                # decorated variant that would poison subsequent postconditions.
+                if result.matched_recipe and run_resolved is None:
+                    run_resolved = result.matched_recipe
+                    recipe_name = run_resolved
+
+            ok, why = check_postcondition(browser, step, recipe_name)
+            if not ok:
+                step_record["status"] = "failure"
+                step_record["duration_s"] = round(time.monotonic() - step_t0, 1)
+                manifest["steps"].append(step_record)
+                raise RuntimeError(f"postcondition failed for {step_id}: {why}")
+
+            if step_record["layer"] == "agent" and not step.get("always_agent"):
+                if result.actions:
+                    trace_store.save(
+                        variant, version_key, step_id,
+                        result.actions, result.matched_recipe,
+                    )
+                    print(f"  trace saved for {variant}/{version_key}")
+                else:
+                    # An agent run with no actions means it started from an
+                    # already-advanced state; an empty trace would poison replay.
+                    print("  agent recorded no actions; trace not saved")
+
+            checkpoint_url = browser.url()
+            base_ctx = {
+                "variant": variant,
+                "recipe": recipe_name or args.recipe,
+                "step": step_id,
+                "intent": step.get("goal", ""),
+            }
+            if step.get("expect_download") and browser.downloads:
+                dest = run_dir / step.get(
+                    "download_as", browser.downloads[-1].suggested_filename
+                )
+                browser.downloads[-1].save_as(dest)
+                step_record["download"] = dest.name
+                print(f"  saved download -> {dest.name}")
+            if step.get("foreach_models"):
+                capture_per_model(browser, step, run_dir, step_record, desc_queue, base_ctx)
+            elif step.get("foreach_reports"):
+                capture_reports(browser, step, run_dir, step_record, desc_queue, base_ctx)
+            elif step.get("foreach_settings"):
+                capture_settings(browser, step, run_dir, step_record, desc_queue, base_ctx)
+            elif step.get("screenshot"):
+                wait_cfg = step.get("wait_image_loaded")
+                if wait_cfg:
+                    if not isinstance(wait_cfg, dict):
+                        wait_cfg = {}
+                    ok, msg = poll_image_loaded(
+                        browser,
+                        max_wait_s=wait_cfg.get("max_wait_s", 90),
+                        interval_s=wait_cfg.get("interval_s", 7),
+                    )
+                    if not ok:
+                        print(f"  warning: {step_id} image {msg}")
+                else:
+                    browser.page.wait_for_timeout(1500)
+                shot = run_dir / f"{step['screenshot']}.png"
+                png = browser.screenshot_bytes(full_page=True)
+                shot.write_bytes(png)
+                step_record["screenshot"] = shot.name
+                desc_queue.append((shot, base_ctx))
+                if step.get("capture_image_bbox"):
+                    bbox = main_image_bbox(browser, png)
+                    if bbox:
+                        meta[f"{step_id}_img_bbox"] = bbox
+                        print(f"  image bbox: {bbox['x']},{bbox['y']} {bbox['width']}x{bbox['height']}")
+                    else:
+                        print(f"  warning: no main image area found for {step_id} bbox")
+                if step.get("download_main_image"):
+                    img_info = download_main_image(browser, run_dir, step["screenshot"])
+                    meta[f"{step_id}_main_image"] = img_info
+                    if img_info.get("file"):
+                        step_record["main_image"] = img_info["file"]
+                        n_overlays = len(img_info.get("overlays", []))
+                        composite = (img_info.get("composite") or {}).get("file")
+                        print(
+                            f"  main image saved -> {img_info['file']} "
+                            f"({img_info['method']}, {img_info['native_width']}x{img_info['native_height']}"
+                            f"{f', +{n_overlays} overlay(s)' if n_overlays else ''}"
+                            f"{f', composite {composite}' if composite else ''})"
+                        )
+                    else:
+                        print(f"  warning: main image not saved: {img_info.get('error')}")
+            step_record["status"] = "success"
+            step_record["matched_recipe"] = recipe_name
+            step_record["duration_s"] = round(time.monotonic() - step_t0, 1)
+            manifest["steps"].append(step_record)
+            print(f"  OK ({step_record['layer']}, {step_record['duration_s']}s)")
+
+    except Exception as e:
+        print(f"\nFAILED: {e}", file=sys.stderr)
+        manifest["error"] = str(e)
+        try:
+            (run_dir / "failure.png").write_bytes(browser.screenshot_bytes(full_page=True))
+            (run_dir / "failure_snapshot.txt").write_text(browser.snapshot())
+        except Exception:
+            pass
+        exit_code = 1
+    finally:
+        # Describe whatever was captured, even on a failed run; a description
+        # failure must never mask the run's own outcome.
+        manifest["steps_duration_s"] = round(time.monotonic() - run_t0, 1)
+        if desc_queue and not args.skip_descriptions:
+            desc_t0 = time.monotonic()
+            print(f"\ndescribing {len(desc_queue)} screenshot(s)...")
+            descriptions = {}
+            for shot_path, ctx in desc_queue:
+                try:
+                    descriptions[shot_path.name] = describe_screenshot(
+                        shot_path.read_bytes(), ctx
+                    )
+                    print(f"  described {shot_path.name}")
+                except Exception as e:
+                    descriptions[shot_path.name] = f"[description failed: {e}]"
+                    print(f"  FAILED to describe {shot_path.name}: {e}", file=sys.stderr)
+            (run_dir / "descriptions.json").write_text(
+                json.dumps(descriptions, indent=2)
+            )
+            manifest["descriptions"] = "descriptions.json"
+            manifest["descriptions_duration_s"] = round(time.monotonic() - desc_t0, 1)
+        flow_path = run_dir / "node_red_flow.json"
+        if flow_path.exists() and not args.skip_descriptions:
+            nr_t0 = time.monotonic()
+            print("describing node-red flow...")
+            try:
+                (run_dir / "node_red_description.md").write_text(
+                    describe_node_red(
+                        flow_path.read_text(),
+                        {"variant": manifest.get("variant"), "recipe": manifest.get("recipe_input")},
+                    )
+                )
+                manifest["node_red_description"] = "node_red_description.md"
+                manifest["node_red_duration_s"] = round(time.monotonic() - nr_t0, 1)
+                print("  node_red_description.md written")
+            except Exception as e:
+                print(f"  FAILED to describe node-red flow: {e}", file=sys.stderr)
+        try:
+            composed = compose_imaging_with_template(run_dir, meta, manifest)
+            if composed:
+                meta["imaging_setup_with_template"] = composed
+                print(f"composed imaging+template -> {composed['file']}")
+        except Exception as e:
+            print(f"FAILED to compose imaging+template: {e}", file=sys.stderr)
+        if meta:
+            (run_dir / "meta.json").write_text(json.dumps(meta, indent=2))
+            manifest["meta"] = "meta.json"
+        manifest["duration_s"] = round(time.monotonic() - run_t0, 1)
+        manifest["finished"] = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        browser.close()
+        step_times = ", ".join(
+            f"{s['id']}={s.get('duration_s', '?')}s" for s in manifest["steps"]
+        )
+        if step_times:
+            print(f"\ntimings: total={manifest['duration_s']}s | {step_times}")
+        print(f"run dir: {run_dir}")
+
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

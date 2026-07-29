@@ -1,0 +1,36 @@
+[project]
+name = "deck-builder"
+version = "0.1.0"
+description = "Screenshot-run to Google Slides deck builder: fills case-study skeletons from system screenshots + user context"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "slide-creator",
+    "python-pptx>=1.0.0",
+    "pillow>=10.0.0",
+    "pydantic>=2.6.0",
+    "anthropic>=0.40.0",
+    "python-dotenv>=1.0.0",
+    "google-api-python-client>=2.140.0",
+    "google-auth>=2.35.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-auth-httplib2>=0.2.0",
+    "lxml>=5.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.uv.sources]
+slide-creator = { path = "../../slide_creator", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["deck_builder"]
+module-root = ""
