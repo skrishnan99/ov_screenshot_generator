@@ -149,10 +149,13 @@ slides:
               settings actually present in the material, plain values).
         image:
           select:
+            - {path: "{model_settings_screenshot}"}
             - {step: model_settings, kind: screenshot, path_contains: "{model_slug}"}
+            - {step: model_settings, kind: screenshot}
           expects: >
             The settings dialog for model "{model_label}" showing its
-            training/model configuration.
+            training/model configuration. It must be THIS model's dialog —
+            answer -1 rather than another model's settings.
 
       - id: model_training_report
         freeform:
@@ -165,10 +168,13 @@ slides:
               material, plain values like "Training accuracy: 100%".
         image:
           select:
+            - {path: "{model_report_screenshot}"}
             - {step: training_reports, kind: screenshot, path_contains: "{model_slug}"}
+            - {step: training_reports, kind: screenshot}
           expects: >
             The training report for model "{model_label}" with its metrics
-            and charts.
+            and charts. It must be THIS model's report — answer -1 rather
+            than another model's report.
 
       - id: model_results_cls
         only_type: classification

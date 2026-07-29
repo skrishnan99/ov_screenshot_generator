@@ -8,11 +8,8 @@ anything but a confident match makes the caller fall back to the full agent.
 
 from __future__ import annotations
 
-import json
-
-import anthropic
-
-MODEL = "claude-opus-5"
+from core import llm
+from core.llm import LLMRefusal, complete
 
 SCHEMA = {
     "type": "object",
@@ -90,8 +87,9 @@ It has a "Models" section listing the AI models configured for this recipe (ther
 List every model shown in the Models section:
 - "entry_text": the verbatim text of that model's clickable element, copied exactly from the
   snapshot (e.g. a button labeled with the model).
-- "name": a short human-readable name for the model to use in a screenshot filename
-  (derived from what the UI shows, e.g. its label/type).
+- "name": the model's name ONLY, WITHOUT its type — the type goes in "model_type". If the
+  UI shows "Horn Quality" as a Classification model, name is "Horn Quality", never
+  "Horn Quality Classification".
 
 Do NOT include navigation tabs (e.g. "Segmentation Block"), the "Add" button, or anything
 outside the Models section. Return an empty list if no models are configured.
@@ -101,17 +99,16 @@ UI snapshot:
 
 
 def list_models(snapshot: str) -> list[dict]:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=2000,
-        output_config={"format": {"type": "json_schema", "schema": MODELS_SCHEMA}},
-        messages=[{"role": "user", "content": MODELS_PROMPT.format(snapshot=snapshot)}],
-    )
-    if response.stop_reason == "refusal":
+    # Sonnet: straightforward structured extraction of visible rows.
+    try:
+        return complete(
+            MODELS_PROMPT.format(snapshot=snapshot),
+            schema=MODELS_SCHEMA,
+            max_tokens=2000,
+            model=llm.SONNET,
+        )["models"]
+    except LLMRefusal:
         return []
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)["models"]
 
 
 REPORTS_SCHEMA = {
@@ -147,7 +144,7 @@ It lists the recipe's AI models with training information (e.g. "Last trained ..
 
 List every model that has an AVAILABLE training report — i.e. a clickable, non-disabled
 "View" control (typically below "Last trained") that opens the training report. For each:
-- "name": the model's name as displayed.
+- "name": the model's name ONLY, WITHOUT its type (the type goes in "type").
 - "type": the model's type as displayed (e.g. Classification, Segmentation).
 - "entry_text": the verbatim text of the clickable element that opens the report, copied
   exactly from the snapshot.
@@ -160,17 +157,16 @@ UI snapshot:
 
 
 def list_training_reports(snapshot: str) -> list[dict]:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=2000,
-        output_config={"format": {"type": "json_schema", "schema": REPORTS_SCHEMA}},
-        messages=[{"role": "user", "content": REPORTS_PROMPT.format(snapshot=snapshot)}],
-    )
-    if response.stop_reason == "refusal":
+    # Sonnet: straightforward structured extraction of visible rows.
+    try:
+        return complete(
+            REPORTS_PROMPT.format(snapshot=snapshot),
+            schema=REPORTS_SCHEMA,
+            max_tokens=2000,
+            model=llm.SONNET,
+        )["models"]
+    except LLMRefusal:
         return []
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)["models"]
 
 
 SETTINGS_SCHEMA = {
@@ -207,7 +203,7 @@ icon buttons appear in the snapshot as elements with empty text, or as spans wit
 role=img and the icon name such as "setting", inside/near the model's row).
 
 List every model that has a clickable settings control, with:
-- "name": the model's name as displayed.
+- "name": the model's name ONLY, WITHOUT its type (the type goes in "type").
 - "type": the model's type as displayed (e.g. Classification, Segmentation).
 - "settings_ref": the [ref] number of the element to click to open that model's settings.
   Use the model's row context (the "in: ..." text) to pick the control belonging to the
@@ -220,33 +216,20 @@ UI snapshot:
 
 
 def list_model_settings(snapshot: str) -> list[dict]:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=2000,
-        output_config={"format": {"type": "json_schema", "schema": SETTINGS_SCHEMA}},
-        messages=[{"role": "user", "content": SETTINGS_PROMPT.format(snapshot=snapshot)}],
-    )
-    if response.stop_reason == "refusal":
+    try:
+        return complete(
+            SETTINGS_PROMPT.format(snapshot=snapshot), schema=SETTINGS_SCHEMA, max_tokens=2000
+        )["models"]
+    except LLMRefusal:
         return []
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)["models"]
 
 
 def resolve_recipe(requested: str, snapshot: str) -> dict:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=2000,
-        output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": PROMPT.format(requested=requested, snapshot=snapshot),
-            }
-        ],
-    )
-    if response.stop_reason == "refusal":
+    try:
+        return complete(
+            PROMPT.format(requested=requested, snapshot=snapshot),
+            schema=SCHEMA,
+            max_tokens=2000,
+        )
+    except LLMRefusal:
         return {"status": "not_found", "name": "", "reason": "model refused"}
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)

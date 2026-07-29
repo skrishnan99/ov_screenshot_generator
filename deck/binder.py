@@ -6,11 +6,7 @@ Image-slot matching lives in deck/matcher.py.
 
 from __future__ import annotations
 
-import json
-
-import anthropic
-
-MODEL = "claude-opus-5"
+from core.llm import complete
 
 STYLE = """You are a sales engineer at Overview writing copy for a customer-facing test-report
 slide deck about a test conducted on the customer's plant with an Overview AI vision camera.
@@ -65,19 +61,9 @@ def bind_text(token_specs: dict[str, str], pool: dict) -> dict[str, str]:
         "additionalProperties": False,
     }
     prompt = (
-        f"{STYLE}\n\nFill every field of the tool schema from the material below. "
+        f"{STYLE}\n\nFill every field of the response schema from the material below. "
         f"Field descriptions state what each slide slot needs.\n\n{_material(pool)}"
     )
-    client = anthropic.Anthropic()
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=4000,
-        output_config={"format": {"type": "json_schema", "schema": schema}},
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        response = stream.get_final_message()
-    if response.stop_reason == "refusal":
-        raise RuntimeError("text binding refused by model")
-    return json.loads("".join(b.text for b in response.content if b.type == "text"))
+    return complete(prompt, schema=schema, max_tokens=4000)
 
 

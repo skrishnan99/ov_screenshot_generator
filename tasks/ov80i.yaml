@@ -149,6 +149,9 @@ steps:
       Either the View All ROIs view is open and fully loaded (ROI content rendered,
       no loading indicators), or — if the button was disabled or absent — the
       page is unchanged.
+    # The View ROIs view can open as a dedicated model-scoped page that does
+    # not show the recipe name anywhere.
+    check_recipe: false
     always_agent: true
     screenshot: "06_view_all_rois_segmentation"
 
@@ -207,6 +210,9 @@ steps:
       Either the View All ROIs view is open and fully loaded (ROI content rendered,
       no loading indicators), or — if the button was disabled or absent — the
       page is unchanged.
+    # The View ROIs view can open as a dedicated model-scoped page that does
+    # not show the recipe name anywhere.
+    check_recipe: false
     always_agent: true
     screenshot: "08_view_all_rois_classification"
 
@@ -279,6 +285,13 @@ steps:
       "Download". This triggers a JSON file download of the current flow, which is
       captured automatically — you do not need to look for the downloaded file.
 
+      The IO page and the Node-RED editor load slowly and re-render: after opening
+      either, use wait_seconds (5-10s) BEFORE taking the snapshot you act on. If a
+      click times out with "element may be covered or gone", the page changed under
+      you — do not retry the same ref; wait a few seconds, take a fresh snapshot,
+      and re-locate the control. Prefer controls whose text or row context clearly
+      matches what you need over blind clicks on empty-text icon buttons.
+
       If any confirmation dialogs appear along the way, read them and choose the
       option that proceeds; do not cancel or abandon the flow.
     postcondition: |
@@ -288,7 +301,9 @@ steps:
     expect_download: true
     download_as: node_red_flow.json
     # Icon-only buttons don't replay reliably (two flaky-replay incidents);
-    # the agent handles this flow consistently.
+    # the agent handles this flow consistently. The slow-loading Node-RED
+    # iframe can eat many turns on stale refs, hence the raised budget.
+    max_model_calls: 45
     always_agent: true
 
   - id: library

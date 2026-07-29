@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import re
 import sys
 import time
@@ -22,6 +23,7 @@ from urllib.parse import urlparse
 
 import yaml
 
+from core import llm
 from core import trace as trace_store
 from core.browser import Browser
 from core.describer import describe_node_red, describe_screenshot, poll_image_loaded
@@ -375,8 +377,28 @@ def _click_scoped(browser, entry_text: str, scope_hint: str) -> bool:
 
 
 
+def _envelope_entry(meta: dict, name: str, model_type: str) -> dict | None:
+    """Match an enumerated model to its meta["models"] entry. Different
+    enumerators sometimes format the same model's name differently (e.g. with
+    the type appended), so after an exact slug match, fall back to slug
+    containment either way — accepted only when unambiguous and type-compatible."""
+    slug, typ = slugify(name), slugify(model_type or "")
+
+    def type_ok(e):
+        et = slugify(e.get("type") or "")
+        return not et or not typ or et in typ or typ in et
+
+    entries = [e for e in meta.get("models", []) if type_ok(e)]
+    for e in entries:
+        if e.get("slug") == slug:
+            return e
+    hits = [e for e in entries if e.get("slug") and (e["slug"] in slug or slug in e["slug"])]
+    return hits[0] if len(hits) == 1 else None
+
+
 def capture_reports(
-    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict
+    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict,
+    meta: dict,
 ):
     """For steps with foreach_reports: open each model's training report (where
     available), wait for it to load, and screenshot as <model-name>_<model-type>.png."""
@@ -413,6 +435,9 @@ def capture_reports(
             description_key=name,
         )
         shots.append(out.rel(shot))
+        entry = _envelope_entry(meta, m["name"], m["type"])
+        if entry is not None:
+            entry["report_screenshot"] = out.rel(shot)
         desc_queue.append(
             (shot, {**base_ctx, "item": f"training report for model {m['name']} ({m['type']})"})
         )
@@ -425,7 +450,8 @@ SETTINGS_LOAD_WAIT_MS = 1_000
 
 
 def capture_settings(
-    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict
+    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict,
+    meta: dict,
 ):
     """For steps with foreach_settings: open each model's settings, screenshot
     as <model-name>_<model-type>_settings.png, close, repeat.
@@ -469,6 +495,9 @@ def capture_settings(
             description_key=name,
         )
         shots.append(out.rel(shot))
+        entry = _envelope_entry(meta, target["name"], target["type"])
+        if entry is not None:
+            entry["settings_screenshot"] = out.rel(shot)
         desc_queue.append(
             (shot, {**base_ctx, "item": f"settings dialog for model {target['name']} ({target['type']})"})
         )
@@ -586,10 +615,14 @@ def check_postcondition(
     return False, why
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", required=True, help="Camera URL (any path; origin is used)")
     ap.add_argument("--recipe", required=True, help="Approximate recipe name")
+    ap.add_argument(
+        "--run-dir",
+        help="Output directory for this run (default: runs/<timestamp>)",
+    )
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--force-agent", action="store_true", help="Skip trace replay")
     ap.add_argument(
@@ -602,11 +635,27 @@ def main() -> int:
         help="Comma-separated step ids to run (in spec order); others are skipped. "
         "Note: later steps may depend on earlier steps' end state.",
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--llm-backend",
+        choices=["api", "claude-code"],
+        default=os.environ.get("SG_LLM_BACKEND", "api"),
+        help="Where single-shot LLM calls run: 'api' = Anthropic API (default); "
+        "'claude-code' = through the local claude CLI using your Claude Code "
+        "login. The agentic navigator always uses the API.",
+    )
+    args = ap.parse_args(argv)
+
+    llm.select_backend(args.llm_backend)
+    if args.llm_backend == "claude-code":
+        print(
+            "LLM backend: claude-code (resolvers/describers use your Claude Code "
+            "login; agentic navigation still uses the Anthropic API and needs "
+            "ANTHROPIC_API_KEY)"
+        )
 
     origin = "{0.scheme}://{0.netloc}".format(urlparse(args.url))
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = ROOT / "runs" / f"{ts}"
+    run_dir = Path(args.run_dir) if args.run_dir else ROOT / "runs" / f"{ts}"
     run_dir.mkdir(parents=True)
     out = RunOutput(run_dir)
     manifest: dict = {
@@ -698,10 +747,29 @@ def main() -> int:
 
             if not done:
                 goal = step["goal"].format(recipe=args.recipe)
-                result = run_step(browser, goal, step["postcondition"])
                 step_record["layer"] = "agent"
-                step_record["model_calls"] = result.model_calls
-                step_record["agent_evidence"] = result.evidence
+                step_record["model_calls"] = 0
+                # Sonnet navigates first; a failed step is retried once on
+                # Opus (from a restored checkpoint) before giving up.
+                for nav_model in (llm.SONNET, llm.OPUS):
+                    result = run_step(
+                        browser,
+                        goal,
+                        step["postcondition"],
+                        max_model_calls=step.get("max_model_calls", 30),
+                        model=nav_model,
+                    )
+                    step_record["model_calls"] += result.model_calls
+                    step_record["agent_evidence"] = result.evidence
+                    step_record["agent_model"] = nav_model
+                    if result.status == "success":
+                        break
+                    if nav_model != llm.OPUS:
+                        print(f"  agent ({nav_model}) failed; escalating to {llm.OPUS}")
+                        if step.get("path"):
+                            goto_checked(browser, origin, origin + step["path"])
+                        elif checkpoint_url:
+                            browser.goto(checkpoint_url)
                 if result.status != "success":
                     step_record["status"] = "failure"
                     step_record["notes"] = result.notes
@@ -756,9 +824,9 @@ def main() -> int:
                     browser, step, out, step_record, desc_queue, base_ctx, meta
                 )
             elif step.get("foreach_reports"):
-                capture_reports(browser, step, out, step_record, desc_queue, base_ctx)
+                capture_reports(browser, step, out, step_record, desc_queue, base_ctx, meta)
             elif step.get("foreach_settings"):
-                capture_settings(browser, step, out, step_record, desc_queue, base_ctx)
+                capture_settings(browser, step, out, step_record, desc_queue, base_ctx, meta)
             elif step.get("screenshot"):
                 wait_cfg = step.get("wait_image_loaded")
                 if wait_cfg:

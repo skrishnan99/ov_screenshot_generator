@@ -3,6 +3,10 @@
 Used when no trace exists for the camera's UI version, or when replay failed.
 Every successful click/type is recorded so the run can be replayed
 deterministically next time (see core.trace).
+
+This module deliberately bypasses core.llm and talks to the Anthropic API
+directly regardless of the selected backend: its loop executes browser tools
+mid-conversation, which the one-shot headless claude-code backend cannot do.
 """
 
 from __future__ import annotations
@@ -12,7 +16,8 @@ from dataclasses import dataclass, field
 
 import anthropic
 
-MODEL = "claude-opus-5"
+from core import llm
+
 MAX_MODEL_CALLS = 30
 
 SYSTEM_PROMPT = """You are a browser-navigation agent operating an industrial vision camera's web UI \
@@ -159,7 +164,32 @@ class StepResult:
     model_calls: int = 0
 
 
-def run_step(browser, goal: str, postcondition: str, log=print) -> StepResult:
+def _move_cache_breakpoint(messages: list) -> None:
+    """Keep exactly one cache breakpoint, on the last block of the newest
+    user message, so each turn re-reads the whole prior conversation from
+    cache and only the new tool results are billed at full input price.
+    Assistant turns hold SDK objects, so only dict blocks are touched."""
+    for msg in messages:
+        if isinstance(msg.get("content"), list):
+            for block in msg["content"]:
+                if isinstance(block, dict):
+                    block.pop("cache_control", None)
+    last = messages[-1]
+    if last["role"] == "user":
+        if isinstance(last["content"], str):
+            last["content"] = [{"type": "text", "text": last["content"]}]
+        if isinstance(last["content"][-1], dict):
+            last["content"][-1]["cache_control"] = {"type": "ephemeral"}
+
+
+def run_step(
+    browser,
+    goal: str,
+    postcondition: str,
+    log=print,
+    max_model_calls: int = MAX_MODEL_CALLS,
+    model: str = llm.SONNET,
+) -> StepResult:
     client = anthropic.Anthropic()
     user = (
         f"Task:\n{goal}\n\n"
@@ -168,10 +198,16 @@ def run_step(browser, goal: str, postcondition: str, log=print) -> StepResult:
     )
     messages = [{"role": "user", "content": user}]
     actions: list[dict] = []
+    # Breakpoint after the system prompt caches the static prefix (tools +
+    # system) across every call of every step in the run.
+    system = [
+        {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
+    ]
 
-    for call_n in range(1, MAX_MODEL_CALLS + 1):
+    for call_n in range(1, max_model_calls + 1):
+        _move_cache_breakpoint(messages)
         response = client.messages.create(
-            model=MODEL, max_tokens=4096, system=SYSTEM_PROMPT, tools=TOOLS, messages=messages
+            model=model, max_tokens=4096, system=system, tools=TOOLS, messages=messages
         )
         if response.stop_reason == "refusal":
             return StepResult("failure", "", "model refused the request", "", actions, call_n)
@@ -212,8 +248,8 @@ def run_step(browser, goal: str, postcondition: str, log=print) -> StepResult:
             )
 
     return StepResult(
-        "failure", "", f"action budget exhausted ({MAX_MODEL_CALLS} model calls)", "", actions,
-        MAX_MODEL_CALLS,
+        "failure", "", f"action budget exhausted ({max_model_calls} model calls)", "", actions,
+        max_model_calls,
     )
 
 

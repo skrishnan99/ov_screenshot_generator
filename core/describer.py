@@ -9,11 +9,8 @@ screenshot belongs where — so they must be exhaustive and accurate.
 
 from __future__ import annotations
 
-import base64
-
-import anthropic
-
-MODEL = "claude-opus-5"
+from core import llm
+from core.llm import LLMRefusal, complete
 
 PROMPT = """You are documenting a screenshot from the web UI of an Overview AI industrial \
 vision camera ({variant}). These descriptions are the authoritative record of what this \
@@ -127,34 +124,18 @@ the image is loaded. Answer with loaded and a one-sentence reason."""
 
 
 def check_image_loaded(png_bytes: bytes, hint: str = "") -> dict:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1000,
-        output_config={"format": {"type": "json_schema", "schema": IMAGE_LOADED_SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": base64.standard_b64encode(png_bytes).decode(),
-                        },
-                    },
-                    {"type": "text", "text": IMAGE_LOADED_PROMPT.format(hint=hint or "n/a")},
-                ],
-            }
-        ],
-    )
-    if response.stop_reason == "refusal":
+    # Haiku: a binary loaded/not-loaded judgment, called dozens of times per
+    # run; a wrong "not loaded" just polls again, so the tier is safe.
+    try:
+        return complete(
+            IMAGE_LOADED_PROMPT.format(hint=hint or "n/a"),
+            schema=IMAGE_LOADED_SCHEMA,
+            images=[png_bytes],
+            max_tokens=1000,
+            model=llm.HAIKU,
+        )
+    except LLMRefusal:
         return {"loaded": False, "reason": "vision check refused"}
-    import json as _json
-
-    text = "".join(b.text for b in response.content if b.type == "text")
-    return _json.loads(text)
 
 
 def poll_image_loaded(
@@ -258,24 +239,15 @@ NODE_RED_SCHEMA = {
 
 def describe_node_red(flow_json: str, context: dict) -> dict:
     """Returns {"markdown": analysis, "facts": [{subject, property, value}]}."""
-    client = anthropic.Anthropic()
     prompt = NODE_RED_PROMPT.format(
         variant=context.get("variant", "unknown variant"),
         recipe=context.get("recipe", "unknown"),
         flow_json=flow_json,
     )
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=10000,
-        output_config={"format": {"type": "json_schema", "schema": NODE_RED_SCHEMA}},
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        response = stream.get_final_message()
-    if response.stop_reason == "refusal":
+    try:
+        return complete(prompt, schema=NODE_RED_SCHEMA, max_tokens=10000)
+    except LLMRefusal:
         return {"markdown": "[node-red description refused by model]", "facts": []}
-    import json as _json
-
-    return _json.loads("".join(b.text for b in response.content if b.type == "text"))
 
 
 def describe_screenshot(png_bytes: bytes, context: dict) -> dict:
@@ -289,30 +261,7 @@ def describe_screenshot(png_bytes: bytes, context: dict) -> dict:
         intent=" ".join((context.get("intent") or "").split()) or "n/a",
         item_line=item_line,
     )
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=4000,
-        output_config={"format": {"type": "json_schema", "schema": DESCRIBE_SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": base64.standard_b64encode(png_bytes).decode(),
-                        },
-                    },
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ],
-    )
-    if response.stop_reason == "refusal":
+    try:
+        return complete(prompt, schema=DESCRIBE_SCHEMA, images=[png_bytes], max_tokens=4000)
+    except LLMRefusal:
         return {"description": "[description refused by model]", "facts": []}
-    import json as _json
-
-    return _json.loads("".join(b.text for b in response.content if b.type == "text"))

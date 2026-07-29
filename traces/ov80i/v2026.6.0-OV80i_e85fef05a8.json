@@ -104,6 +104,13 @@
       "actions": [
         {
           "action": "click",
+          "tag": "div",
+          "text": "back",
+          "ctx": "View ROIs Horn Quality Filters Load Unlabeled ROIs per page 100 Showing 30 of 30 ROIs Pass Apr 13, 7:17 AM Apr",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click",
           "tag": "a",
           "text": "#4 Camera 56959 Tail",
           "ctx": "",

@@ -12,12 +12,11 @@ report_abstract.md into the run dir.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
-import anthropic
-
-MODEL = "claude-opus-5"
+from core import llm
 
 PROMPT = """You are a sales engineer at Overview writing the abstract of a test report for the \
 Overview AI Vision Inspection System. The test was conducted on a customer's plant; the report \
@@ -78,22 +77,14 @@ def main() -> int:
     node_red = _find(run_dir, "node_red_description.md").read_text()
 
     desc_text = "\n\n".join(f"### {name}\n{text}" for name, text in descriptions.items())
-    client = anthropic.Anthropic()
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=2000,
-        messages=[
-            {
-                "role": "user",
-                "content": PROMPT.format(descriptions=desc_text, node_red=node_red),
-            }
-        ],
-    ) as stream:
-        response = stream.get_final_message()
-    if response.stop_reason == "refusal":
+    llm.select_backend(os.environ.get("SG_LLM_BACKEND", "api"))
+    try:
+        abstract = llm.complete(
+            PROMPT.format(descriptions=desc_text, node_red=node_red), max_tokens=2000
+        ).strip()
+    except llm.LLMRefusal:
         print("model refused", file=sys.stderr)
         return 1
-    abstract = "".join(b.text for b in response.content if b.type == "text").strip()
 
     report_dir = run_dir / "deliverables" / "report"
     out = (report_dir if report_dir.is_dir() else run_dir) / "report_abstract.md"

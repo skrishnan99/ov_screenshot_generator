@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import re
 import sys
 import time
@@ -24,6 +25,7 @@ from pathlib import Path
 
 import yaml
 
+from core import llm
 from deck.assemble import build_deck
 from deck.binder import bind_text
 from deck.content import filter_assets, load_engineer_inputs, load_run, resolve_asset
@@ -75,6 +77,11 @@ def build_plan(spec: dict, pool: dict, verify_images: bool = False) -> dict:
     det_report: list[dict] = []
     catalog = build_catalog(pool)
     cat_index = {a["path"]: i for i, a in enumerate(catalog)}
+    # Engineer-provided photos join every slot's candidate set (and force the
+    # slot through semantic assignment even when a selector matched exactly
+    # one extractor asset) so they can take precedence over extractor
+    # screenshots wherever they genuinely fit.
+    engineer_idxs = [i for i, a in enumerate(catalog) if a.get("source") == "engineer"]
     warned: set[str] = set()
 
     def emit(s: dict, item: dict | None):
@@ -183,6 +190,7 @@ def build_plan(spec: dict, pool: dict, verify_images: bool = False) -> dict:
             if item is not None and "expects" not in img and "llm" not in img:
                 expects += f' This slide is specifically about the model "{item["label"]}".'
             cand_idxs = None
+            widened = False
             if img.get("select") is not None:
                 selectors = img["select"]
                 selectors = selectors if isinstance(selectors, list) else [selectors]
@@ -196,22 +204,34 @@ def build_plan(spec: dict, pool: dict, verify_images: bool = False) -> dict:
                         candidates, used_sel = hits, sel
                         break
                 if not candidates:
-                    if required:
-                        entry["skipped"] = f"image not found: {selectors}"
+                    if not required:
+                        det_report.append(
+                            {
+                                "slot": slot_id,
+                                "slide": sid,
+                                "stage": "skipped",
+                                "asset": None,
+                                "reason": f"optional slot; no selector matched: {selectors}",
+                                "candidates": 0,
+                            }
+                        )
+                        continue
+                    if not catalog:
+                        entry["skipped"] = "no image assets in the pool"
                         slides.append(entry)
                         return
-                    det_report.append(
-                        {
-                            "slot": slot_id,
-                            "slide": sid,
-                            "stage": "skipped",
-                            "asset": None,
-                            "reason": f"optional slot; no selector matched: {selectors}",
-                            "candidates": 0,
-                        }
+                    # Guardrail: selectors are an optimization, never the last
+                    # line of defense. A required slot whose ladder came up
+                    # empty is widened to the FULL pool and decided by
+                    # semantic assignment (with forced vision verification);
+                    # only a genuine no-match skips the slide.
+                    cand_idxs = list(range(len(catalog)))
+                    widened = True
+                    print(
+                        f"  slot {slot_id}: no selector matched; widening to "
+                        f"full pool for semantic assignment"
                     )
-                    continue
-                if len(candidates) == 1:
+                elif len(candidates) == 1 and not engineer_idxs:
                     images.append(candidates[0]["abs_path"])
                     det_report.append(
                         {
@@ -224,7 +244,10 @@ def build_plan(spec: dict, pool: dict, verify_images: bool = False) -> dict:
                         }
                     )
                     continue
-                cand_idxs = [cat_index[c["path"]] for c in candidates]
+                else:
+                    cand_idxs = [cat_index[c["path"]] for c in candidates]
+            if cand_idxs is not None and engineer_idxs:
+                cand_idxs = sorted(set(cand_idxs) | set(engineer_idxs))
             match_slots.append(
                 {
                     "id": slot_id,
@@ -235,6 +258,7 @@ def build_plan(spec: dict, pool: dict, verify_images: bool = False) -> dict:
                     "width_in": slot_meta.get("width_in"),
                     "height_in": slot_meta.get("height_in"),
                     "required": required,
+                    "widened": widened,
                 }
             )
             images.append({"match": slot_id})
@@ -315,7 +339,7 @@ def build_plan(spec: dict, pool: dict, verify_images: bool = False) -> dict:
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True, help="Extractor run directory")
     ap.add_argument("--variant", required=True, help="Deck spec variant (decks/<variant>.yaml)")
@@ -328,7 +352,18 @@ def main() -> int:
     )
     ap.add_argument("--plan-only", action="store_true", help="Stop after writing plan.json")
     ap.add_argument("--plan", help="Reuse an existing plan.json (skips all LLM binding)")
-    args = ap.parse_args()
+    ap.add_argument(
+        "--llm-backend",
+        choices=["api", "claude-code"],
+        default=os.environ.get("SG_LLM_BACKEND", "api"),
+        help="Where LLM calls run: 'api' = Anthropic API (default); 'claude-code' = "
+        "through the local claude CLI using your Claude Code login.",
+    )
+    args = ap.parse_args(argv)
+
+    llm.select_backend(args.llm_backend)
+    if args.llm_backend == "claude-code":
+        print("LLM backend: claude-code (all deck LLM calls use your Claude Code login)")
 
     t0 = time.monotonic()
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

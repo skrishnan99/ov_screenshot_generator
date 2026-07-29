@@ -17,15 +17,12 @@ Three composable stages, each recorded in a match report:
 
 from __future__ import annotations
 
-import base64
 import io
-import json
 
-import anthropic
-
+from core import llm
+from core.llm import LLMRefusal, complete
 from deck.content import asset_path
 
-MODEL = "claude-opus-5"
 CATALOG_DESC_CHARS = 800
 VERIFY_MAX_PX = 1568
 
@@ -90,11 +87,18 @@ def _slot_lines(slots: list[dict]) -> str:
         geom = ""
         if s.get("width_in"):
             geom = f" | slot size {s['width_in']}x{s['height_in']}in"
+        widened = (
+            "\n  NOTE: no convention-based selector matched this slot, so the whole "
+            "catalog is offered — be strict: pick only an asset that genuinely shows "
+            "what the slot needs, else -1."
+            if s.get("widened")
+            else ""
+        )
         lines.append(
             f'- slot "{s["id"]}" on slide "{s["slide"]}" '
             f'(headline: "{s.get("slide_title") or "?"}"{geom})\n'
             f"  needs: {s['expects']}\n"
-            f"  allowed assets: {allowed}"
+            f"  allowed assets: {allowed}{widened}"
         )
     return "\n".join(lines)
 
@@ -112,6 +116,10 @@ Assign the best catalog asset to every slot, considering ALL slots together:
   screen and no distinct alternative exists.
 - Slots on model-specific slides (the slot text names the model) must get the asset for
   THAT model — check the descriptions for the model's name and type.
+- Photos provided by the sales engineer (source=engineer) take PRECEDENCE over extractor
+  screenshots: when an engineer photo genuinely shows what a slot needs, choose it over
+  the equivalent extractor capture. If the engineer's notes direct a photo to a specific
+  slide, follow them. Never force an engineer photo into a slot it doesn't fit.
 - Prefer assets whose orientation suits the slot's size; this is a tiebreaker, not a rule.
 - Give a short reason for every answer, naming the evidence in the asset's description.
 
@@ -155,17 +163,7 @@ def assign_images(slots: list[dict], catalog: list[dict], pool: dict) -> dict:
     prompt = ASSIGN_PROMPT.format(
         notes_block=notes_block, slots=_slot_lines(slots), catalog=_catalog_lines(catalog)
     )
-    client = anthropic.Anthropic()
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=4000,
-        output_config={"format": {"type": "json_schema", "schema": schema}},
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        response = stream.get_final_message()
-    if response.stop_reason == "refusal":
-        raise RuntimeError("image assignment refused by model")
-    return json.loads("".join(b.text for b in response.content if b.type == "text"))
+    return complete(prompt, schema=schema, max_tokens=4000)
 
 
 VERIFY_SCHEMA = {
@@ -190,8 +188,8 @@ match = false. Cropping, resolution, and cosmetic differences do not. Answer wit
 and a one-sentence reason."""
 
 
-def _image_block(path: str) -> dict:
-    """Downscaled PNG content block — full-page captures can be huge."""
+def _downscaled_png(path: str) -> bytes:
+    """Downscaled PNG bytes — full-page captures can be huge."""
     from PIL import Image
 
     with Image.open(path) as im:
@@ -201,40 +199,23 @@ def _image_block(path: str) -> dict:
             im = im.resize((int(im.width * scale), int(im.height * scale)))
         buf = io.BytesIO()
         im.save(buf, format="PNG")
-    return {
-        "type": "image",
-        "source": {
-            "type": "base64",
-            "media_type": "image/png",
-            "data": base64.standard_b64encode(buf.getvalue()).decode(),
-        },
-    }
+    return buf.getvalue()
 
 
 def verify_pair(image_path: str, slot: dict) -> dict:
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1000,
-        output_config={"format": {"type": "json_schema", "schema": VERIFY_SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    _image_block(image_path),
-                    {
-                        "type": "text",
-                        "text": VERIFY_PROMPT.format(
-                            title=slot.get("slide_title") or "?", expects=slot["expects"]
-                        ),
-                    },
-                ],
-            }
-        ],
+    prompt = VERIFY_PROMPT.format(
+        title=slot.get("slide_title") or "?", expects=slot["expects"]
     )
-    if response.stop_reason == "refusal":
+    try:
+        return complete(
+            prompt,
+            schema=VERIFY_SCHEMA,
+            images=[_downscaled_png(image_path)],
+            max_tokens=1000,
+            model=llm.SONNET,
+        )
+    except LLMRefusal:
         return {"match": True, "reason": "verification refused; keeping assignment"}
-    return json.loads("".join(b.text for b in response.content if b.type == "text"))
 
 
 def match_images(
@@ -272,6 +253,7 @@ def match_images(
             "slide": s["slide"],
             "reason": pick["reason"],
             "candidates": "all" if s["candidates"] is None else len(s["candidates"]),
+            **({"widened": True} if s.get("widened") else {}),
             **entry,
         }
 
@@ -284,13 +266,19 @@ def match_images(
             for sid in sids:
                 entries[sid]["shared_with"] = [x for x in sids if x != sid]
 
-    if verify:
-        by_id = {s["id"]: s for s in slots}
+    by_id = {s["id"]: s for s in slots}
+    # Widened slots (no selector matched; full-pool assignment) are always
+    # vision-verified — they are the least constrained picks in the deck.
+    if verify or any(
+        s.get("widened") and choices.get(s["id"]) is not None for s in slots
+    ):
         failed: list[dict] = []
         for sid, idx in choices.items():
             if idx is None:
                 continue
             slot = by_id[sid]
+            if not (verify or slot.get("widened")):
+                continue
             verdict = verify_pair(catalog[idx]["abs_path"], slot)
             entries[sid]["verified"] = verdict["match"]
             entries[sid]["verify_reason"] = verdict["reason"]
