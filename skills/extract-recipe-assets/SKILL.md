@@ -1,6 +1,6 @@
 ---
 name: extract-recipe-assets
-description: "Capture a complete folder of inspection assets from an Overview AI camera for one recipe — screenshots of every configuration screen, native-resolution images, vision descriptions, structured metadata, and the Node-RED IO logic summary. Use when a sales engineer wants recipe assets or screenshots from an OV camera, given a camera URL and recipe name. This is step 1 of the two-step report flow: if the same request also asks for a deck, report or case study, run this first and then continue into the overview-deck skill without stopping to ask."
+description: "Capture a complete folder of inspection assets from an Overview AI camera for one recipe — screenshots of every configuration screen, native-resolution images, vision descriptions, structured metadata, and the Node-RED IO logic summary. Use when a sales engineer wants recipe assets or screenshots from an OV camera, given a camera URL and recipe name. Runs unattended — states what it is doing and proceeds, rather than asking for confirmation. This is step 1 of the two-step report flow: if the same request also asks for a deck, report or case study, run this first and then continue into the overview-deck skill without stopping to ask."
 ---
 
 # Extract recipe assets from an OV camera
@@ -14,6 +14,33 @@ The plugin root (referenced as `$PLUGIN_ROOT` below) is the directory two
 levels above this SKILL.md file; when the environment variable
 `CLAUDE_PLUGIN_ROOT` is set, use that.
 
+## Operating mode: fire and forget
+
+A sales engineer gives one instruction — a camera, an approximate recipe name,
+maybe some notes — and expects to come back to a finished deck. The whole job
+takes ~45 minutes, and **every question you ask blocks it for as long as they
+take to notice.** They are not watching. A run that stalls on "which audience
+is this for?" wastes the entire window and is the worst outcome this skill has.
+
+So: **take the request, fill the gaps with the documented defaults, and run the
+whole thing to completion** — extract, then hand straight to the deck skill — without
+checking in.
+
+Stop and ask only when you genuinely cannot proceed:
+
+- the recipe name matches several recipes and there is no way to pick
+- the camera is unreachable, or there are no assets and no camera URL
+- the request asks for something that would destroy or overwrite existing work
+
+Everything else has an answer in this skill. A missing byline, an ambiguous
+audience, a degraded run, a model with no training report — decide, note it,
+and keep going. Report every assumption you made in the final summary, where it
+costs the engineer nothing to read.
+
+Progress narration is welcome; questions are not.
+
+---
+
 ## 1. Collect inputs
 
 From the conversation (ask only for what's missing):
@@ -24,10 +51,15 @@ From the conversation (ask only for what's missing):
 - **Variant** (optional, e.g. `ov80i`) — used only for a preflight support
   check; the pipeline auto-detects the real variant.
 
-Before running, tell the engineer: the run takes **~20 minutes** for a recipe
-with two or three AI models, and it will **activate the recipe on the camera**
-if it is currently inactive (that is how the editor opens). If the camera is
-on a production line, they should confirm that's acceptable.
+Before running, state — do not ask — that the run takes **~20 minutes** for a
+recipe with two or three AI models, and that it will **activate the recipe on
+the camera** if it is currently inactive (that is how the editor opens). Then
+start.
+
+The engineer chose this camera, so treat activation as expected. The one
+exception: if their own request says the camera is on a live or production
+line, confirm before touching it — that is the "extremely dangerous" case, and
+the only one here worth blocking for.
 
 Time scales with the number of models, not the number of steps: each model
 adds its own ROI, view-all-ROIs, settings and training-report captures, and
@@ -115,11 +147,14 @@ tier are still useful but less exhaustive.
 The pipeline stops at the failing step and names it. Diagnose from
 `data/manifest.json` (per-step status/notes) and `debug/failure.png` +
 `debug/failure_snapshot.txt` — view the failure screenshot and explain in
-plain language what the camera UI showed. Offer exactly one retry (a rerun
-is safe and often succeeds; transient UI slowness is the usual cause). If it
-fails twice at the same step, collect the run directory path and the failure
-screenshot for the engineer to send to the plugin maintainer — do not try to
-fix the pipeline yourself.
+plain language what the camera UI showed.
+
+**Retry once automatically.** A rerun is safe, transient UI slowness is the
+usual cause, and it often succeeds. Do not ask permission — say you are
+retrying and retry. If it fails twice at the same step, stop and report: the
+run directory path, the failing step, and the failure screenshot for the
+engineer to send to the plugin maintainer. Do not try to fix the pipeline
+yourself.
 
 Two failures have specific answers rather than a retry:
 - **Subscription limit reached** — relay the reset time; retrying before it

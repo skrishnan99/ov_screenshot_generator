@@ -1,6 +1,6 @@
 ---
 name: overview-deck
-description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and publish it to the team's shared Google Drive as Google Slides. Publishing is automatic and needs no confirmation — every finished deck is uploaded unless the request explicitly said not to. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
+description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and publish it to the team's shared Google Drive as Google Slides. Runs end to end without check-ins: a sales engineer gives one instruction and comes back to a finished, published deck ~45 minutes later, so gaps are filled with documented defaults rather than questions. Publishing is automatic and needs no confirmation — every finished deck is uploaded unless the request explicitly said not to. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
 ---
 
 # Overview.ai deck builder
@@ -18,6 +18,33 @@ things make that safe, and neither is optional:
 The brand pack lives in `assets/brand/` and is the authority on colour and
 logo. The example decks are the authority on *structure and tone* — never on
 colour (see the warning in step 5).
+
+---
+
+## Operating mode: fire and forget
+
+A sales engineer gives one instruction — a camera, an approximate recipe name,
+maybe some notes — and expects to come back to a finished deck. The whole job
+takes ~45 minutes, and **every question you ask blocks it for as long as they
+take to notice.** They are not watching. A run that stalls on "which audience
+is this for?" wastes the entire window and is the worst outcome this skill has.
+
+So: **take the request, fill the gaps with the documented defaults, and run the
+whole thing to completion** — extract, build, verify, publish — without
+checking in.
+
+Stop and ask only when you genuinely cannot proceed:
+
+- the recipe name matches several recipes and there is no way to pick
+- the camera is unreachable, or there are no assets and no camera URL
+- the request asks for something that would destroy or overwrite existing work
+
+Everything else has an answer in this skill. A missing byline, an ambiguous
+audience, a degraded run, a model with no training report — decide, note it,
+and keep going. Report every assumption you made in the final summary, where it
+costs the engineer nothing to read.
+
+Progress narration is welcome; questions are not.
 
 ---
 
@@ -55,37 +82,41 @@ uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/make_logo_variants.py
 
 ---
 
-## 1. Collect inputs
+## 1. Collect inputs — from the request, not from the user
 
-Ask only for what you cannot determine:
+This is a **fire-and-forget job** (see *Operating mode* above). Take everything
+from the initial request, default the rest, and start. Do not open with a round
+of questions.
 
-- **Source assets** — usually an OV extraction run directory (`runs/<ts>/`)
-  containing `deliverables/` and `data/`.
+- **Source assets** — an OV extraction run directory (`runs/<ts>/`) containing
+  `deliverables/` and `data/`.
 
-  **If no run exists yet and they gave you a camera URL and recipe name, run
-  the extraction yourself**: invoke `ov-test-reports:extract-recipe-assets`,
-  wait for it to finish (~20 minutes), then carry on here with the run
-  directory it produced. "Get the assets and build a report" is one request,
-  not two — do not hand the user a homework assignment and stop.
+  **If no run exists yet and they gave a camera URL and recipe name, run the
+  extraction yourself**: invoke `ov-test-reports:extract-recipe-assets`, wait
+  for it (~20 minutes), then carry on here with the run directory it produced.
+  "Get the assets and build a report" is one request, not two.
 
-  Tell them the shape of it before you start, because the whole thing is
-  ~45 minutes: roughly 20 extracting from the camera, then 25 building and
-  verifying the deck. Only ask for a run directory when there is genuinely no
-  way to produce one — no camera URL, or the camera is unreachable.
-- **Audience** — customer-facing or internal. This decides whether the
-  engineering-observations slide stays (see `references/content-rules.md`).
-- **Author and date** for the title slide.
-- **Site-visit notes or photos**, if they have any — a photo of the real part
-  makes a far better title image than a screenshot.
+  Say the shape of it once, before you start — ~45 minutes, roughly 20
+  extracting and 25 building — then go quiet and work.
 
-Do not ask where the deck should go or whether to upload it: finished decks
-publish to the team shared drive automatically (step 7). Note it only if the
-request explicitly opted out.
+**Everything else has a default. Use it; do not ask.**
 
-Tell the user up front if the run is degraded (missing screenshots, error
-modals captured, `model_substitutions` in the manifest). A deck built from a
-broken run will have visible gaps, and they should decide whether to re-extract
-first.
+| Input | Default when unstated |
+|---|---|
+| Audience | **Customer-facing.** Keep the observations slide, written the way `content-rules.md` §3 describes. |
+| Date | Today. |
+| Author | Omit the line. A missing byline is better than a blocked run. |
+| Camera model / industry / application | Read from `manifest.json` (`variant`), the recipe name, and the descriptions. |
+| Notes and photos | Use them if the request supplied them or named a path. Never ask whether any exist. |
+| Where it goes | The team shared drive, automatically (step 7). |
+| Structure | `references/default-deck.md`. |
+
+A degraded run (missing screenshots, error modals captured,
+`model_substitutions` in the manifest) is **not** a reason to stop and ask.
+Build the deck from what exists, omit what is missing, and say plainly in the
+final summary which slides were affected and why. The engineer can decide
+about re-extracting once they have something to look at — that decision is
+cheap after the fact and expensive as an interruption.
 
 ---
 
