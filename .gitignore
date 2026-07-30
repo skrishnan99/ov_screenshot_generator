@@ -7,6 +7,11 @@
 # Run outputs (screenshots, downloads, descriptions, manifests) — generated per run
 runs/
 
+# Ad-hoc report bundles produced by pipeline.py --out. These are deliverables,
+# not source: one of them (85 MB) was tracked by accident and shipped to every
+# plugin install.
+test_report_*/
+
 # Python-generated files
 __pycache__/
 *.py[oc]
