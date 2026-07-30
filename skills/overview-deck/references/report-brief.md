@@ -66,34 +66,150 @@ the result — accuracy, counts, resolution, cycle time.
 
 ---
 
-## The narrative arc
+## The house shape, from the blank template
 
-The slide order is an argument, not a tour of the UI. Each phase answers the
-reader's next question:
+`assets/example-decks/Overview AI blank test report.pptx` is the frame the team
+fills in. Follow it. Read it directly with python-pptx before planning.
 
-1. **Title** — whose part, whose line, who ran it, when.
-2. **Problem / solution** — *what are we inspecting and why is it hard?*
-   Then: *how does the system solve it?* This is the only place that may be
-   two paragraphs of prose. Everything after it is evidence for these claims.
-3. **What the recipe does** — one sentence a reader can repeat to a colleague.
-4. **How it was set up** — imaging, alignment, inspection regions. *Where does
-   the camera look, and under what conditions?*
-5. **Per AI model** — what it decides, the labelled data it learned from, how
-   it was trained, how it scored. This is the heart of the report: it is where
-   a sceptical quality manager decides whether to believe you.
-6. **IO logic** — *how does a decision become an action on the line?*
-7. **Image library** — the volume of real data behind it.
-8. **Observations** — what you would tell them candidly.
-9. **Closing** — what happens next.
+**Title slide is a three-part identity**, not a sentence:
 
-A recipe with one model is a shorter argument, not a padded one.
+```
+OV20i                      <- the camera model tested
+Logistics                  <- the customer's industry
+Measurement box size       <- the application, in their words
+```
+
+**Slide 2 states the outcome before any method.** The application name, one
+sentence of what was achieved, and the result screenshot:
+
+> "Successfully set up measurement to ensure clips are positioned within
+> tolerance."
+
+Everything after it is evidence for that sentence. If you cannot write that
+sentence honestly, the deck is reporting a different result — say what
+actually happened instead.
+
+**Then a numbered spine under "Configuring <camera>".** These five steps are
+the report's backbone; drop one only when the recipe genuinely has no such
+stage:
+
+| | Step | Covers |
+|---|---|---|
+| 1 | Image settings | camera, lens, lighting, exposure — set electronically after the physical setup |
+| 2 | Identify features to align to | what the recipe orients against, or why alignment is skipped |
+| 3 | Create inspection models | one per AI model: what it decides and how it was trained |
+| 4 | Set custom logic | how a decision becomes an action — Node-RED, PLC, MES |
+| 5 | Generate results in HMI | what an operator sees at the line |
+
+**Then results, library, and standing boilerplate.** Slides 11-15 of the
+template (5 factors / defect generator / integration / team & locations /
+thank you) are company boilerplate: carry them as-is, never re-author them per
+customer, and never let their marketing register leak into the report slides.
+
+---
+
+## Anatomy of a step slide
+
+Each step slide pairs a **principle** with **what was actually done on this
+part**. That pairing is the house voice — miss it and the deck reads either as
+a textbook or as a config dump.
+
+```
+headline   "After camera / lens / lighting setup, adjust image settings electronically"
+label      "Step 1: Image settings"
+screenshot the result view
+bullets    "Consistent setup is key for good measurements"      <- principle
+           "Used an 8mm lens to capture ~1/3 of harness"        <- what you did
+           "Use reference tool to convert pixels to mm"         <- how, plainly
+```
+
+Two to four bullets. Short fragments, not sentences. The specific ones carry
+the credibility; the principle ones make it teachable to a reader who has
+never configured a camera.
+
+---
+
+## Numbers need their requirement
+
+The template's most important habit:
+
+> "Results were typically within 2-3mm of actuals (**desired tolerance of
+> 5-10mm**)"
+
+A measurement alone means nothing to the reader. **Always state what was
+required alongside what was achieved** — tolerance, cycle-time budget,
+acceptable false-reject rate. It converts a number into a verdict, and it is
+what a quality manager is actually looking for.
+
+If the requirement is not in the assets or the engineer's notes, say the
+measurement and note the requirement is unstated. Do not invent one.
+
+## Mark what you did not actually do
+
+The template writes **"Illustrative:"** in front of a slide showing a
+capability that was demonstrated rather than deployed in this test (its
+Node-RED slide). Use the same marker. A reader who later discovers an
+undeclared "illustrative" slide stops trusting the whole deck.
+
+---
+
+## The results slide is three numbers
+
+The template's results slide carries exactly three stats, and the choice tells
+you what the customer weighs:
+
+| Stat | Example | Why it is there |
+|---|---|---|
+| Accuracy or error | `<5%` measurement error | does it work |
+| **Deployment time** | `2h` | how fast can we have it |
+| **Training images** | `10` | how much work is it to add a part |
+
+Deployment time and training-image count are first-class results, not
+footnotes — a low training-image count is a *selling point*, so report it
+plainly rather than hiding a small number. Use `—` for any stat the assets do
+not support.
+
+---
+
+## Why that order — the argument underneath
+
+The shape above is not a tour of the UI. Each slide answers the reader's next
+question, and knowing which question tells you what to write:
+
+| Slide | The question it answers |
+|---|---|
+| Title | Whose camera, whose industry, which application? |
+| Outcome | Did it work? |
+| Step 1 — imaging | Under what conditions does the camera see the part? |
+| Step 2 — alignment | How does it find the part reliably, cycle to cycle? |
+| Step 3 — models | What does it actually decide, and on what evidence? |
+| Step 4 — logic | How does a decision become an action on my line? |
+| Step 5 — HMI | What does my operator see? |
+| Results | Is it good enough, and what did it cost to get here? |
+| Library | Is there real data behind this, and can we improve it? |
+| Observations | What would you tell me candidly? |
+
+**Step 3 is the heart of the report** — one block per AI model, and where a
+sceptical quality manager decides whether to believe you. Give each model its
+own slides: what it decides, the labelled data it learned from, how it was
+trained, how it scored.
+
+A recipe with one model is a shorter argument, not a padded one. Drop any step
+the recipe genuinely does not have rather than writing a slide that says
+nothing happened.
 
 ---
 
 ## Per-slide content briefs
 
-Lengths are deliberate. These come from the deck generator this skill
-replaced, where they were tuned over many real reports.
+**The template above decides which slides exist; this table decides how much
+goes on each one.** Lengths are deliberate — they come from the deck generator
+this skill replaced, where they were tuned over many real reports, and they are
+what keeps a slide from turning into a paragraph.
+
+Not every row appears in every deck. "Problem" and "Solution" are the longer,
+prose-led opening some reports use in place of the template's single outcome
+sentence; use one shape or the other, never both.
 
 | Slide | Say | Length |
 |---|---|---|

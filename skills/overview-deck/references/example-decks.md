@@ -1,7 +1,12 @@
 # The example decks — what to borrow, what to ignore
 
-Both live in `assets/example-decks/`. Read them for **structure, narrative and
-chrome**. Do not take colour or copy from either — see the warnings below.
+All three live in `assets/example-decks/`. Read them for **structure,
+narrative and chrome**. Do not take colour or copy from any of them — see the
+warnings below.
+
+Read the **blank test report template first** (section 0): it is the frame the
+team actually fills in. The two finished decks show what a completed one looks
+like.
 
 To read one without leaving the terminal:
 
@@ -88,6 +93,47 @@ spine.
 > **Colour warning.** Its dark ground is `#101024`, not the brand navy
 > `#180E42`, and its heading purple is `#7E60F9`, not `#735CFF`. Close, but
 > `brandcheck.py` will reject both. The spine purple `#532EE3` *is* correct.
+
+---
+
+## 0. Overview AI blank test report — the canonical template (15 pp, .pptx)
+
+**Start here.** The other two are finished decks; this is the empty frame the
+team actually fills in, and it is the authority on the *shape* of a test
+report. It is a `.pptx`, so read it directly:
+
+```python
+from pptx import Presentation
+for i, s in enumerate(Presentation(path).slides, 1):
+    for sh in s.shapes:
+        if sh.has_text_frame and sh.text_frame.text.strip():
+            print(i, sh.text_frame.text)
+```
+
+Its structure, which `report-brief.md` expands into rules:
+
+```
+1   title            OV20i / Logistics / Measurement box size
+2   outcome          the application, one success sentence, result screenshot
+3   section          "Configuring OV80i"
+4   Step 1           Image settings
+5   Step 2           Identify features to align to
+6   Step 3           Create inspection models
+7   Step 4           Set custom logic using node-red        ("Illustrative:")
+8   Step 5           Generate results in HMI page
+9   Results          3 stats: error / deployment time / training images
+10  Library          on-device storage -> retraining loop
+11-13 boilerplate    5 factors / defect generator / integration
+14-15 boilerplate    team & locations / thank you
+```
+
+**Borrow:** the numbered Step 1-5 spine, the outcome-first slide 2, the
+three-stat results slide, and the bullet voice — each step slide pairs a
+general principle with what was actually done on *this* part.
+
+**Note:** slides 11-15 are standing company boilerplate. Carry them as they
+are; do not re-author them per customer and do not mine them for the report's
+own voice — they are marketing register, the rest of the deck is not.
 
 ---
 
