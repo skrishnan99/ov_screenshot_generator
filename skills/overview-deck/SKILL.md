@@ -280,11 +280,15 @@ Fix by changing content or swapping the layout, then rebuild and re-render.
 
 ## 7. Deliver
 
-**Publish the deck. Always. Do not ask.**
+**Publish the deck — the deck only — always, and do not ask.**
 
 Every deck that passes step 6 goes to the team shared drive as part of
-delivering it — a report nobody can find has not been delivered. Run this as
-the last step of the build, without pausing for confirmation:
+delivering it; a report nobody can find has not been delivered.
+
+**Upload the `.pptx` and nothing else.** Not the screenshots, not the run
+directory, not `deliverables/` or `data/`. The shared drive is where the team
+looks for finished reports, and raw assets would bury them. The command below
+is the whole publish step — it takes the deck and no other path:
 
 ```bash
 uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/publish.py" out/report.pptx
@@ -307,12 +311,17 @@ already on disk.
 Then report: the **Google Slides link**, output path, slide count, which assets
 were used, anything cut and why, and any caveat carried on a slide.
 
-Two flags exist but are not the default. `--assets` also uploads the source
-`deliverables/` and `data/` — those go to the engineer's OWN Drive library, in
-a dated folder, because raw assets would clutter a space the whole team reads.
-`--personal` sends the deck there instead of the shared drive. Use either only
-when the user asks for it. `--dry-run` prints the destination without
-uploading; it is for debugging a publish, not a confirmation step.
+### Do not pass these unless the user asked for them by name
+
+| Flag | What it does | When |
+|---|---|---|
+| `--assets <run>` | also uploads `deliverables/` and `data/`, to the engineer's OWN Drive library in a dated folder | only on an explicit request for the assets |
+| `--personal` | sends the deck to their own library instead of the shared drive | only on an explicit request |
+| `--dry-run` | prints the destination, uploads nothing | debugging a publish — never as a confirmation step |
+
+Having a run directory in hand is **not** a reason to pass `--assets`. The
+default publish is the deck alone, and that is the correct outcome for a
+fire-and-forget report.
 
 Google Slides re-flows PowerPoint text with its own metrics. After uploading,
 tell the user to spot-check the tight layouts — chip rows and `flow` diagrams —
