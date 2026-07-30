@@ -306,9 +306,14 @@ def fill_freeform(pres: Presentation, job: dict) -> None:
         _freeform_images(
             slide, images, Inches(0.70), Inches(1.73), Inches(5.48), Inches(3.14)
         )
+        # Height 0.34 GROWING DOWNWARD, per the guide — not a tall fixed box.
+        # The fixed 2.85 top optically centres a short block against the image
+        # band; a full-height box would start at 2.85 and run off the bottom
+        # of the slide (brand lint: "text shape ... exceeds the slide").
         _freeform_body(
-            slide, body, Inches(6.30), Inches(2.85), Inches(3.60), content_h,
+            slide, body, Inches(6.30), Inches(2.85), Inches(3.60), Inches(0.34),
             size_pt=17, bold=True, color=brand["colors"]["primary_purple"],
+            grow=True,
         )
     elif images:
         _freeform_images(slide, images, margin, content_top, sw - 2 * margin, content_h)
@@ -319,10 +324,17 @@ def fill_freeform(pres: Presentation, job: dict) -> None:
 def _freeform_body(
     slide, text: str, left, top, width, height,
     size_pt: int = 13, bold: bool = False, color: str | None = None,
+    grow: bool = False,
 ) -> None:
     """Body copy block. Defaults suit a text-only slide; the numbered-step
-    right-hand column passes Bold 17 pt purple per the design guide."""
+    right-hand column passes Bold 17 pt purple per the design guide.
+
+    ``grow`` declares a short box that expands to fit its text, which is how
+    the corpus authors the right-hand column. The stored height stays small,
+    so the shape's declared extent remains inside the slide.
+    """
     from pptx.dml.color import RGBColor
+    from pptx.enum.text import MSO_AUTO_SIZE
     from pptx.util import Pt
 
     from deck.brand import load_brand
@@ -331,6 +343,8 @@ def _freeform_body(
     tb = slide.shapes.add_textbox(left, top, width, height)
     tf = tb.text_frame
     tf.word_wrap = True
+    if grow:
+        tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
     for i, line in enumerate(text.split("\n")):
         para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         para.line_spacing = 1.0

@@ -184,9 +184,17 @@ an Overview AI vision camera inspection recipe.
 The slide's headline: "{title}"
 The slot it fills expects: {expects}
 
-Judge whether the image actually shows what the slot expects. Mismatched model names or
-types, the wrong screen of the camera UI, or an obviously unloaded/blank view all mean
-match = false. Cropping, resolution, and cosmetic differences do not. Answer with match
+Judge ONE thing: is this the screen the slot expects? Mismatched model names or types, or
+the wrong screen of the camera UI, mean match = false.
+
+An EMPTY image area does NOT mean match = false. If the screenshot shows the expected
+screen, it matches even when the picture inside it is blank, black, grey, a placeholder or
+an empty preview — a recipe legitimately has nothing to show when a step is disabled (for
+example "Skip Aligner" is on, so there is no template image) or when no capture has been
+triggered yet. That is the true state of the camera and the report should show it. Say so
+in the reason, but answer match = true.
+
+Cropping, resolution, and cosmetic differences are not mismatches either. Answer with match
 and a one-sentence reason."""
 
 

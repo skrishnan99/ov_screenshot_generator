@@ -28,9 +28,15 @@ From the conversation (ask only for what's missing):
   (keep original filenames when they exist). The pipeline describes each
   photo and lets it take precedence over extractor screenshots where it fits.
 
-Before running, tell the engineer: the full run takes **~15 minutes**, and it
-will **activate the recipe on the camera** if currently inactive. On a
-production line they should confirm that's acceptable.
+Before running, tell the engineer: the full run takes **~45 minutes** — very
+roughly 20 minutes extracting assets from the camera and 25 building the deck
+— and it will **activate the recipe on the camera** if currently inactive. On
+a production line they should confirm that's acceptable.
+
+Set that expectation before starting. The deck phase is quiet for long
+stretches while an autonomous design session builds slides, and an engineer
+who was told "15 minutes" will reasonably think it has hung. Time scales with
+the number of AI models in the recipe.
 
 ## 2. Preflight
 
@@ -66,9 +72,16 @@ reports one, have them run
 Drop `--publish` if they'd rather keep everything local. Publishing failures never
 invalidate the deck — it is already on disk and can be published later.
 
-Always pass `--verify-images` — matched images get vision-verified. Run in
-the background and report progress (`== step:` and `=== Phase` lines). Do not
-start a second run in parallel against the same camera.
+Always pass `--verify-images` — every matched image is vision-checked against
+the slot it fills, so a wrong screen or the wrong model's screenshot is caught
+and re-matched rather than shipped. It adds a vision call per image slot.
+
+It checks *identity*, not whether the picture is full: a screenshot whose
+image area is legitimately blank (alignment disabled, no capture triggered)
+is the correct asset and stays. Do not treat those slides as broken.
+
+Run in the background and report progress (`== step:` and `=== Phase` lines).
+Do not start a second run in parallel against the same camera.
 
 Some slides are built by an autonomous design session (they show as
 `agent slide <id>: attempt N` in the output) — those take a few minutes each,

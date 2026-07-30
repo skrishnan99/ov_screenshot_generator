@@ -248,6 +248,13 @@ steps:
       the option that proceeds; do not cancel or abandon the flow.
     postcondition: |
       The Train Models page is open and fully loaded.
+    # This page has no imagery — its content is the model table, whose skeleton
+    # rows render instantly. Without polling, the capture succeeds against a
+    # page showing no models at all, and the training-report enumeration that
+    # follows reads the column headers as data.
+    wait_table_loaded:
+      interval_s: 5
+      max_wait_s: 60
     screenshot: "09_train_models"
 
   - id: training_reports

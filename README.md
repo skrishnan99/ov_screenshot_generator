@@ -28,9 +28,10 @@ Then just ask, in any Claude Code session:
   → runs the **generate-test-report** skill; you get one folder with the
   deck (`report/deck.pptx`) and every extracted asset (`assets/`).
 
-First use auto-installs the browser it needs (~2 min). Runs take ~15 minutes
-and will activate the recipe on the camera if it's inactive — confirm that's
-okay on production lines. Installing LibreOffice and the brand fonts
+First use auto-installs the browser it needs (~2 min). Asset extraction takes
+~20 minutes; a full test report (extract + deck) ~45. Both scale with how many
+AI models the recipe has. A run will activate the recipe on the camera if it's
+inactive — confirm that's okay on production lines. Installing LibreOffice and the brand fonts
 (Proxima Nova, Montserrat) is optional but recommended: they enable PDF
 previews, visual quality checks, and correct font rendering.
 

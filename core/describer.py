@@ -123,6 +123,79 @@ Judge only the main image area — side panels, toolbars, and tables being loade
 the image is loaded. Answer with loaded and a one-sentence reason."""
 
 
+TABLE_LOADED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "loaded": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["loaded", "reason"],
+    "additionalProperties": False,
+}
+
+TABLE_LOADED_PROMPT = """This is a screenshot of a page from an Overview AI industrial vision \
+camera's web UI ({hint}). The page contains a DATA TABLE — for example the list of AI models \
+with their training status, metrics and controls — which may still be loading.
+
+Judge whether the table has FINISHED loading:
+- loaded = true when the rows show real content: model names, numbers, status badges, dates or \
+action buttons. A table that has finished loading and legitimately has NO rows also counts as \
+loaded (an explicit empty state, or a visible "no data" message) — there is nothing to wait for.
+- loaded = false when the rows are skeleton placeholders — uniform grey or blank bars, pills and \
+circles standing in for text and controls — or a spinner or progress indicator is shown.
+
+Judge the table BODY only. Column headers render immediately and are never row content: a table \
+whose headers ("Model", "Status", "Last Trained", ...) are readable while every cell beneath them \
+is a plain grey bar is STILL LOADING, not loaded. Answer with loaded and a one-sentence reason."""
+
+
+def check_table_loaded(png_bytes: bytes, hint: str = "") -> dict:
+    # Haiku, same as the image check: a binary judgment called repeatedly, and
+    # a wrong "not loaded" only costs another poll.
+    try:
+        return complete(
+            TABLE_LOADED_PROMPT.format(hint=hint or "n/a"),
+            schema=TABLE_LOADED_SCHEMA,
+            images=[png_bytes],
+            max_tokens=1000,
+            model=llm.HAIKU,
+        )
+    except LLMRefusal:
+        return {"loaded": False, "reason": "table check refused"}
+
+
+def poll_table_loaded(
+    browser, max_wait_s: float = 60, interval_s: float = 5, log=print
+) -> tuple[bool, str]:
+    """Poll until a page's data table is populated.
+
+    The counterpart to poll_image_loaded, and the reason it exists: the Train
+    Models page renders its skeleton rows instantly, so a capture taken too
+    early looks like a finished page with no models. Worse, enumeration then
+    reads the only real text present — the column headers — and "Model"
+    becomes a model name, which sent a run hunting for a training report that
+    could not exist until it exhausted its turn budget.
+    """
+    elapsed = 0.0
+    while True:
+        try:
+            verdict = check_table_loaded(
+                browser.screenshot_bytes(), hint=browser.page.title()
+            )
+        except Exception as e:
+            verdict = {"loaded": False, "reason": f"table check error: {e}"}
+        log(
+            f"  table-load check at {elapsed:.0f}s -> "
+            f"{'loaded' if verdict['loaded'] else 'not loaded'} ({verdict['reason'][:70]})"
+        )
+        if verdict["loaded"]:
+            return True, f"loaded after {elapsed:.0f}s: {verdict['reason']}"
+        if elapsed >= max_wait_s:
+            return False, f"still NOT loaded after {max_wait_s:.0f}s: {verdict['reason']}"
+        browser.page.wait_for_timeout(int(interval_s * 1000))
+        elapsed += interval_s
+
+
 def check_image_loaded(png_bytes: bytes, hint: str = "") -> dict:
     # Haiku: a binary loaded/not-loaded judgment, called dozens of times per
     # run; a wrong "not loaded" just polls again, so the tier is safe.
@@ -245,7 +318,14 @@ def describe_node_red(flow_json: str, context: dict) -> dict:
         flow_json=flow_json,
     )
     try:
-        return complete(prompt, schema=NODE_RED_SCHEMA, max_tokens=10000)
+        # Sonnet: structured summarisation of a JSON flow — reading nodes and
+        # wires and restating the pass/fail logic in prose. It was falling
+        # through to the Opus default and cost 163.9s of a 21-minute run, the
+        # single most expensive call in the extractor, for a task well inside
+        # Sonnet's range. Falls back up the ladder if Sonnet is unavailable.
+        return complete(
+            prompt, schema=NODE_RED_SCHEMA, max_tokens=10000, model=llm.SONNET
+        )
     except LLMRefusal:
         return {"markdown": "[node-red description refused by model]", "facts": []}
 

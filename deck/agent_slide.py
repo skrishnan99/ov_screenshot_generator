@@ -21,8 +21,10 @@ freeform layout so the deck always completes.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from core import llm
@@ -35,6 +37,11 @@ MAX_TURNS = 50
 # so they need materially more room than a single-slide session.
 BATCH_MAX_TURNS = 80
 ATTEMPTS = 2
+
+# Acceptance verdicts are independent vision calls, so they run concurrently
+# like every other vision path here (DESCRIBE_WORKERS, VERIFY_WORKERS,
+# AUDIT_WORKERS). Bounded by the provider's rate limit, not the machine.
+VERDICT_WORKERS = max(1, int(os.environ.get("SG_VERDICT_WORKERS", "4")))
 # A slide session writes, renders and iterates; give it room but never hang.
 CLI_SESSION_TIMEOUT_S = 1800
 
@@ -189,6 +196,13 @@ Judge the generated slide for:
    slide plainly not delivering the brief.
 2. Brand family: it must plausibly belong to the same deck as the reference
    slides — palette, typographic hierarchy, whitespace, logo usage.
+
+Judge the slide's LAYOUT AND CRAFT, not the content of the camera screenshot
+embedded in it. A screenshot whose image area is blank, black, grey or an
+empty preview is not a defect: the recipe legitimately has nothing to show
+there (an alignment step disabled, no capture triggered yet), and the report
+must show that truthfully. Do not fail a slide for it.
+
 Stylistic taste differences are NOT defects. Answer match=false only for
 real defects or clear brand breaks, with the reason."""
 
@@ -491,8 +505,63 @@ def _render_png(pptx_path: Path) -> bytes | None:
     return produced.read_bytes() if produced else None
 
 
-def _vision_verdict(pptx_path: Path, brief: str) -> dict:
-    png = _render_png(pptx_path)
+def batch_render(paths: list[Path], log=print) -> dict[Path, bytes]:
+    """Render several candidate slides in ONE renderer round trip.
+
+    The fidelity renderer is Google Slides, and a single conversion costs an
+    upload, a convert, a PDF export, a download and a delete. Done per slide
+    that is five network operations each; a batch of eight was the largest
+    single cost in the deck build. ``convert_pages`` already renders a whole
+    multi-slide file in one round trip, so combine the candidates into one
+    temporary deck and split the result locally.
+
+    Returns {path: png_bytes}, possibly empty — callers must treat a missing
+    entry as "render it yourself". Never raises: batching is an optimisation,
+    and any problem here must degrade to the per-slide path rather than fail
+    a build.
+
+    Combining uses the same ``build_deck`` transplant the real deck uses, so
+    each candidate keeps its own master and theme and is rendered as it will
+    actually appear. The source files are read, never written back.
+    """
+    paths = [Path(p) for p in paths]
+    if len(paths) < 2:
+        return {}  # nothing to amortise
+    import tempfile
+
+    from deck import render
+    from deck.assemble import build_deck
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="sg-verify-batch-") as td:
+            tmp = Path(td)
+            combined = tmp / "batch.pptx"
+            build_deck([{"agent_pptx": str(p)} for p in paths], combined)
+            outs = [tmp / f"p{i:03d}.png" for i in range(len(paths))]
+            produced = render.convert_pages(
+                combined, outs, purpose=render.FIDELITY, log=lambda *a: None
+            )
+            # A short page list means slides were dropped, and page N would no
+            # longer correspond to candidate N. Verifying a slide against the
+            # wrong image is worse than paying for individual renders, so
+            # refuse the whole batch rather than guess at the mapping.
+            if not produced or len(produced) != len(paths):
+                log(
+                    f"    batch render produced {len(produced or [])}/{len(paths)} "
+                    f"pages; falling back to one render per slide"
+                )
+                return {}
+            return {p: o.read_bytes() for p, o in zip(paths, produced)}
+    except Exception as e:
+        log(f"    batch render unavailable ({e}); one render per slide")
+        return {}
+
+
+def _vision_verdict(pptx_path: Path, brief: str, png: bytes | None = None) -> dict:
+    """Judge one rendered slide. Pass ``png`` to reuse a batched render;
+    omit it and the slide is rendered on its own."""
+    if png is None:
+        png = _render_png(pptx_path)
     if png is None:
         return {"match": True, "reason": "no renderer available; gate-only acceptance"}
     refs = [p.read_bytes() for p in reference_renders()[:2]]
@@ -565,7 +634,13 @@ def build_agent_slides(
         turns, error = run_agent_session(
             workspace, prompt, log=log, max_turns=BATCH_MAX_TURNS
         )
-        still_failing: list[str] = []
+        # Acceptance runs in three passes rather than one loop per slide:
+        # the deterministic gate is local and cheap, rendering is a network
+        # round trip worth amortising across slides, and the vision calls are
+        # independent of each other. Doing them per slide serialised all
+        # three.
+        failed: set[str] = set()
+        gated: list[str] = []
         for sid in pending:
             job = by_sid[sid]
             reports[sid]["attempts"] = attempt
@@ -580,18 +655,52 @@ def build_agent_slides(
                 issues.insert(0, f"session error: {error}")
             if issues:
                 reports[sid]["issues"] = issues
-                still_failing.append(sid)
+                failed.add(sid)
                 continue
-            verdict = _vision_verdict(path, job.get("description") or job["sid"])
+            gated.append(sid)
+
+        rendered = batch_render([out_dir / f"{sid}.pptx" for sid in gated], log=log)
+
+        verdicts: dict[str, dict] = {}
+        if gated:
+            with ThreadPoolExecutor(
+                max_workers=min(VERDICT_WORKERS, len(gated))
+            ) as pool:
+                futures = {
+                    sid: pool.submit(
+                        _vision_verdict,
+                        out_dir / f"{sid}.pptx",
+                        by_sid[sid].get("description") or sid,
+                        rendered.get(out_dir / f"{sid}.pptx"),
+                    )
+                    for sid in gated
+                }
+                for sid in gated:  # collected in deck order, not finish order
+                    try:
+                        verdicts[sid] = futures[sid].result()
+                    except Exception as e:
+                        # A verdict that cannot be reached must not fail the
+                        # build; accept on the deterministic gate alone, as
+                        # _vision_verdict does for its own errors.
+                        verdicts[sid] = {
+                            "match": True,
+                            "reason": f"vision check unavailable ({e}); gate-only",
+                        }
+
+        for sid in gated:
+            verdict = verdicts[sid]
             reports[sid]["vision"] = verdict
             if verdict["match"]:
-                reports[sid]["pptx"] = str(path)
+                reports[sid]["pptx"] = str(out_dir / f"{sid}.pptx")
                 log(f"    accepted {sid}")
             else:
                 reports[sid]["issues"] = [
                     f"vision review found a defect: {verdict['reason']}"
                 ]
-                still_failing.append(sid)
+                failed.add(sid)
+
+        # Rebuilt in the original order so logs and retries stay stable.
+        still_failing: list[str] = [sid for sid in pending if sid in failed]
         if not still_failing:
             return reports
         log(

@@ -146,16 +146,33 @@ def _synthesize_assets(manifest: dict, meta: dict) -> list[dict]:
                             "item": "viewer overlay layer",
                         }
                     )
-        elif key.endswith("_with_template") and entry.get("file"):
-            assets.append(
-                {
-                    "path": entry["file"],
-                    "kind": "image",
-                    "role": "deliverable",
-                    "step": "imaging_setup",
-                    "item": "imaging screen with template image composited",
-                }
-            )
+        elif key.endswith("_with_template"):
+            # Current runs composite IN PLACE: entry["file"] is the step's own
+            # screenshot, already in the pool from the steps loop above, and
+            # adding it again would give the matcher two identical candidates.
+            # What is new is the preserved plain capture.
+            if entry.get("plain"):
+                assets.append(
+                    {
+                        "path": entry["plain"],
+                        "kind": "image",
+                        "role": "deliverable",
+                        "step": "imaging_setup",
+                        "item": "imaging screen as captured, before compositing",
+                    }
+                )
+            elif entry.get("file") and entry.get("composited") is not False:
+                # Older runs wrote the composite to a separate file and left
+                # the plain capture as the step screenshot. Keep reading those.
+                assets.append(
+                    {
+                        "path": entry["file"],
+                        "kind": "image",
+                        "role": "deliverable",
+                        "step": "imaging_setup",
+                        "item": "imaging screen with template image composited",
+                    }
+                )
     return assets
 
 

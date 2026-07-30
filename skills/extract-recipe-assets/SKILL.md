@@ -24,11 +24,16 @@ From the conversation (ask only for what's missing):
 - **Variant** (optional, e.g. `ov80i`) — used only for a preflight support
   check; the pipeline auto-detects the real variant.
 
-Before running, tell the engineer: the run takes **~15 minutes** (repeat runs
-on the same camera UI version are faster — navigation replays from cache),
-and it will **activate the recipe on the camera** if it is currently inactive
-(that is how the editor opens). If the camera is on a production line, they
-should confirm that's acceptable.
+Before running, tell the engineer: the run takes **~20 minutes** for a recipe
+with two or three AI models, and it will **activate the recipe on the camera**
+if it is currently inactive (that is how the editor opens). If the camera is
+on a production line, they should confirm that's acceptable.
+
+Time scales with the number of models, not the number of steps: each model
+adds its own ROI, view-all-ROIs, settings and training-report captures, and
+those are driven live every run (their goals name the model, so they cannot
+replay from the navigation cache). Steps that do replay are much faster on a
+camera whose UI version has been seen before.
 
 ## 2. Preflight
 
@@ -66,11 +71,29 @@ On success, read `runs/<ts>/data/manifest.json` and summarize for the
 engineer: recipe matched, models found (from `meta.json`'s `models`), steps
 completed with timings, and where things live:
 - `deliverables/screenshots/` — every configuration screen
-- `deliverables/images/` — native-resolution captures, overlays, composites
+- `deliverables/images/` — native-resolution captures, overlays, composites,
+  and `*_plain.png` originals of any screenshot that was composited
 - `deliverables/report/` — vision descriptions of every screenshot
   (`descriptions.json`) + the Node-RED IO logic summary
 - `data/` — manifest, structured metadata (`meta.json`: model roster with
   per-model screenshot links, plus extracted facts), raw Node-RED flow
+
+Two things about the assets are worth explaining if the engineer asks:
+
+**The imaging-setup screenshot is composited.** That screen is a settings
+page whose own viewer is usually empty, so the aligner's template image is
+rendered into the viewer's exact pixel area — `02_imaging_setup.png` shows
+the screen as you would expect it to look. The untouched capture is kept as
+`images/02_imaging_setup_plain.png`. `meta.json`'s
+`imaging_setup_with_template` records which happened; when it says
+`composited: false` it also gives the reason, and the plain capture stays as
+the deliverable.
+
+**An empty image area is often correct, not a failure.** A recipe with "Skip
+Aligner" enabled genuinely has no template image, and a manually-triggered
+camera has no live preview until someone captures one. Those screens are
+reported truthfully rather than retried or dropped. Say so plainly instead of
+presenting them as missing data.
 
 If the engineer wants the assets in their Google Drive, publish them. The
 first publish on a machine opens a browser for a one-time Google consent —

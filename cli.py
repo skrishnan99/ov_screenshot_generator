@@ -26,7 +26,12 @@ import yaml
 from core import llm, paths
 from core import trace as trace_store
 from core.browser import Browser
-from core.describer import describe_node_red, describe_screenshot, poll_image_loaded
+from core.describer import (
+    describe_node_red,
+    describe_screenshot,
+    poll_image_loaded,
+    poll_table_loaded,
+)
 from core.navigator import run_step_auto as run_step
 from core.output import RunOutput
 from core.resolver import (
@@ -42,7 +47,11 @@ ROOT = Path(__file__).resolve().parent
 
 # Vision descriptions are independent calls; this caps their concurrency
 # (modest, to stay friendly to subscription rate limits).
-DESCRIBE_WORKERS = 4
+# Vision descriptions are independent, I/O-bound API calls, so concurrency is
+# bounded by the provider rather than the machine. 4 left most of the window
+# idle on an 18-screenshot run; 8 roughly halves that phase. Tunable because
+# the ceiling is really the account's rate limit, not anything we control.
+DESCRIBE_WORKERS = max(1, int(os.environ.get("SG_DESCRIBE_WORKERS", "8")))
 
 
 def slugify(name: str) -> str:
@@ -296,45 +305,87 @@ def download_main_image(browser, out: RunOutput, base_name: str, step_id: str) -
 
 
 def compose_imaging_with_template(out: RunOutput, meta: dict, manifest: dict) -> dict | None:
-    """If we know the imaging screen's viewer bbox and have the aligner's raw
-    image, render the raw image into that bbox on the imaging screenshot — a
-    synthesized view of the imaging screen showing the template capture."""
-    bbox = meta.get("imaging_setup_img_bbox")
-    raw_name = (meta.get("template_image_main_image") or {}).get("file")
-    if not bbox or not raw_name:
-        return None
+    """Make the composited view the imaging step's PRIMARY deliverable.
+
+    The imaging screen is a settings page: its own viewer is often empty,
+    because whether a live picture is present depends on trigger mode. The
+    aligner step downloads the template image at native resolution and we know
+    the imaging viewer's exact pixel bbox, so the two compose into the screen
+    an engineer expects to see.
+
+    The composite is written OVER the plain capture, at the same path and
+    keeping the same manifest entry, so every downstream consumer — the deck's
+    ``{step: imaging_setup, kind: screenshot}`` selector, the description
+    queue, the matcher's catalog — picks it up with no extra wiring and no
+    chance of the two drifting apart. The plain capture is preserved first,
+    beside it under images/ as ``<stem>_plain.png``.
+
+    A BLANK composite is still the right deliverable: an empty viewer is the
+    recipe's true state (alignment disabled, or no capture triggered), and the
+    report should show that. Emptiness is never a reason to skip. Only an
+    inability to build the composite at all leaves the plain capture primary,
+    and that is reported rather than silent.
+
+    Returns a record that always says which happened via ``composited``.
+    """
     step = next(
         (s for s in manifest.get("steps", []) if s.get("id") == "imaging_setup"), None
     )
     shot_name = (step or {}).get("screenshot")
     if not shot_name:
-        return None
+        return None  # the imaging step never captured; nothing to describe
     base_path = out.run_dir / shot_name
+
+    def unchanged(reason: str) -> dict:
+        return {"file": shot_name, "composited": False, "reason": reason}
+
+    bbox = meta.get("imaging_setup_img_bbox")
+    raw_name = (meta.get("template_image_main_image") or {}).get("file")
+    if not base_path.exists():
+        return unchanged(f"capture missing at {shot_name}")
+    if not bbox:
+        return unchanged("no viewer bbox recorded for the imaging screen")
+    if not raw_name:
+        return unchanged("no template image was downloaded by the aligner step")
     raw_path = out.run_dir / raw_name
-    if not base_path.exists() or not raw_path.exists():
-        return None
+    if not raw_path.exists():
+        return unchanged(f"template image missing at {raw_name}")
+
     import io
 
     from PIL import Image
 
-    base = Image.open(base_path).convert("RGBA")
-    raw = Image.open(raw_path).convert("RGBA")
-    raw = raw.resize((bbox["width"], bbox["height"]), Image.LANCZOS)
+    with Image.open(base_path) as im:
+        base = im.convert("RGBA")
+    with Image.open(raw_path) as im:
+        raw = im.convert("RGBA").resize((bbox["width"], bbox["height"]), Image.LANCZOS)
     # alpha_composite (not paste): transparent raw regions show the screenshot
     # beneath instead of rendering black.
     base.alpha_composite(raw, (bbox["x"], bbox["y"]))
     buf = io.BytesIO()
     base.convert("RGB").save(buf, format="PNG")
-    dest = out.save(
-        f"{base_path.stem}_with_template.png", buf.getvalue(),
+    composite = buf.getvalue()
+
+    # Preserve the plain capture BEFORE overwriting, so a failure here can
+    # never leave the run without one of the two versions.
+    plain = out.save(
+        f"{base_path.stem}_plain.png", base_path.read_bytes(),
         kind="image", role="deliverable", step="imaging_setup",
-        item="imaging screen with template image composited into viewer bbox",
+        item="imaging screen as captured, before the template image was composited in",
     )
+    # Written in place: the existing manifest entry keeps pointing at it, so no
+    # duplicate asset appears in the pool for the matcher to choose between.
+    base_path.write_bytes(composite)
+    for asset in out.assets:
+        if asset.get("path") == shot_name:
+            asset["item"] = "imaging screen with the template image composited into its viewer"
+
     return {
-        "file": out.rel(dest),
-        "base": shot_name,
+        "file": shot_name,
+        "plain": out.rel(plain),
         "source": raw_name,
         "bbox": {k: bbox[k] for k in ("x", "y", "width", "height")},
+        "composited": True,
     }
 
 
@@ -455,6 +506,14 @@ def capture_reports(
 ):
     """For steps with foreach_reports: open each model's training report (where
     available), wait for it to load, and screenshot as <model-name>_<model-type>.png."""
+    # Enumerate only once the table actually holds rows. This step re-navigates
+    # to the Train Models page itself, so it cannot rely on the capture step's
+    # wait. Read against skeleton rows, the only real text on the page is the
+    # header, and "Model" gets enumerated as a model — which then costs a whole
+    # turn budget hunting for a training report that cannot exist.
+    ok, msg = poll_table_loaded(browser)
+    if not ok:
+        print(f"  warning: train models table {msg}")
     models = list_training_reports(_stable_snapshot(browser))
     step_record["report_models"] = [f"{m['name']} ({m['type']})" for m in models]
     if not models:
@@ -892,6 +951,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             elif step.get("screenshot"):
                 wait_cfg = step.get("wait_image_loaded")
+                table_cfg = step.get("wait_table_loaded")
                 if wait_cfg:
                     if not isinstance(wait_cfg, dict):
                         wait_cfg = {}
@@ -902,6 +962,19 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if not ok:
                         print(f"  warning: {step_id} image {msg}")
+                elif table_cfg:
+                    # Pages whose content is a data grid rather than imagery:
+                    # skeleton rows render instantly, so without this the
+                    # capture succeeds against a page that has no data yet.
+                    if not isinstance(table_cfg, dict):
+                        table_cfg = {}
+                    ok, msg = poll_table_loaded(
+                        browser,
+                        max_wait_s=table_cfg.get("max_wait_s", 60),
+                        interval_s=table_cfg.get("interval_s", 5),
+                    )
+                    if not ok:
+                        print(f"  warning: {step_id} table {msg}")
                 else:
                     browser.page.wait_for_timeout(1500)
                 name = f"{step['screenshot']}.png"
@@ -957,71 +1030,123 @@ def main(argv: list[str] | None = None) -> int:
         # Describe whatever was captured, even on a failed run; a description
         # failure must never mask the run's own outcome.
         manifest["steps_duration_s"] = round(time.monotonic() - run_t0, 1)
-        if desc_queue and not args.skip_descriptions:
-            desc_t0 = time.monotonic()
-            print(f"\ndescribing {len(desc_queue)} screenshot(s) ({DESCRIBE_WORKERS} in parallel)...")
-            # Descriptions are independent of each other; run them concurrently.
-            # Results (descriptions dict, facts) are merged in queue order so
-            # the output files stay deterministic regardless of finish order.
-            from concurrent.futures import ThreadPoolExecutor
 
-            def _describe(item):
-                shot_path, ctx = item
-                return describe_screenshot(shot_path.read_bytes(), ctx)
-
-            descriptions = {}
-            with ThreadPoolExecutor(max_workers=DESCRIBE_WORKERS) as pool:
-                futures = [pool.submit(_describe, item) for item in desc_queue]
-                for (shot_path, _ctx), fut in zip(desc_queue, futures):
-                    try:
-                        result = fut.result()
-                        descriptions[shot_path.name] = result["description"]
-                        for fact in result.get("facts", []):
-                            meta.setdefault("facts", []).append(
-                                {**fact, "source": shot_path.name}
-                            )
-                        print(
-                            f"  described {shot_path.name} "
-                            f"(+{len(result.get('facts', []))} facts)"
-                        )
-                    except Exception as e:
-                        descriptions[shot_path.name] = f"[description failed: {e}]"
-                        print(f"  FAILED to describe {shot_path.name}: {e}", file=sys.stderr)
-            out.save(
-                "descriptions.json", json.dumps(descriptions, indent=2),
-                kind="report", role="deliverable",
-            )
-            manifest["descriptions"] = "deliverables/report/descriptions.json"
-            manifest["descriptions_duration_s"] = round(time.monotonic() - desc_t0, 1)
-        flow_path = run_dir / "data" / "node_red_flow.json"
-        if flow_path.exists() and not args.skip_descriptions:
-            nr_t0 = time.monotonic()
-            print("describing node-red flow...")
-            try:
-                nr = describe_node_red(
-                    flow_path.read_text(),
-                    {"variant": manifest.get("variant"), "recipe": manifest.get("recipe_input")},
-                )
-                out.save(
-                    "node_red_description.md", nr["markdown"],
-                    kind="report", role="deliverable",
-                )
-                for fact in nr.get("facts", []):
-                    meta.setdefault("facts", []).append(
-                        {**fact, "source": "node_red_flow.json"}
-                    )
-                manifest["node_red_description"] = "deliverables/report/node_red_description.md"
-                manifest["node_red_duration_s"] = round(time.monotonic() - nr_t0, 1)
-                print("  node_red_description.md written")
-            except Exception as e:
-                print(f"  FAILED to describe node-red flow: {e}", file=sys.stderr)
+        # Compose BEFORE describing. The composite replaces the plain capture
+        # at the same path, so the vision description then describes the asset
+        # that actually ships rather than the one it superseded.
         try:
             composed = compose_imaging_with_template(out, meta, manifest)
             if composed:
                 meta["imaging_setup_with_template"] = composed
-                print(f"composed imaging+template -> {composed['file']}")
+                if composed.get("composited"):
+                    print(f"composed imaging+template -> {composed['file']}")
+                else:
+                    print(f"imaging setup left as captured: {composed['reason']}")
         except Exception as e:
             print(f"FAILED to compose imaging+template: {e}", file=sys.stderr)
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        # The Node-RED analysis and the screenshot descriptions share nothing:
+        # one reads a downloaded JSON flow, the other reads PNGs. Run serially
+        # they cost ~165s each. Start Node-RED first and let it work WHILE the
+        # descriptions do, then join below — the phase now costs the slower of
+        # the two rather than their sum.
+        #
+        # Only the model call is off-thread. Every file write, manifest key and
+        # facts append stays on this thread, so results land in a deterministic
+        # order and nothing races on RunOutput.
+        analysis_t0 = time.monotonic()
+        flow_path = run_dir / "data" / "node_red_flow.json"
+        nr_future = nr_pool = None
+        if flow_path.exists() and not args.skip_descriptions:
+
+            def _describe_flow(text, ctx):
+                t0 = time.monotonic()
+                return describe_node_red(text, ctx), round(time.monotonic() - t0, 1)
+
+            nr_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="node-red")
+            nr_future = nr_pool.submit(
+                _describe_flow,
+                flow_path.read_text(),
+                {
+                    "variant": manifest.get("variant"),
+                    "recipe": manifest.get("recipe_input"),
+                },
+            )
+            print("\ndescribing node-red flow (running in background)...")
+
+        try:
+            if desc_queue and not args.skip_descriptions:
+                desc_t0 = time.monotonic()
+                print(
+                    f"describing {len(desc_queue)} screenshot(s) "
+                    f"({DESCRIBE_WORKERS} in parallel)..."
+                )
+
+                def _describe(item):
+                    shot_path, ctx = item
+                    return describe_screenshot(shot_path.read_bytes(), ctx)
+
+                # Results are merged in queue order so the output files stay
+                # deterministic regardless of completion order.
+                descriptions = {}
+                with ThreadPoolExecutor(max_workers=DESCRIBE_WORKERS) as pool:
+                    futures = [pool.submit(_describe, item) for item in desc_queue]
+                    for (shot_path, _ctx), fut in zip(desc_queue, futures):
+                        try:
+                            result = fut.result()
+                            descriptions[shot_path.name] = result["description"]
+                            for fact in result.get("facts", []):
+                                meta.setdefault("facts", []).append(
+                                    {**fact, "source": shot_path.name}
+                                )
+                            print(
+                                f"  described {shot_path.name} "
+                                f"(+{len(result.get('facts', []))} facts)"
+                            )
+                        except Exception as e:
+                            descriptions[shot_path.name] = f"[description failed: {e}]"
+                            print(
+                                f"  FAILED to describe {shot_path.name}: {e}",
+                                file=sys.stderr,
+                            )
+                out.save(
+                    "descriptions.json", json.dumps(descriptions, indent=2),
+                    kind="report", role="deliverable",
+                )
+                manifest["descriptions"] = "deliverables/report/descriptions.json"
+                manifest["descriptions_duration_s"] = round(
+                    time.monotonic() - desc_t0, 1
+                )
+
+            # Join the Node-RED analysis started above. By now it has usually
+            # finished alongside the descriptions, so this rarely blocks.
+            if nr_future is not None:
+                try:
+                    nr, nr_secs = nr_future.result()
+                    out.save(
+                        "node_red_description.md", nr["markdown"],
+                        kind="report", role="deliverable",
+                    )
+                    for fact in nr.get("facts", []):
+                        meta.setdefault("facts", []).append(
+                            {**fact, "source": "node_red_flow.json"}
+                        )
+                    manifest["node_red_description"] = (
+                        "deliverables/report/node_red_description.md"
+                    )
+                    manifest["node_red_duration_s"] = nr_secs
+                    print("  node_red_description.md written")
+                except Exception as e:
+                    print(f"  FAILED to describe node-red flow: {e}", file=sys.stderr)
+        finally:
+            if nr_pool is not None:
+                nr_pool.shutdown(wait=False)
+        # Wall clock for the overlapped phase. The two durations above are each
+        # task's own compute time and will now sum to MORE than this.
+        manifest["analysis_duration_s"] = round(time.monotonic() - analysis_t0, 1)
+
         if meta:
             out.save("meta.json", json.dumps(meta, indent=2), kind="data", role="data")
             manifest["meta"] = "data/meta.json"
