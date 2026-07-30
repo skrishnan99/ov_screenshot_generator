@@ -1,0 +1,406 @@
+{
+  "url": "http://ov80i-gsac177082.tail48746.ts.net",
+  "recipe_input": "#4 Camera 56959 Tail",
+  "started": "20260729_041227",
+  "steps": [
+    {
+      "id": "enter_recipe_editor",
+      "layer": "replay",
+      "screenshot": "deliverables/screenshots/01_recipe_editor.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 17.4
+    },
+    {
+      "id": "imaging_setup",
+      "layer": "replay",
+      "screenshot": "deliverables/screenshots/02_imaging_setup.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 4.4
+    },
+    {
+      "id": "template_image",
+      "layer": "replay",
+      "screenshot": "deliverables/screenshots/03_template_image.png",
+      "main_image": "deliverables/images/03_template_image_raw.jpg",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 41.7
+    },
+    {
+      "id": "inspection_rois",
+      "layer": "replay",
+      "models": [
+        "Horn Quality",
+        "Cracks",
+        "Hole Presence"
+      ],
+      "screenshots": [
+        "deliverables/screenshots/04_roi_horn-quality.png",
+        "deliverables/screenshots/04_roi_cracks.png",
+        "deliverables/screenshots/04_roi_hole-presence.png"
+      ],
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 54.9
+    },
+    {
+      "id": "segmentation_block",
+      "layer": "agent",
+      "model_calls": 17,
+      "agent_evidence": "Navigated from /recipes/3/inspection back to Recipe Editor overview (/recipes/3/editor) via breadcrumb \"#4 Camera 56959 Tail\". Found AI Blocks section showing \"Segmentation (1 Model)\" and clicked it, landing on /recipes/3/segmentation showing the \"Cracks\" segmentation model. Called wait_for_button_enabled for \"Previous\" which reported enabled after 20s. Clicked Previous, then wait_for_image_load confirmed: \"Image fully loaded after 0s: The main image area displays actual camera imagery of a mechanical part with visible texture, details, and drawn ROI box overlays (labeled C3, C4, C5).\" Final snapshot shows Capture ID: 113027, Capture Time 2026-05-21, Source Capture 2 of 35, with Previous still enabled and Next disabled (at the beginning of the capture history), confirming the previous view loaded correctly.",
+      "agent_model": "claude-sonnet-5",
+      "screenshot": "deliverables/screenshots/05_segmentation.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 63.5
+    },
+    {
+      "id": "view_all_rois_segmentation",
+      "layer": "agent",
+      "model_calls": 10,
+      "agent_evidence": "Clicked \"View All ROIs\" button on the Segmentation page (recipe 3). The wait_for_image_load tool confirmed: \"Image fully loaded after 7s: All thumbnail tiles in the grid display fully rendered camera imagery with visible texture, scene detail, and ROI overlays, with no loading indicators or placeholders present.\" Subsequent snapshot confirms the modal is open with \"View All ROIs\" header text, \"Filter By ROI\", \"Visualization Mode Default\", \"Opacity\" controls, \"Close\" and \"Ok\" buttons, and a full grid of ~84 img elements each labeled with ROI identifiers (ROI: C 1, ROI: C 2, ROI: C 3, ROI: C 4, etc.), indicating the ROI thumbnail grid rendered successfully. URL remains http://ov80i-gsac177082.tail48746.ts.net/recipes/3/segmentation.",
+      "agent_model": "claude-sonnet-5",
+      "screenshot": "deliverables/screenshots/06_view_all_rois_segmentation.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 61.0
+    },
+    {
+      "id": "classification_block",
+      "layer": "agent",
+      "model_calls": 20,
+      "agent_evidence": "Closed the \"View All ROIs\" modal (clicked Ok) on the Segmentation page (/recipes/3/segmentation). Navigated via the \"#4 Camera 56959 Tail\" breadcrumb back to the Recipe Editor overview (/recipes/3/editor), which showed AI Blocks section with \"Classification (2 Models)\". Clicked it, landing on /recipes/3/classification. wait_for_button_enabled(\"Previous\") reported enabled immediately; clicked Previous, capture navigation updated from Capture ID 113028 to a prior capture (Capture: 39 of 39, Cloned from recipe Camera 4 David's Version - Capture ID: 113017). wait_for_image_load confirmed: \"Image fully loaded... displays actual camera imagery with visible scene texture, object detail, and drawn overlays including a green bounding box and multiple ROI annotations.\" Final snapshot confirms classification model page fully loaded with previous capture data.",
+      "agent_model": "claude-sonnet-5",
+      "screenshot": "deliverables/screenshots/07_classification.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 44.5
+    },
+    {
+      "id": "view_all_rois_classification",
+      "layer": "agent",
+      "model_calls": 9,
+      "agent_evidence": "URL changed to http://ov80i-gsac177082.tail48746.ts.net/recipes/3/classification/view-rois?blockId=10&pageSize=100 with title \"View ROIs\". Page shows \"Showing 30 of 30 ROIs\" and a fully rendered grid of 30 thumbnail entries with Pass/Fail labels and timestamps (e.g. \"Pass Apr 13, 7:17 AM...Horn\", \"Fail Apr 9, 5:16 AM...Horn\"). wait_for_image_load confirmed: \"Image fully loaded after 7s: The main thumbnail grid displays actual camera imagery with visible texture, detail, and overlay elements (Pass/Fail indicators, timestamps) on all visible tiles, indicating full rendering completion.\"",
+      "agent_model": "claude-sonnet-5",
+      "screenshot": "deliverables/screenshots/08_view_all_rois_classification.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 53.4
+    },
+    {
+      "id": "train_models",
+      "layer": "replay",
+      "screenshot": "deliverables/screenshots/09_train_models.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 5.7
+    },
+    {
+      "id": "training_reports",
+      "layer": "agent",
+      "model_calls": 5,
+      "agent_evidence": "URL is http://ov80i-gsac177082.tail48746.ts.net/recipes/3/train and the page shows the Train tab active with a list of models: Horn Quality (classification), Cracks (segmentation), Hole Presence (classification), each with Status, Training Metrics, Validation Metrics, Compiled Accuracy, Last Trained, Training Mode, and Actions columns fully populated. No modal is open.",
+      "agent_model": "claude-sonnet-5",
+      "report_models": [
+        "Horn Quality (Classification)",
+        "Hole Presence (Classification)"
+      ],
+      "screenshots": [
+        "deliverables/screenshots/horn-quality_classification.png",
+        "deliverables/screenshots/hole-presence_classification.png"
+      ],
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 70.8
+    },
+    {
+      "id": "model_settings",
+      "layer": "agent",
+      "model_calls": 5,
+      "agent_evidence": "URL is http://ov80i-gsac177082.tail48746.ts.net/recipes/3/train and the page shows the Train Models table with models: Horn Quality (classification), Cracks (segmentation), Hole Presence (classification), each with Status/Training Metrics/Validation Metrics/Actions columns fully rendered.",
+      "agent_model": "claude-sonnet-5",
+      "settings_models": [
+        "Horn Quality (classification)",
+        "Cracks (segmentation)",
+        "Hole Presence (classification)"
+      ],
+      "screenshots": [
+        "deliverables/screenshots/horn-quality_classification_settings.png",
+        "deliverables/screenshots/cracks_segmentation_settings.png",
+        "deliverables/screenshots/hole-presence_classification_settings.png"
+      ],
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 68.3
+    },
+    {
+      "id": "io_node_red",
+      "layer": "agent",
+      "model_calls": 70,
+      "agent_evidence": "Navigated to Recipe Editor overview (http://ov80i-gsac177082.tail48746.ts.net/recipes/3/editor), clicked \"Configure IO\" to reach the IO Logic page (recipes/3/ioblock). Opened the Node-RED main menu via the icon next to the in-iframe \"Deploy\" button, which revealed the full Node-RED menu (Edit, View, Arrange, Import, Export, Search flow, Configuration nodes, Settings, etc.). Clicked \"Export\", which opened the \"Export nodes\" dialog with \"current flow\" (Slave Camera 3 V5) selected. Clicked \"Download\" in that dialog, after which the dialog closed, confirming the JSON download of the current flow was triggered.",
+      "agent_model": "claude-sonnet-5",
+      "download": "data/node_red_flow.json",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 268.1
+    },
+    {
+      "id": "library",
+      "layer": "replay",
+      "screenshot": "deliverables/screenshots/12_library.png",
+      "main_image": "deliverables/images/12_library_raw.png",
+      "status": "success",
+      "matched_recipe": "#4 Camera 56959 Tail",
+      "duration_s": 3.6
+    }
+  ],
+  "variant": "ov80i",
+  "ui_version": "v2026.6.0-OV80i_e85fef05a8",
+  "steps_duration_s": 757.4,
+  "descriptions": "deliverables/report/descriptions.json",
+  "descriptions_duration_s": 608.5,
+  "node_red_description": "deliverables/report/node_red_description.md",
+  "node_red_duration_s": 156.1,
+  "meta": "data/meta.json",
+  "assets": [
+    {
+      "path": "deliverables/screenshots/01_recipe_editor.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "enter_recipe_editor",
+      "description_key": "01_recipe_editor.png"
+    },
+    {
+      "path": "deliverables/screenshots/02_imaging_setup.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "imaging_setup",
+      "description_key": "02_imaging_setup.png"
+    },
+    {
+      "path": "deliverables/screenshots/03_template_image.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "template_image",
+      "description_key": "03_template_image.png"
+    },
+    {
+      "path": "deliverables/images/03_template_image_raw.jpg",
+      "kind": "image",
+      "role": "deliverable",
+      "step": "template_image",
+      "item": "raw viewer image"
+    },
+    {
+      "path": "archive/03_template_image_overlay.png",
+      "kind": "image",
+      "role": "archive",
+      "step": "template_image",
+      "item": "viewer overlay layer"
+    },
+    {
+      "path": "archive/03_template_image_overlay2.png",
+      "kind": "image",
+      "role": "archive",
+      "step": "template_image",
+      "item": "viewer overlay layer"
+    },
+    {
+      "path": "archive/03_template_image_overlay3.png",
+      "kind": "image",
+      "role": "archive",
+      "step": "template_image",
+      "item": "viewer overlay layer"
+    },
+    {
+      "path": "archive/03_template_image_overlay4.png",
+      "kind": "image",
+      "role": "archive",
+      "step": "template_image",
+      "item": "viewer overlay layer"
+    },
+    {
+      "path": "deliverables/images/03_template_image_composite.png",
+      "kind": "image",
+      "role": "deliverable",
+      "step": "template_image",
+      "item": "viewer layers flattened (as shown in UI)"
+    },
+    {
+      "path": "deliverables/screenshots/04_roi_horn-quality.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "inspection_rois",
+      "item": "ROI setup for model Horn Quality",
+      "description_key": "04_roi_horn-quality.png"
+    },
+    {
+      "path": "deliverables/screenshots/04_roi_cracks.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "inspection_rois",
+      "item": "ROI setup for model Cracks",
+      "description_key": "04_roi_cracks.png"
+    },
+    {
+      "path": "deliverables/screenshots/04_roi_hole-presence.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "inspection_rois",
+      "item": "ROI setup for model Hole Presence",
+      "description_key": "04_roi_hole-presence.png"
+    },
+    {
+      "path": "deliverables/screenshots/05_segmentation.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "segmentation_block",
+      "description_key": "05_segmentation.png"
+    },
+    {
+      "path": "deliverables/screenshots/06_view_all_rois_segmentation.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "view_all_rois_segmentation",
+      "description_key": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "path": "deliverables/screenshots/07_classification.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "classification_block",
+      "description_key": "07_classification.png"
+    },
+    {
+      "path": "deliverables/screenshots/08_view_all_rois_classification.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "view_all_rois_classification",
+      "description_key": "08_view_all_rois_classification.png"
+    },
+    {
+      "path": "deliverables/screenshots/09_train_models.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "train_models",
+      "description_key": "09_train_models.png"
+    },
+    {
+      "path": "deliverables/screenshots/horn-quality_classification.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "training_reports",
+      "item": "training report for model Horn Quality (Classification)",
+      "description_key": "horn-quality_classification.png"
+    },
+    {
+      "path": "deliverables/screenshots/hole-presence_classification.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "training_reports",
+      "item": "training report for model Hole Presence (Classification)",
+      "description_key": "hole-presence_classification.png"
+    },
+    {
+      "path": "deliverables/screenshots/horn-quality_classification_settings.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "model_settings",
+      "item": "settings dialog for model Horn Quality (classification)",
+      "description_key": "horn-quality_classification_settings.png"
+    },
+    {
+      "path": "deliverables/screenshots/cracks_segmentation_settings.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "model_settings",
+      "item": "settings dialog for model Cracks (segmentation)",
+      "description_key": "cracks_segmentation_settings.png"
+    },
+    {
+      "path": "deliverables/screenshots/hole-presence_classification_settings.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "model_settings",
+      "item": "settings dialog for model Hole Presence (classification)",
+      "description_key": "hole-presence_classification_settings.png"
+    },
+    {
+      "path": "data/node_red_flow.json",
+      "kind": "data",
+      "role": "data",
+      "step": "io_node_red"
+    },
+    {
+      "path": "deliverables/screenshots/12_library.png",
+      "kind": "screenshot",
+      "role": "deliverable",
+      "step": "library",
+      "description_key": "12_library.png"
+    },
+    {
+      "path": "deliverables/images/12_library_raw.png",
+      "kind": "image",
+      "role": "deliverable",
+      "step": "library",
+      "item": "raw viewer image"
+    },
+    {
+      "path": "archive/12_library_overlay.png",
+      "kind": "image",
+      "role": "archive",
+      "step": "library",
+      "item": "viewer overlay layer"
+    },
+    {
+      "path": "archive/12_library_overlay2.png",
+      "kind": "image",
+      "role": "archive",
+      "step": "library",
+      "item": "viewer overlay layer"
+    },
+    {
+      "path": "archive/12_library_overlay3.png",
+      "kind": "image",
+      "role": "archive",
+      "step": "library",
+      "item": "viewer overlay layer"
+    },
+    {
+      "path": "deliverables/images/12_library_composite.png",
+      "kind": "image",
+      "role": "deliverable",
+      "step": "library",
+      "item": "viewer layers flattened (as shown in UI)"
+    },
+    {
+      "path": "deliverables/report/descriptions.json",
+      "kind": "report",
+      "role": "deliverable",
+      "step": null
+    },
+    {
+      "path": "deliverables/report/node_red_description.md",
+      "kind": "report",
+      "role": "deliverable",
+      "step": null
+    },
+    {
+      "path": "deliverables/images/02_imaging_setup_with_template.png",
+      "kind": "image",
+      "role": "deliverable",
+      "step": "imaging_setup",
+      "item": "imaging screen with template image composited into viewer bbox"
+    },
+    {
+      "path": "data/meta.json",
+      "kind": "data",
+      "role": "data",
+      "step": null
+    }
+  ],
+  "duration_s": 1522.2,
+  "finished": "20260729_043754"
+}

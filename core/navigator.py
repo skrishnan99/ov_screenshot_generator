@@ -85,6 +85,19 @@ TOOLS = [
         },
     },
     {
+        "name": "press_keys",
+        "description": 'Press a keyboard shortcut on the page, e.g. "ControlOrMeta+e" '
+        "(Playwright key syntax; ControlOrMeta = Cmd on macOS, Ctrl elsewhere). Keys go "
+        "to the focused element — click a neutral spot in the target area first when "
+        "the shortcut belongs to an embedded editor (e.g. a Node-RED canvas).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"keys": {"type": "string"}},
+            "required": ["keys"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "wait_for_text",
         "description": "Wait up to timeout_s seconds for the given text to become visible.",
         "input_schema": {
@@ -164,6 +177,18 @@ class StepResult:
     model_calls: int = 0
 
 
+def run_step_auto(*args, **kwargs) -> StepResult:
+    """Dispatch to the navigator matching the selected LLM backend: the
+    'agent-sdk' backend runs the loop on the user's Claude Code subscription
+    (core.navigator_sdk); every other backend uses the direct-API loop below
+    (which needs ANTHROPIC_API_KEY). The StepResult contract is identical."""
+    if llm.backend().name == "agent-sdk":
+        from core.navigator_sdk import run_step_sdk
+
+        return run_step_sdk(*args, **kwargs)
+    return run_step(*args, **kwargs)
+
+
 def _move_cache_breakpoint(messages: list) -> None:
     """Keep exactly one cache breakpoint, on the last block of the newest
     user message, so each turn re-reads the whole prior conversation from
@@ -204,11 +229,29 @@ def run_step(
         {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
     ]
 
+    # The conversation is model-agnostic, so an unavailable tier can be
+    # swapped mid-step without losing progress.
+    chain = llm.fallback_chain(model)
+    tier = 0
+
     for call_n in range(1, max_model_calls + 1):
         _move_cache_breakpoint(messages)
-        response = client.messages.create(
-            model=model, max_tokens=4096, system=system, tools=TOOLS, messages=messages
-        )
+        while True:
+            try:
+                response = client.messages.create(
+                    model=chain[tier], max_tokens=4096, system=system,
+                    tools=TOOLS, messages=messages,
+                )
+                if chain[tier] != model and call_n == 1:
+                    llm.record_substitution(model, chain[tier], "unavailable", log)
+                break
+            except Exception as e:
+                if not llm.is_availability_issue(e) or tier == len(chain) - 1:
+                    return StepResult(
+                        "failure", "", f"model call failed: {e}", "", actions, call_n
+                    )
+                log(f"  {chain[tier]} unavailable; falling back to {chain[tier + 1]}")
+                tier += 1
         if response.stop_reason == "refusal":
             return StepResult("failure", "", "model refused the request", "", actions, call_n)
 
@@ -303,6 +346,10 @@ def _execute(browser, name: str, args: dict, log):
                 "value": args["text"],
             }
         return result, record
+    if name == "press_keys":
+        result = browser.press_keys(args["keys"])
+        log(f"  agent: press {args['keys']} -> {result[:60]}")
+        return result, None
     if name == "wait_for_text":
         return browser.wait_for_text(args["text"], args.get("timeout_s", 5)), None
     if name == "wait_seconds":

@@ -1,0 +1,3221 @@
+{
+  "imaging_setup_img_bbox": {
+    "x": 244,
+    "y": 152,
+    "width": 887,
+    "height": 499,
+    "element": "canvas",
+    "screenshot": {
+      "width": 1600,
+      "height": 1000
+    },
+    "normalized": {
+      "x": 0.1525,
+      "y": 0.1524,
+      "width": 0.5542,
+      "height": 0.4987
+    }
+  },
+  "template_image_main_image": {
+    "element": "img",
+    "native_width": 3840,
+    "native_height": 2160,
+    "layer_variance": null,
+    "layers": [
+      {
+        "tag": "img",
+        "variance": null,
+        "readable": true
+      },
+      {
+        "tag": "img",
+        "variance": null,
+        "readable": true
+      },
+      {
+        "tag": "canvas",
+        "variance": 723,
+        "readable": true
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "readable": true
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "readable": true
+      }
+    ],
+    "method": "img_src",
+    "source_url": "http://ov80i-gsac177082.tail48746.ts.net/edge/v2/files/aligner_templates/3e0c7099-5e50-4474-a01e-9dc897af99cc.jpg",
+    "file": "deliverables/images/03_template_image_raw.jpg",
+    "overlays": [
+      {
+        "tag": "img",
+        "variance": null,
+        "native_width": 3840,
+        "native_height": 2160,
+        "method": "img_src",
+        "source_url": "http://ov80i-gsac177082.tail48746.ts.net/static/transparent_3840x2160.fd26d5a0.png",
+        "file": "archive/03_template_image_overlay.png"
+      },
+      {
+        "tag": "canvas",
+        "variance": 723,
+        "native_width": 3840,
+        "native_height": 2160,
+        "method": "canvas_export",
+        "file": "archive/03_template_image_overlay2.png"
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "native_width": 3840,
+        "native_height": 2160,
+        "method": "canvas_export",
+        "file": "archive/03_template_image_overlay3.png"
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "native_width": 3840,
+        "native_height": 2160,
+        "method": "canvas_export",
+        "file": "archive/03_template_image_overlay4.png"
+      }
+    ],
+    "composite": {
+      "file": "deliverables/images/03_template_image_composite.png"
+    }
+  },
+  "models": [
+    {
+      "name": "Horn Quality",
+      "type": "classification",
+      "slug": "horn-quality",
+      "roi_screenshot": "deliverables/screenshots/04_roi_horn-quality.png",
+      "report_screenshot": "deliverables/screenshots/horn-quality_classification.png",
+      "settings_screenshot": "deliverables/screenshots/horn-quality_classification_settings.png"
+    },
+    {
+      "name": "Cracks",
+      "type": "segmentation",
+      "slug": "cracks",
+      "roi_screenshot": "deliverables/screenshots/04_roi_cracks.png",
+      "settings_screenshot": "deliverables/screenshots/cracks_segmentation_settings.png"
+    },
+    {
+      "name": "Hole Presence",
+      "type": "classification",
+      "slug": "hole-presence",
+      "roi_screenshot": "deliverables/screenshots/04_roi_hole-presence.png",
+      "report_screenshot": "deliverables/screenshots/hole-presence_classification.png",
+      "settings_screenshot": "deliverables/screenshots/hole-presence_classification_settings.png"
+    }
+  ],
+  "library_main_image": {
+    "element": "img",
+    "native_width": 3840,
+    "native_height": 2160,
+    "layer_variance": null,
+    "layers": [
+      {
+        "tag": "img",
+        "variance": null,
+        "readable": true
+      },
+      {
+        "tag": "canvas",
+        "variance": 1480,
+        "readable": true
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "readable": true
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "readable": true
+      }
+    ],
+    "method": "img_src",
+    "source_url": "http://ov80i-gsac177082.tail48746.ts.net/static/transparent_3840x2160.fd26d5a0.png",
+    "file": "deliverables/images/12_library_raw.png",
+    "overlays": [
+      {
+        "tag": "canvas",
+        "variance": 1480,
+        "native_width": 3840,
+        "native_height": 2160,
+        "method": "canvas_export",
+        "file": "archive/12_library_overlay.png"
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "native_width": 3840,
+        "native_height": 2160,
+        "method": "canvas_export",
+        "file": "archive/12_library_overlay2.png"
+      },
+      {
+        "tag": "canvas",
+        "variance": 0,
+        "native_width": 3840,
+        "native_height": 2160,
+        "method": "canvas_export",
+        "file": "archive/12_library_overlay3.png"
+      }
+    ],
+    "composite": {
+      "file": "deliverables/images/12_library_composite.png"
+    }
+  },
+  "facts": [
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "plc_recipe_id",
+      "value": "7",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "description",
+      "value": "Description for Recipe 1 (imported 4x)",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Active",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "trigger_mode",
+      "value": "PLC Trigger Mode",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "exposure_ms",
+      "value": "20ms",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "gain",
+      "value": "1",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "gamma",
+      "value": "30",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "classification_models",
+      "value": "2 Models",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "segmentation_models",
+      "value": "1 Model",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "ocr_models",
+      "value": "0 Models",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "measurement_models",
+      "value": "0 Models",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "unsupervised_models",
+      "value": "0 Models",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "remote_storage",
+      "value": "Disabled",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "01_recipe_editor.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Active",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "resolution",
+      "value": "3840x2160",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "exposure_ms",
+      "value": "20.0",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "gain",
+      "value": "1",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "gamma",
+      "value": "30",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "white_balance",
+      "value": "Daylight 6500K",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "image_rotation",
+      "value": "No Rotation",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "trigger_mode",
+      "value": "PLC Trigger",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "trigger_mode_badge",
+      "value": "PLC Trigger Mode",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "trigger_mode_description",
+      "value": "PLC trigger mode captures new images when triggered by a PLC (EtherNet/IP or PROFINET).",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "enable_focus_view",
+      "value": "unchecked",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "current_screen",
+      "value": "Imaging Setup",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "02_imaging_setup.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "plc_recipe_id",
+      "value": "4",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "current_screen",
+      "value": "Template Image and Alignment",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "skip_aligner",
+      "value": "ON",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "search_area_count",
+      "value": "0",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "search_area_field",
+      "value": "Search Area (empty)",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "page_description",
+      "value": "Use it to track the orientation of an object in an image. The tool can track the object regardless of where it is on the image even if its rotated.",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "skip_aligner_helper_text",
+      "value": "If your inspection does not require an alignment step, click this box to disable the aligner.",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "canvas_overlay_label",
+      "value": "Search Area",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "add_search_area_button_state",
+      "value": "disabled",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "live_preview_mode_button_state",
+      "value": "disabled",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "test_button_state",
+      "value": "disabled",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "save_button_state",
+      "value": "enabled",
+      "source": "03_template_image.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "screen",
+      "value": "Inspection Setup",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "page_title",
+      "value": "Inspection Editor",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "page_subtitle",
+      "value": "Use it to define parts of the image that you want to focus on and make decisions.",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "model_count",
+      "value": "3",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "type",
+      "value": "Classification",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "badge",
+      "value": "C",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "selected",
+      "value": "true",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "inspection_type",
+      "value": "Missing End",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "roi_count",
+      "value": "1 ROI",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "class_count",
+      "value": "2 Classes",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "rois_tab_label",
+      "value": "ROIs (1)",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "classes_tab_label",
+      "value": "Classes (2)",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "roi_name",
+      "value": "Horn",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "type",
+      "value": "Segmentation",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "badge",
+      "value": "S",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "name_as_shown",
+      "value": "Hole Pres...",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "type",
+      "value": "Classification",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "badge",
+      "value": "C",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "bounding_boxes_toggle",
+      "value": "on",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_labels_toggle",
+      "value": "on",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "live_preview_mode",
+      "value": "unchecked",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_geometry_h",
+      "value": "0",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_geometry_w",
+      "value": "0",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_geometry_x",
+      "value": "0",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_geometry_y",
+      "value": "0",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_geometry_angle",
+      "value": "0\u00b0",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "canvas_roi_labels",
+      "value": "C1, C2, C3, C4, C5, H1, H2, H3, H4, H5, H6, Horn",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "tabs",
+      "value": "Imaging Setup, Template Image and Alignment, Inspection Setup, Classification Block, Segmentation Block, Measurement Block, OCR Block, Unsupervised Block, Train, IO Logic",
+      "source": "04_roi_horn-quality.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "active_tab",
+      "value": "Inspection Setup",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "model_count",
+      "value": "3",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "model_type",
+      "value": "Segmentation",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_count",
+      "value": "ROIs (5)",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "class_count",
+      "value": "Classes (1)",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_names",
+      "value": "C 1, C 2, C 3, C 4, C 5",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "selected",
+      "value": "true",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Horn Qua\u2026",
+      "property": "model_type",
+      "value": "Classification",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Hole Pres\u2026",
+      "property": "model_type",
+      "value": "Classification",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "bounding_boxes_toggle",
+      "value": "on",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_labels_toggle",
+      "value": "on",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "live_preview_mode",
+      "value": "unchecked",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_height_field",
+      "value": "0",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_width_field",
+      "value": "0",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_x_field",
+      "value": "0",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_y_field",
+      "value": "0",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_angle_field",
+      "value": "0\u00ba",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "class_color",
+      "value": "yellow-green ROI boxes",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "other_visible_roi_labels",
+      "value": "H 1, H 2, H 3, H 4, H 5, H 6, Horn",
+      "source": "04_roi_cracks.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "active_screen",
+      "value": "Inspection Setup",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Horn Qua\u2026",
+      "property": "type",
+      "value": "Classification",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "type",
+      "value": "Segmentation",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "type",
+      "value": "Classification",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "roi_count",
+      "value": "6 ROIs",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "class_count",
+      "value": "2 Classes",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "rois_tab_label",
+      "value": "ROIs (6)",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "classes_tab_label",
+      "value": "Classes (2)",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "roi_names",
+      "value": "H 1, H 2, H 3, H 4, H 5, H 6",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "bounding_boxes_toggle",
+      "value": "on",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_labels_toggle",
+      "value": "on",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "live_preview_mode",
+      "value": "unchecked",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_angle_field",
+      "value": "0\u00ba",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "canvas_roi_labels",
+      "value": "C 1, C 2, C 3, C 4, C 5, Horn, H 1, H 2, H 3, H 4, H 5, H 6",
+      "source": "04_roi_hole-presence.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "plc_recipe_id",
+      "value": "4",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "current_screen",
+      "value": "Segmentation Block",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "skip_aligner",
+      "value": "Skip Aligner is Enabled",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_count",
+      "value": "35",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "source_capture_index",
+      "value": "35 of 35",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_id",
+      "value": "113027 (Headless)",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_time",
+      "value": "2026-05-21 12:43:42.000 / 2 months ago",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_notes",
+      "value": "Cloned from recipe: Camera 4 David's Version - Capture ID: 113026",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "type",
+      "value": "Segmentation",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_count",
+      "value": "5",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "roi_names",
+      "value": "C 1, C 2, C 3, C 4, C 5",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "bounding_boxes_toggle",
+      "value": "on",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_labels_toggle",
+      "value": "on",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "annotations_toggle",
+      "value": "on",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "previous_button_state",
+      "value": "enabled",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "next_button_state",
+      "value": "disabled",
+      "source": "05_segmentation.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "Version: v2026.6.0-OV80i",
+      "source": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "modal_open",
+      "value": "View All ROIs",
+      "source": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "filter_by_roi",
+      "value": "Filter by ROI",
+      "source": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "visualization_mode",
+      "value": "Default",
+      "source": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_names_visible",
+      "value": "C 1, C 2, C 3, C 4, C 5",
+      "source": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "visible_thumbnail_count",
+      "value": "24",
+      "source": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "footer_button",
+      "value": "Ok",
+      "source": "06_view_all_rois_segmentation.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "screen",
+      "value": "Classification Block",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "skip_aligner",
+      "value": "Skip Aligner is Enabled",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_count",
+      "value": "39 of 39",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_id",
+      "value": "113028 (Headless)",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_time",
+      "value": "2026-05-21 12:16:37.000 / 2 months ago",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_notes",
+      "value": "Cloned from recipe: Camera 4 David's Version - Capture ID: 113017",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "bounding_boxes_toggle",
+      "value": "ON",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_labels_toggle",
+      "value": "ON",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "live_preview_mode",
+      "value": "unchecked",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "next_button_state",
+      "value": "disabled",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "previous_button_state",
+      "value": "enabled",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "inspection_type_label",
+      "value": "Hole Presence - Hole Presence",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "class_count",
+      "value": "2",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/pass_hole_presence",
+      "property": "label_count",
+      "value": "74",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/pass_hole_presence",
+      "property": "class_color",
+      "value": "green",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/pass_hole_presence",
+      "property": "pass_fail",
+      "value": "Pass",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/fail_hole_presence",
+      "property": "label_count",
+      "value": "9",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/fail_hole_presence",
+      "property": "class_color",
+      "value": "red",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/fail_hole_presence",
+      "property": "pass_fail",
+      "value": "Fail",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "model: Missing End",
+      "property": "inspection_type_label",
+      "value": "Missing End - Horn Quality",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "model: Missing End",
+      "property": "class_count",
+      "value": "2",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Missing End/fail_missing_end",
+      "property": "label_count",
+      "value": "7",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Missing End/fail_missing_end",
+      "property": "class_color",
+      "value": "red",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Missing End/fail_missing_end",
+      "property": "pass_fail",
+      "value": "Fail",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Missing End/pass_missing_end",
+      "property": "label_count",
+      "value": "23",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Missing End/pass_missing_end",
+      "property": "class_color",
+      "value": "green",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "class: Missing End/pass_missing_end",
+      "property": "pass_fail",
+      "value": "Pass",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "roi_names",
+      "value": "Hole Presence - H 1, Hole Presence - H 2, Hole Presence - H 3, Hole Presence - H 4, Hole Presence - H 5, Hole Presence - H 6",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "model: Missing End",
+      "property": "roi_names",
+      "value": "Missing End - Horn",
+      "source": "07_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Active",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "screen_title",
+      "value": "View ROIs",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "selected_model",
+      "value": "Horn Quality",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "roi_count",
+      "value": "Showing 30 of 30 ROIs",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "rois_per_page",
+      "value": "100",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "load_unlabeled_toggle",
+      "value": "off",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "roi_name",
+      "value": "Horn",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "class_count",
+      "value": "2",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "class: Horn Quality/Pass",
+      "property": "label_count",
+      "value": "23",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "class: Horn Quality/Pass",
+      "property": "class_color",
+      "value": "green",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "class: Horn Quality/Fail",
+      "property": "label_count",
+      "value": "7",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "class: Horn Quality/Fail",
+      "property": "class_color",
+      "value": "red",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "view_mode",
+      "value": "grid",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "search_placeholder",
+      "value": "Search by comment, ROI ID, or keywords...",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "earliest_capture_timestamp",
+      "value": "Apr 9, 5:12 AM",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "latest_capture_timestamp",
+      "value": "May 21, 12:43 PM",
+      "source": "08_view_all_rois_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "active_step",
+      "value": "Train",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "type",
+      "value": "classification",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "status",
+      "value": "Idle",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "train_accuracy",
+      "value": "100%",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "training_loss",
+      "value": "0.240",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "val_accuracy",
+      "value": "---",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "validation_loss",
+      "value": "---",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "compiled_accuracy",
+      "value": "100%",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "last_trained",
+      "value": "5/21/2026 12:47:06 PM",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "training_mode",
+      "value": "Accurate",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "type",
+      "value": "segmentation",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "status",
+      "value": "Idle",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "mean_iou",
+      "value": "---",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "training_loss",
+      "value": "0.028",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "validation_iou",
+      "value": "---",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "validation_loss",
+      "value": "---",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "compiled_iou",
+      "value": "--",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "last_trained",
+      "value": "5/21/2026 9:23:19 AM",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "training_mode",
+      "value": "Accurate",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "type",
+      "value": "classification",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "status",
+      "value": "Idle",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "train_accuracy",
+      "value": "100%",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "training_loss",
+      "value": "0.154",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "val_accuracy",
+      "value": "---",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "validation_loss",
+      "value": "---",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "compiled_accuracy",
+      "value": "100%",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "last_trained",
+      "value": "5/19/2026 9:24:22 AM",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "training_mode",
+      "value": "Accurate",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "model_count",
+      "value": "3",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "cancel_all_button_state",
+      "value": "Cancel All (disabled)",
+      "source": "09_train_models.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "model_type",
+      "value": "Classification Model",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "training_status",
+      "value": "Training Completed",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "progress",
+      "value": "100%",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "train_accuracy",
+      "value": "100%",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "training_images",
+      "value": "30",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "iterations",
+      "value": "100 / 100",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "inspection_type",
+      "value": "Missing End",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "class: Horn Quality/Pass",
+      "property": "class_color",
+      "value": "green",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "class: Horn Quality/Fail",
+      "property": "class_color",
+      "value": "red",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "sample_row_1",
+      "value": "Correct | 0.260 | Pass | Missing End | Training",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "sample_row_2",
+      "value": "Correct | 0.293 | Pass | Missing End | Training",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "sample_row_3",
+      "value": "Correct | 0.167 | Pass | Missing End | Training",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "sample_row_4",
+      "value": "Correct | 0.229 | Fail | Missing End | Training",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "sample_row_5",
+      "value": "Correct | 0.264 | Fail | Missing End | Training",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "displayed_rows_slider",
+      "value": "100",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "train_page_model_rows",
+      "value": "3 rows each with Train enabled and Cancel disabled",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "cancel_all_button",
+      "value": "disabled",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "abort_training_button",
+      "value": "disabled",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "finish_training_early_button",
+      "value": "disabled",
+      "source": "horn-quality_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "model_type",
+      "value": "Classification Model",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "training_status",
+      "value": "Training Completed",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "progress",
+      "value": "100%",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "train_accuracy",
+      "value": "100%",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "training_images",
+      "value": "83",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "iterations",
+      "value": "100 / 100",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "results_row_limit",
+      "value": "100",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/Pass",
+      "property": "class_color",
+      "value": "green",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "class: Hole Presence/Fail",
+      "property": "class_color",
+      "value": "red",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "result_row_1",
+      "value": "Correct | 0.237 | Fail | Hole Presence | Training",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "result_row_2",
+      "value": "Correct | 0.238 | Fail | Hole Presence | Training",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "result_row_3",
+      "value": "Correct | 0.102 | Pass | Hole Presence | Training",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "result_row_4",
+      "value": "Correct | 0.757 | Fail | Hole Presence | Training",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "result_row_5",
+      "value": "Correct | 0.054 | Pass | Hole Presence | Training",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "models_listed_on_train_page",
+      "value": "3 rows each with Train and Cancel buttons",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "cancel_all_button_state",
+      "value": "disabled",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "abort_training_button_state",
+      "value": "disabled",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "finish_training_early_button_state",
+      "value": "disabled",
+      "source": "hole-presence_classification.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "page_title",
+      "value": "Training AI Models",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "active_step_tab",
+      "value": "Train",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "model_count",
+      "value": "3",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "model_type",
+      "value": "classification",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "training_mode",
+      "value": "Fast",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "cancel_button_state",
+      "value": "Cancel (disabled)",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "model_type",
+      "value": "segmentation",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "cancel_button_state",
+      "value": "Cancel (disabled)",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "model_type",
+      "value": "classification",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "training_mode",
+      "value": "Fast",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "cancel_button_state",
+      "value": "Cancel (disabled)",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "train_all_button",
+      "value": "Train All",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "cancel_all_button_state",
+      "value": "Cancel All (disabled)",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "open_dialog_title",
+      "value": "Horn Quality - Classification",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "dialog_active_tab",
+      "value": "Augmentations",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "dialog_tabs",
+      "value": "Augmentations, Parameters",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "color_augmentations_prob",
+      "value": "0.50",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "brightness_enabled",
+      "value": "checked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "brightness_min",
+      "value": "-0.1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "brightness_max",
+      "value": "0.1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "brightness_slider_range",
+      "value": "-1 to 1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "contrast_enabled",
+      "value": "checked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "contrast_min",
+      "value": "-0.1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "contrast_max",
+      "value": "0.1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "contrast_slider_range",
+      "value": "-1 to 1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "hue_enabled",
+      "value": "unchecked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "hue_min",
+      "value": "-0.05",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "hue_max",
+      "value": "0.05",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "hue_slider_range",
+      "value": "-0.5 to 0.5",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "saturation_enabled",
+      "value": "unchecked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "saturation_min",
+      "value": "-0.1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "saturation_max",
+      "value": "0.1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "saturation_slider_range",
+      "value": "-1 to 1",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "rotation_range_enabled",
+      "value": "unchecked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "rotation_range_prob",
+      "value": "0.50",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "rotation_range_min",
+      "value": "-180",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "rotation_range_max",
+      "value": "180",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "flip_enabled",
+      "value": "unchecked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "flip_prob",
+      "value": "0.50",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "flip_mode",
+      "value": "Both",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "planckian_enabled",
+      "value": "unchecked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "planckian_prob",
+      "value": "0.50",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "gaussian_noise_enabled",
+      "value": "unchecked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "gaussian_noise_prob",
+      "value": "0.50",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "gaussian_noise_mean",
+      "value": "0.00",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "gaussian_noise_std",
+      "value": "0.05",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "motion_blur_enabled",
+      "value": "unchecked",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "motion_blur_prob",
+      "value": "0.50",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "motion_blur_kernel",
+      "value": "3",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "motion_blur_angle_min",
+      "value": "-180",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "motion_blur_angle_max",
+      "value": "180",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "motion_blur_angle_slider_range",
+      "value": "-360 to 360",
+      "source": "horn-quality_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "plc_recipe_id",
+      "value": "4",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "page_title",
+      "value": "Training AI Models",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "active_step_tab",
+      "value": "Train",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "visible_step_tabs",
+      "value": "OCR Block, Unsupervised Block, Train, IO Logic",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "model_count",
+      "value": "3",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "cancel_all_button_state",
+      "value": "Cancel All (disabled)",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "type",
+      "value": "classification",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "training_mode",
+      "value": "Fast / Accurate",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "status_indicator",
+      "value": "warning triangle",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "type",
+      "value": "segmentation",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "settings_dialog_title",
+      "value": "Cracks - Segmentation",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "settings_active_tab",
+      "value": "Augmentations",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "color_augmentations_prob",
+      "value": "0.50",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "brightness_enabled",
+      "value": "checked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "brightness_min",
+      "value": "-0.1",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "brightness_max",
+      "value": "0.1",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "contrast_enabled",
+      "value": "checked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "contrast_min",
+      "value": "-0.1",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "contrast_max",
+      "value": "0.1",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "hue_enabled",
+      "value": "unchecked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "hue_min",
+      "value": "-0.05",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "hue_max",
+      "value": "0.05",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "saturation_enabled",
+      "value": "unchecked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "saturation_min",
+      "value": "-0.1",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "saturation_max",
+      "value": "0.1",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "rotation_range_enabled",
+      "value": "unchecked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "rotation_range_prob",
+      "value": "0.50",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "rotation_range_min",
+      "value": "-180",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "rotation_range_max",
+      "value": "180",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "flip_enabled",
+      "value": "unchecked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "flip_prob",
+      "value": "0.50",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "flip_mode",
+      "value": "Both",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "planckian_enabled",
+      "value": "unchecked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "planckian_prob",
+      "value": "0.50",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "gaussian_noise_enabled",
+      "value": "unchecked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "gaussian_noise_prob",
+      "value": "0.50",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "gaussian_noise_mean",
+      "value": "0.00",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "gaussian_noise_std",
+      "value": "0.05",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "motion_blur_enabled",
+      "value": "unchecked",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "motion_blur_prob",
+      "value": "0.50",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "motion_blur_kernel",
+      "value": "3",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "motion_blur_angle_min",
+      "value": "-180",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "motion_blur_angle_max",
+      "value": "180",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "type",
+      "value": "classification",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "training_mode",
+      "value": "Fast / Accurate",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "status_indicator",
+      "value": "warning triangle",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "cracks_segmentation_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "name",
+      "value": "#4 Camera 56959 Tail",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Inactive",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "plc_recipe_id",
+      "value": "4",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "screen",
+      "value": "Training AI Models",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "active_tab",
+      "value": "Train",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "product_name",
+      "value": "OV80i AI Vision System",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "type",
+      "value": "classification",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Horn Quality",
+      "property": "cancel_button_state",
+      "value": "Cancel (disabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "type",
+      "value": "segmentation",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Cracks",
+      "property": "cancel_button_state",
+      "value": "Cancel (disabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "type",
+      "value": "classification",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "train_button_state",
+      "value": "Train (enabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "cancel_button_state",
+      "value": "Cancel (disabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "settings_dialog_title",
+      "value": "Hole Presence - Classification",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "settings_dialog_tabs",
+      "value": "Augmentations | Parameters",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "color_augmentations_prob",
+      "value": "0.50",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "brightness_enabled",
+      "value": "checked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "brightness_min",
+      "value": "-0.1",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "brightness_max",
+      "value": "0.1",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "contrast_enabled",
+      "value": "checked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "contrast_min",
+      "value": "-0.1",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "contrast_max",
+      "value": "0.1",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "hue_enabled",
+      "value": "unchecked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "hue_min",
+      "value": "-0.05",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "hue_max",
+      "value": "0.05",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "saturation_enabled",
+      "value": "unchecked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "saturation_min",
+      "value": "-0.1",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "saturation_max",
+      "value": "0.1",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "rotation_range_enabled",
+      "value": "unchecked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "rotation_range_prob",
+      "value": "0.50",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "rotation_range_min",
+      "value": "-180",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "rotation_range_max",
+      "value": "180",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "flip_enabled",
+      "value": "unchecked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "flip_prob",
+      "value": "0.50",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "flip_mode",
+      "value": "Both",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "planckian_enabled",
+      "value": "unchecked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "planckian_prob",
+      "value": "0.50",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "gaussian_noise_enabled",
+      "value": "unchecked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "gaussian_noise_prob",
+      "value": "0.50",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "gaussian_noise_mean",
+      "value": "0.00",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "gaussian_noise_std",
+      "value": "0.05",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "motion_blur_enabled",
+      "value": "unchecked",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "motion_blur_prob",
+      "value": "0.50",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "motion_blur_kernel",
+      "value": "3",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "motion_blur_angle_min",
+      "value": "-180",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "model: Hole Presence",
+      "property": "motion_blur_angle_max",
+      "value": "180",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "cancel_all_button_state",
+      "value": "Cancel All (disabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "train_all_button_state",
+      "value": "Train All (enabled)",
+      "source": "hole-presence_classification_settings.png"
+    },
+    {
+      "subject": "camera",
+      "property": "firmware_version",
+      "value": "v2026.6.0-OV80i",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "camera",
+      "property": "serial",
+      "value": "gsac177082",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "recipe_status",
+      "value": "Recipe Active",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "camera",
+      "property": "capture_count",
+      "value": "23051 Total Captures",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "camera",
+      "property": "library_page_size",
+      "value": "20 / page",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "camera",
+      "property": "library_page_count",
+      "value": "1153",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "camera",
+      "property": "library_sort_by",
+      "value": "Newest First",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "camera",
+      "property": "include_trainset_images",
+      "value": "checked",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "camera",
+      "property": "alignment_fails_only",
+      "value": "unchecked",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_id",
+      "value": "Capture #165488",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_dataset",
+      "value": "70% real ng data + 4 synthetic (imported)",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "trigger_id",
+      "value": "7000",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "trigger_mode",
+      "value": "Manual HMI Trigger Mode",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_time",
+      "value": "2026-07-27 19:49:44.493 / a day ago",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "process_time",
+      "value": "2421 ms",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_result",
+      "value": "FAIL",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_notes",
+      "value": "No notes for this capture.",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "class_stats_scope",
+      "value": "Class Stats: ROI 35 - Inspection Type 1 - Search Area 1",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "confidence_score_threshold",
+      "value": "Confidence Score Threshold: 0.5",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "class: Model/Dent",
+      "property": "blob_count",
+      "value": "0",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "class: Model/Dent",
+      "property": "area_pixels",
+      "value": "0",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "class: Model/Discolor",
+      "property": "blob_count",
+      "value": "1",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "class: Model/Discolor",
+      "property": "area_pixels",
+      "value": "2236",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "class: Model/Scratch",
+      "property": "blob_count",
+      "value": "0",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "class: Model/Scratch",
+      "property": "area_pixels",
+      "value": "0",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165487_result",
+      "value": "FAIL",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165487_time",
+      "value": "2026-07-27 19:49:41.943",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165486_result",
+      "value": "FAIL",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165486_time",
+      "value": "2026-07-27 19:49:39.369",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165485_result",
+      "value": "FAIL",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165485_time",
+      "value": "2026-07-27 19:49:36.882",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165484_result",
+      "value": "PASS",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165484_time",
+      "value": "2026-07-27 19:49:34.263",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165483_result",
+      "value": "FAIL",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "capture_165483_time",
+      "value": "2026-07-27 19:49:31.102",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "search_area_overlay",
+      "value": "Search Area 1",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "roi_overlay_labels",
+      "value": "ROI 10 (100%) \u2026 ROI 35 (100%)",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "recipe",
+      "property": "detail_pane_state",
+      "value": "Loading capture details...",
+      "source": "12_library.png"
+    },
+    {
+      "subject": "io_logic",
+      "property": "pass_rule",
+      "value": "Alignment must be found: msg.payload.alignment?.predictions?.[0]?.success === true, otherwise alignmentFound is false and the part fails ('Alignment not found')",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "pass_rule",
+      "value": "Segmentation passes only if no blob exceeds the pixel threshold: blobs.filter(b => (b.pixel_count || 0) > PIXEL_THRESHOLD); segPass = failingBlobs.length === 0",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "pass_rule",
+      "value": "Classification passes only if every predicted_class starts with 'pass' (trimmed, lower-cased): return !predictedClass.startsWith('pass'); classPass = failingClassifications.length === 0",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "pass_rule",
+      "value": "Overall verdict is the AND of all three checks: const pass = !(segPass === false || classPass === false || alignmentFound === false)",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "blob_area_threshold_px",
+      "value": "250",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "plc_output",
+      "value": "payload: Buffer.from([pass ? 1 : 0]) \u2014 single byte, 1 = PASS, 0 = FAIL",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "plc_protocol",
+      "value": "ethernet-ip-user-data-write",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "master_endpoint",
+      "value": "http://192.168.1.80:1880/api/slave3/results",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "master_ip",
+      "value": "192.168.1.80",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "master_port",
+      "value": "1880",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "master_request_method",
+      "value": "POST with headers { 'Content-Type': 'application/json' }",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "camera_role",
+      "value": "Slave Camera 3 (tab 'Slave Camera 3 V5', input node 'Slave 3 Local Input') posting results to a master controller",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "final_pass_fail_payload",
+      "value": "const passFailMsg = { payload: pass } \u2014 bare boolean to the final-pass-fail node",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "fail_reason_format",
+      "value": "'Seg fail in ' + sf.roiName + ': ' + sf.classes.join(', ') + ' (max ' + sf.maxPixels + 'px, threshold ' + PIXEL_THRESHOLD + 'px)'",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "fail_reason_format",
+      "value": "'Class fail in ' + cf.roiName + ': ' + cf.className",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "logging",
+      "value": "node.warn('Slave 3 - Align: ... , Seg: PASS/FAIL, Class: PASS/FAIL, Overall: PASS/FAIL | Blobs>250px: <n>, ClassFails: <n>') emitted on every inspection",
+      "source": "node_red_flow.json"
+    },
+    {
+      "subject": "io_logic",
+      "property": "http_error_handling",
+      "value": "http request node has senderr: false and its output wire is empty, so master POST failures are discarded",
+      "source": "node_red_flow.json"
+    }
+  ],
+  "imaging_setup_with_template": {
+    "file": "deliverables/images/02_imaging_setup_with_template.png",
+    "base": "deliverables/screenshots/02_imaging_setup.png",
+    "source": "deliverables/images/03_template_image_raw.jpg",
+    "bbox": {
+      "x": 244,
+      "y": 152,
+      "width": 887,
+      "height": 499
+    }
+  }
+}

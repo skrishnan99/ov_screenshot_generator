@@ -23,11 +23,11 @@ from urllib.parse import urlparse
 
 import yaml
 
-from core import llm
+from core import llm, paths
 from core import trace as trace_store
 from core.browser import Browser
 from core.describer import describe_node_red, describe_screenshot, poll_image_loaded
-from core.navigator import run_step
+from core.navigator import run_step_auto as run_step
 from core.output import RunOutput
 from core.resolver import (
     list_model_settings,
@@ -39,6 +39,10 @@ from core.trace import _stable_snapshot
 from core.version import detect_ui_version, detect_variant
 
 ROOT = Path(__file__).resolve().parent
+
+# Vision descriptions are independent calls; this caps their concurrency
+# (modest, to stay friendly to subscription rate limits).
+DESCRIBE_WORKERS = 4
 
 
 def slugify(name: str) -> str:
@@ -396,6 +400,55 @@ def _envelope_entry(meta: dict, name: str, model_type: str) -> dict | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def capture_block_per_model(
+    browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list,
+    base_ctx: dict, meta: dict,
+):
+    """For steps with foreach_block_models: <type> — one capture per model of
+    that type on an AI-block page (Classification/Segmentation).
+
+    A block page shows one model at a time via its model selector, so a
+    single screenshot can only ever be correct for one model. Deck slides are
+    per model, so each model gets its own capture, recorded on the model
+    envelope for a structured join downstream.
+    """
+    want = step["foreach_block_models"]
+    models = [m for m in meta.get("models", []) if m.get("type") == want]
+    if not models:
+        print(f"  no {want} models; nothing to capture per model")
+        return
+    shots = []
+    for m in models:
+        goal = step["per_model_goal"].format(model=m["name"])
+        result = run_step(
+            browser,
+            goal,
+            step["per_model_postcondition"].format(model=m["name"]),
+            max_model_calls=step.get("max_model_calls", 30),
+        )
+        if result.status != "success":
+            print(
+                f"  warning: could not capture {want} view for \"{m['name']}\": "
+                f"{result.evidence[:120]}"
+            )
+            continue
+        ok, msg = poll_image_loaded(browser)
+        if not ok:
+            print(f"  warning: view for \"{m['name']}\" {msg}")
+        name = f"{step['screenshot']}_{slugify(m['name'])}.png"
+        item = f"{step.get('item_label', want + ' view')} for model {m['name']}"
+        shot = out.save(
+            name, browser.screenshot_bytes(full_page=True),
+            kind="screenshot", role="deliverable", step=step["id"],
+            item=item, description_key=name,
+        )
+        shots.append(out.rel(shot))
+        m[step.get("meta_key", "block_screenshot")] = out.rel(shot)
+        desc_queue.append((shot, {**base_ctx, "item": item}))
+        print(f"  {want} view \"{m['name']}\" -> {name}")
+    step_record["screenshots"] = shots
+
+
 def capture_reports(
     browser, step: dict, out: RunOutput, step_record: dict, desc_queue: list, base_ctx: dict,
     meta: dict,
@@ -637,11 +690,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument(
         "--llm-backend",
-        choices=["api", "claude-code"],
-        default=os.environ.get("SG_LLM_BACKEND", "api"),
-        help="Where single-shot LLM calls run: 'api' = Anthropic API (default); "
-        "'claude-code' = through the local claude CLI using your Claude Code "
-        "login. The agentic navigator always uses the API.",
+        choices=["api", "claude-code", "agent-sdk"],
+        default=os.environ.get("SG_LLM_BACKEND", "agent-sdk"),
+        help="Where LLM calls run: 'agent-sdk' (default) = EVERYTHING, "
+        "navigation included, on your Claude Code login — no API key needed; "
+        "'claude-code' = single-shot calls via the local claude CLI (navigation "
+        "still uses the API); 'api' = the Anthropic API, needs ANTHROPIC_API_KEY.",
     )
     args = ap.parse_args(argv)
 
@@ -652,10 +706,15 @@ def main(argv: list[str] | None = None) -> int:
             "login; agentic navigation still uses the Anthropic API and needs "
             "ANTHROPIC_API_KEY)"
         )
+    elif args.llm_backend == "agent-sdk":
+        print(
+            "LLM backend: agent-sdk (all calls, including agentic navigation, "
+            "run on your Claude Code login)"
+        )
 
     origin = "{0.scheme}://{0.netloc}".format(urlparse(args.url))
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = Path(args.run_dir) if args.run_dir else ROOT / "runs" / f"{ts}"
+    run_dir = Path(args.run_dir) if args.run_dir else paths.output_base() / "runs" / f"{ts}"
     run_dir.mkdir(parents=True)
     out = RunOutput(run_dir)
     manifest: dict = {
@@ -827,6 +886,10 @@ def main(argv: list[str] | None = None) -> int:
                 capture_reports(browser, step, out, step_record, desc_queue, base_ctx, meta)
             elif step.get("foreach_settings"):
                 capture_settings(browser, step, out, step_record, desc_queue, base_ctx, meta)
+            elif step.get("foreach_block_models"):
+                capture_block_per_model(
+                    browser, step, out, step_record, desc_queue, base_ctx, meta
+                )
             elif step.get("screenshot"):
                 wait_cfg = step.get("wait_image_loaded")
                 if wait_cfg:
@@ -896,20 +959,34 @@ def main(argv: list[str] | None = None) -> int:
         manifest["steps_duration_s"] = round(time.monotonic() - run_t0, 1)
         if desc_queue and not args.skip_descriptions:
             desc_t0 = time.monotonic()
-            print(f"\ndescribing {len(desc_queue)} screenshot(s)...")
+            print(f"\ndescribing {len(desc_queue)} screenshot(s) ({DESCRIBE_WORKERS} in parallel)...")
+            # Descriptions are independent of each other; run them concurrently.
+            # Results (descriptions dict, facts) are merged in queue order so
+            # the output files stay deterministic regardless of finish order.
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _describe(item):
+                shot_path, ctx = item
+                return describe_screenshot(shot_path.read_bytes(), ctx)
+
             descriptions = {}
-            for shot_path, ctx in desc_queue:
-                try:
-                    result = describe_screenshot(shot_path.read_bytes(), ctx)
-                    descriptions[shot_path.name] = result["description"]
-                    for fact in result.get("facts", []):
-                        meta.setdefault("facts", []).append(
-                            {**fact, "source": shot_path.name}
+            with ThreadPoolExecutor(max_workers=DESCRIBE_WORKERS) as pool:
+                futures = [pool.submit(_describe, item) for item in desc_queue]
+                for (shot_path, _ctx), fut in zip(desc_queue, futures):
+                    try:
+                        result = fut.result()
+                        descriptions[shot_path.name] = result["description"]
+                        for fact in result.get("facts", []):
+                            meta.setdefault("facts", []).append(
+                                {**fact, "source": shot_path.name}
+                            )
+                        print(
+                            f"  described {shot_path.name} "
+                            f"(+{len(result.get('facts', []))} facts)"
                         )
-                    print(f"  described {shot_path.name} (+{len(result.get('facts', []))} facts)")
-                except Exception as e:
-                    descriptions[shot_path.name] = f"[description failed: {e}]"
-                    print(f"  FAILED to describe {shot_path.name}: {e}", file=sys.stderr)
+                    except Exception as e:
+                        descriptions[shot_path.name] = f"[description failed: {e}]"
+                        print(f"  FAILED to describe {shot_path.name}: {e}", file=sys.stderr)
             out.save(
                 "descriptions.json", json.dumps(descriptions, indent=2),
                 kind="report", role="deliverable",
@@ -949,6 +1026,12 @@ def main(argv: list[str] | None = None) -> int:
             out.save("meta.json", json.dumps(meta, indent=2), kind="data", role="data")
             manifest["meta"] = "data/meta.json"
         manifest["assets"] = out.assets
+        if llm.substitutions():
+            manifest["model_substitutions"] = llm.substitutions()
+            print(
+                f"\nNOTE: {len(llm.substitutions())} call(s) ran on a weaker model "
+                f"than preferred (see manifest model_substitutions)"
+            )
         manifest["duration_s"] = round(time.monotonic() - run_t0, 1)
         manifest["finished"] = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         (out.folder_for("data", "data") / "manifest.json").write_text(

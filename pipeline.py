@@ -21,6 +21,8 @@ import os
 import sys
 from pathlib import Path
 
+from core import paths
+
 ROOT = Path(__file__).resolve().parent
 
 
@@ -45,10 +47,29 @@ def main() -> int:
         help="Vision-verify every matched slot image in the deck",
     )
     ap.add_argument(
+        "--publish",
+        action="store_true",
+        help="Upload the assets and deck to your Google Drive (deck as Google "
+        "Slides) and print the link; needs publish_cli.py login once",
+    )
+    ap.add_argument(
+        "--adaptive-structure",
+        action="store_true",
+        help="Let the engineer's notes adjust the deck's slide structure "
+        "(see deck_cli.py); default is the fixed variant spec",
+    )
+    ap.add_argument(
         "--llm-backend",
-        choices=["api", "claude-code"],
-        default=os.environ.get("SG_LLM_BACKEND", "api"),
-        help="LLM backend for both phases (see cli.py / deck_cli.py)",
+        choices=["api", "claude-code", "agent-sdk"],
+        default=os.environ.get("SG_LLM_BACKEND", "agent-sdk"),
+        help="LLM backend for both phases (see cli.py / deck_cli.py). Default "
+        "'agent-sdk' runs everything on your Claude Code login, no API key",
+    )
+    ap.add_argument(
+        "--out",
+        help="Bundle everything into this directory: <out>/assets (the full "
+        "extractor run) + <out>/report (deck.pptx, plan.json, deck.pdf when "
+        "LibreOffice is available)",
     )
     args = ap.parse_args()
 
@@ -56,7 +77,7 @@ def main() -> int:
     import deck_cli
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = ROOT / "runs" / ts
+    run_dir = paths.output_base() / "runs" / ts
 
     print(f"=== Phase 1: asset extraction -> {run_dir} ===")
     extractor_argv = [
@@ -87,18 +108,51 @@ def main() -> int:
         return 1
 
     print(f"\n=== Phase 2: deck generation (variant {variant}) ===")
+    out = Path(args.out).resolve() if args.out else None
     deck_argv = [
         "--run", str(run_dir),
         "--variant", variant,
         "--llm-backend", args.llm_backend,
     ]
+    if out:
+        deck_argv += ["--out-dir", str(out / "report")]
     if args.context:
         deck_argv += ["--context", args.context]
     if args.images:
         deck_argv += ["--images", args.images]
     if args.verify_images:
         deck_argv.append("--verify-images")
-    return deck_cli.main(deck_argv)
+    if args.adaptive_structure:
+        deck_argv.append("--adaptive-structure")
+    if args.publish:
+        deck_argv.append("--publish")
+    code = deck_cli.main(deck_argv)
+    if code != 0 or not out:
+        return code
+    return _bundle(out, run_dir)
+
+
+def _bundle(out: Path, run_dir: Path) -> int:
+    """Assemble the single deliverable folder: assets/ + report/."""
+    import shutil
+    import subprocess
+
+    print(f"\n=== Phase 3: bundling -> {out} ===")
+    shutil.copytree(run_dir, out / "assets", dirs_exist_ok=True)
+    deck = out / "report" / "deck.pptx"
+    if deck.exists() and shutil.which("soffice"):
+        try:
+            subprocess.run(
+                ["soffice", "--headless", "--convert-to", "pdf", str(deck),
+                 "--outdir", str(out / "report")],
+                capture_output=True, timeout=300, check=True,
+            )
+            print("  deck.pdf rendered")
+        except Exception as e:
+            print(f"  pdf render skipped: {e}")
+    print(f"  assets: {out / 'assets'}")
+    print(f"  report: {deck}")
+    return 0
 
 
 if __name__ == "__main__":

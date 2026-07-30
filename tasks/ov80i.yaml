@@ -134,21 +134,28 @@ steps:
   - id: view_all_rois_segmentation
     # No path: continues from the segmentation page opened by the previous step.
     goal: |
-      You are on the Segmentation page of a recipe (a capture view may already be
-      loaded). Click the "View All ROIs" button if it is present and clickable.
-
-      After clicking, call wait_for_image_load to wait until the ROI view has finished
-      loading (it polls a vision model until the thumbnail grid is fully rendered).
-      When it reports loaded, finish. If it reports the view still not loaded after
-      its maximum wait, take a screenshot yourself to judge the state, then finish.
-
-      If the "View All ROIs" button is disabled or absent (for example because the
-      recipe has no segmentation model and you are on the editor overview), finish on
-      the page as it is.
+      You are on the Segmentation page of a recipe. Do nothing except make sure this
+      page is displayed (if a modal is open, close it). The per-model captures are
+      driven separately.
     postcondition: |
-      Either the View All ROIs view is open and fully loaded (ROI content rendered,
-      no loading indicators), or — if the button was disabled or absent — the
-      page is unchanged.
+      The Segmentation page (or the Recipe Editor overview, when the recipe has no
+      segmentation model) is displayed.
+    # One capture per segmentation model — see the classification step below.
+    foreach_block_models: segmentation
+    item_label: "View All ROIs grid"
+    meta_key: view_rois_screenshot
+    per_model_goal: |
+      You are on the Segmentation Block page of a recipe. Make sure the page's
+      "Segmentation Model" selector has "{model}" selected — if a different model is
+      selected, open the selector and choose "{model}". If a "View All ROIs" modal is
+      already open, close it first, then re-select the model.
+
+      Then click "View All ROIs" and call wait_for_image_load so the thumbnail grid
+      finishes rendering. When it reports loaded, finish. If it reports still not
+      loaded at its ceiling, take a screenshot to judge the state, then finish.
+    per_model_postcondition: |
+      The View All ROIs grid for the segmentation model "{model}" is open and fully
+      rendered.
     # The View ROIs view can open as a dedicated model-scoped page that does
     # not show the recipe name anywhere.
     check_recipe: false
@@ -195,21 +202,29 @@ steps:
   - id: view_all_rois_classification
     # No path: continues from the classification page opened by the previous step.
     goal: |
-      You are on the Classification page of a recipe (a capture view may already be
-      loaded). Click the "View All ROIs" button if it is present and clickable.
-
-      After clicking, call wait_for_image_load to wait until the ROI view has finished
-      loading (it polls a vision model until the thumbnail grid is fully rendered).
-      When it reports loaded, finish. If it reports the view still not loaded after
-      its maximum wait, take a screenshot yourself to judge the state, then finish.
-
-      If the "View All ROIs" button is disabled or absent (for example because the
-      recipe has no classification model and you are on the editor overview), finish on
-      the page as it is.
+      You are on the Classification page of a recipe. Do nothing except make sure
+      this page is displayed (if a modal is open, close it). The per-model captures
+      are driven separately.
     postcondition: |
-      Either the View All ROIs view is open and fully loaded (ROI content rendered,
-      no loading indicators), or — if the button was disabled or absent — the
-      page is unchanged.
+      The Classification page (or the Recipe Editor overview, when the recipe has
+      no classification model) is displayed.
+    # A block page shows ONE model at a time, so a single screenshot can only be
+    # correct for one model. Capture the ROI grid per classification model.
+    foreach_block_models: classification
+    item_label: "View All ROIs grid"
+    meta_key: view_rois_screenshot
+    per_model_goal: |
+      You are on the Classification Block page of a recipe. Make sure the page's
+      classification model selector has "{model}" selected — if a different model is
+      selected, open the selector and choose "{model}". If a "View All ROIs" modal is
+      already open, close it first, then re-select the model.
+
+      Then click "View All ROIs" and call wait_for_image_load so the thumbnail grid
+      finishes rendering. When it reports loaded, finish. If it reports still not
+      loaded at its ceiling, take a screenshot to judge the state, then finish.
+    per_model_postcondition: |
+      The View All ROIs grid for the classification model "{model}" is open and
+      fully rendered.
     # The View ROIs view can open as a dedicated model-scoped page that does
     # not show the recipe name anywhere.
     check_recipe: false
@@ -277,13 +292,23 @@ steps:
       Go back to the Recipe Editor overview page for this same recipe (for example via
       the recipe-name breadcrumb at the top). On the editor overview, click
       "Configure IO" (in the "Set Pass/Fail & IO Logic" panel), and wait for the IO
-      page to fully load (use wait_seconds if needed — it can take a while).
+      page to fully load (use wait_seconds, 5-10s — it can take a while).
 
-      On the IO page, click the breadcrumb control at the top right that opens the
-      Node-RED settings. In the Node-RED view (its content may be marked [iframe] in
-      snapshots), open "Export", and in the export dialog for the current flow click
-      "Download". This triggers a JSON file download of the current flow, which is
-      captured automatically — you do not need to look for the downloaded file.
+      PREFERRED PATH — the Node-RED export keyboard shortcut: as soon as a Node-RED
+      flow editor canvas is visible (its content may be marked [iframe] in
+      snapshots — on this page it usually is, without any further navigation),
+      click ONCE on an empty spot of the flow canvas to give it keyboard focus —
+      NEVER click "Deploy" (it pushes pending flow changes live on a production
+      camera) and do not click any node; an empty patch of the canvas grid is
+      enough. Then call press_keys with "ControlOrMeta+e". That opens Node-RED's
+      Export dialog directly; click "Download" in it for the current flow. This triggers
+      a JSON download of the flow, captured automatically — you do not need to
+      look for the downloaded file.
+
+      FALLBACK — only if no flow canvas is visible on the IO page, or the Export
+      dialog does not open after two shortcut attempts: open the Node-RED view via
+      the icon-only breadcrumb control at the top right, then use the shortcut (or
+      the "Export" menu entry) there, and click "Download".
 
       The IO page and the Node-RED editor load slowly and re-render: after opening
       either, use wait_seconds (5-10s) BEFORE taking the snapshot you act on. If a
@@ -320,6 +345,12 @@ steps:
       The Library page is open and fully loaded.
     # The Library is a global page — the recipe name is not expected on it.
     check_recipe: false
+    # The viewer image lazy-loads ("Loading capture details..."); a fast
+    # replay once downloaded a BLANK base layer, so wait for real imagery
+    # before capturing/downloading.
+    wait_image_loaded:
+      interval_s: 7
+      max_wait_s: 60
     # Save the main viewer image (raw + overlays + composite) like the template step.
     download_main_image: true
     screenshot: "12_library"

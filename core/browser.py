@@ -174,6 +174,17 @@ class Browser:
         self.page.wait_for_timeout(SETTLE_MS)
         return f'Typed "{text}" into [{ref}].'
 
+    def press_keys(self, combo: str) -> str:
+        """Press a keyboard shortcut (Playwright syntax, e.g. "ControlOrMeta+e").
+        Keys go to the currently focused element/frame — click the target area
+        first when the shortcut belongs to an embedded editor."""
+        try:
+            self.page.keyboard.press(combo)
+        except Exception as e:
+            return f"Error: press {combo!r} failed: {e}"
+        self.page.wait_for_timeout(SETTLE_MS)
+        return f"Pressed {combo}."
+
     def wait_for_text(self, text: str, timeout_s: float = 5) -> str:
         try:
             self.page.get_by_text(text, exact=False).first.wait_for(

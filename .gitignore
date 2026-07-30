@@ -26,3 +26,13 @@ wheels/
 # OS noise
 .DS_Store
 deck_outputs/
+
+# Google OAuth. The per-user token is a real credential — never version it.
+# The bundled OAuth *client* (publish/google_client.json) is deliberately NOT
+# ignored: for desktop apps Google treats it as a non-confidential app
+# identifier, and committing it to the PRIVATE marketplace repo is what lets
+# engineers install the plugin and publish with zero setup.
+google_token.json
+/google_client.json
+
+google_library.json

@@ -1,0 +1,14 @@
+{
+  "name": "overview-tools",
+  "owner": {
+    "name": "Surya Krishnan",
+    "email": "skrishnan2442@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "ov-test-reports",
+      "source": "./",
+      "description": "Generate Overview camera inspection assets and customer-facing test-report decks from natural language"
+    }
+  ]
+}

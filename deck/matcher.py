@@ -25,6 +25,8 @@ from deck.content import asset_path
 
 CATALOG_DESC_CHARS = 800
 VERIFY_MAX_PX = 1568
+# Vision verification is one independent call per matched slot.
+VERIFY_WORKERS = 4
 
 
 def _trim(text: str, limit: int = CATALOG_DESC_CHARS) -> str:
@@ -219,7 +221,12 @@ def verify_pair(image_path: str, slot: dict) -> dict:
 
 
 def match_images(
-    slots: list[dict], catalog: list[dict], pool: dict, verify: bool = False, log=print
+    slots: list[dict],
+    catalog: list[dict],
+    pool: dict,
+    verify: bool = False,
+    log=print,
+    _repair: bool = False,
 ) -> tuple[dict, list[dict]]:
     """Stage B (+ optional C) over the unresolved slots.
 
@@ -234,15 +241,28 @@ def match_images(
     for s in slots:
         s.setdefault("exclude", set())
 
-    picks = assign_images(slots, catalog, pool)
+    # Slots whose selector already determined the asset need no assignment
+    # call — they arrive pre-assigned and only pass through verification.
+    pending = [s for s in slots if s.get("preassigned") is None]
+    picks = assign_images(pending, catalog, pool) if pending else {}
     entries: dict[str, dict] = {}
     for s in slots:
-        pick = picks.get(s["id"]) or {"asset": -1, "reason": "no answer from model"}
+        pre = s.get("preassigned")
+        if pre is not None:
+            pick = {
+                "asset": pre,
+                "reason": s.get("preassigned_reason", "determined by selector"),
+            }
+        else:
+            pick = picks.get(s["id"]) or {"asset": -1, "reason": "no answer from model"}
         idx = pick["asset"]
         allowed = s["candidates"] is None or idx in (s["candidates"] or [])
         if idx is not None and 0 <= idx < len(catalog) and allowed and idx not in s["exclude"]:
             choices[s["id"]] = idx
-            entry = {"stage": "assigned", "asset": catalog[idx]["path"]}
+            entry = {
+                "stage": "deterministic" if pre is not None else "assigned",
+                "asset": catalog[idx]["path"],
+            }
         else:
             choices[s["id"]] = None
             entry = {"stage": "unmatched", "asset": None}
@@ -269,30 +289,53 @@ def match_images(
     by_id = {s["id"]: s for s in slots}
     # Widened slots (no selector matched; full-pool assignment) are always
     # vision-verified — they are the least constrained picks in the deck.
-    if verify or any(
-        s.get("widened") and choices.get(s["id"]) is not None for s in slots
+    # In the repair round the caller verifies the new picks itself, so this
+    # auto-verification stays off to avoid checking the same pair twice.
+    auto_verify = not _repair
+    if verify or (
+        auto_verify
+        and any(s.get("widened") and choices.get(s["id"]) is not None for s in slots)
     ):
         failed: list[dict] = []
-        for sid, idx in choices.items():
-            if idx is None:
-                continue
-            slot = by_id[sid]
-            if not (verify or slot.get("widened")):
-                continue
-            verdict = verify_pair(catalog[idx]["abs_path"], slot)
-            entries[sid]["verified"] = verdict["match"]
-            entries[sid]["verify_reason"] = verdict["reason"]
-            log(
-                f"  verify {sid} <- {catalog[idx]['path']}: "
-                f"{'ok' if verdict['match'] else 'MISMATCH'} ({verdict['reason'][:80]})"
-            )
-            if not verdict["match"]:
-                slot["exclude"].add(idx)
-                failed.append(slot)
+        todo = [
+            (sid, idx)
+            for sid, idx in choices.items()
+            if idx is not None
+            and (verify or (auto_verify and by_id[sid].get("widened")))
+        ]
+        # Independent calls; run them concurrently and consume in slot order
+        # so the report stays deterministic.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=VERIFY_WORKERS) as pool_exec:
+            futures = [
+                pool_exec.submit(verify_pair, catalog[idx]["abs_path"], by_id[sid])
+                for sid, idx in todo
+            ]
+            for (sid, idx), fut in zip(todo, futures):
+                slot = by_id[sid]
+                try:
+                    verdict = fut.result()
+                except Exception as e:
+                    verdict = {"match": True, "reason": f"verification errored ({e})"}
+                entries[sid]["verified"] = verdict["match"]
+                entries[sid]["verify_reason"] = verdict["reason"]
+                log(
+                    f"  verify {sid} <- {catalog[idx]['path']}: "
+                    f"{'ok' if verdict['match'] else 'MISMATCH'} ({verdict['reason'][:80]})"
+                )
+                if not verdict["match"]:
+                    slot["exclude"].add(idx)
+                    # A rejected pick loses its head start: let the assigner
+                    # choose from the whole pool, and re-verify what it picks.
+                    slot.pop("preassigned", None)
+                    slot["candidates"] = None
+                    slot["widened"] = True
+                    failed.append(slot)
         if failed:
             log(f"  re-assigning {len(failed)} slot(s) after verification failures")
             retry_choices, retry_report = match_images(
-                failed, catalog, pool, verify=False, log=log
+                failed, catalog, pool, verify=False, log=log, _repair=True
             )
             retry_entries = {e["slot"]: e for e in retry_report}
             for slot in failed:

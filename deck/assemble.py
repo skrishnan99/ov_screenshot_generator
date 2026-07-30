@@ -11,6 +11,7 @@ the deck inherits its masters/theme; appended slides bring their own layouts
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -25,10 +26,89 @@ TOKEN_RE = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
 MSO_PICTURE = 13
 MSO_GROUP = 6
 
+# Images are embedded at ~this density for the space they actually occupy.
+# A 3840px capture in a 5.5in slot renders around 800px on screen, so
+# carrying the native file makes the deck many times larger for no visible
+# gain. 200 DPI still looks right when projected or printed. Run assets on
+# disk are untouched — only what goes INTO the deck is resized.
+EMBED_DPI = 200
+_resized_cache: dict[tuple[str, int, int], str] = {}
+
 # Content pictures vs decorations (sidebar strips, logos): a content slot is
 # reasonably wide AND reasonably large.
 MIN_PIC_WIDTH_IN = 1.0
 MIN_PIC_AREA_SQIN = 2.0
+
+
+def _encode_smaller(im) -> str:
+    """Write the image as whichever of PNG/JPEG comes out smaller.
+
+    These decks mix two very different kinds of picture: UI screenshots
+    (flat colour and text, where PNG wins and JPEG would ring around the
+    text) and camera captures of metal parts (photographs, where PNG is
+    several times larger than a visually identical JPEG). Rather than guess
+    from the file extension, encode both and keep the smaller — self-tuning
+    and never worse than the source format. Transparency forces PNG.
+    """
+    import tempfile
+
+    def _write(suffix: str, save):
+        fd, path = tempfile.mkstemp(prefix="sg-embed-", suffix=suffix)
+        os.close(fd)
+        save(path)
+        return path, os.path.getsize(path)
+
+    png_path, png_size = _write(".png", lambda p: im.save(p, optimize=True))
+    # Presence of an alpha channel is not the question — screenshots carry a
+    # fully opaque one. Only genuinely transparent pixels force PNG.
+    transparent = "transparency" in im.info
+    if not transparent and im.mode in ("RGBA", "LA"):
+        transparent = im.getchannel("A").getextrema()[0] < 255
+    if transparent:
+        return png_path
+    jpg_path, jpg_size = _write(
+        ".jpg", lambda p: im.convert("RGB").save(p, quality=90, optimize=True)
+    )
+    if jpg_size < png_size:
+        os.unlink(png_path)
+        return jpg_path
+    os.unlink(jpg_path)
+    return png_path
+
+
+def sized_for_slot(image_path, width_emu: int, height_emu: int) -> str:
+    """A copy of the image no larger than its slot needs at EMBED_DPI.
+    Returns the original path when it is already small enough (or on any
+    failure — a bigger deck beats a broken one). Results are cached, so the
+    same asset used in several slots is resized once per size."""
+    import tempfile
+
+    from PIL import Image
+    from pptx.util import Emu
+
+    src = str(image_path)
+    target_w = max(1, int(Emu(width_emu).inches * EMBED_DPI))
+    target_h = max(1, int(Emu(height_emu).inches * EMBED_DPI))
+    key = (src, target_w, target_h)
+    if key in _resized_cache:
+        return _resized_cache[key]
+    try:
+        with Image.open(src) as im:
+            if im.width <= target_w and im.height <= target_h:
+                _resized_cache[key] = src
+                return src
+            scale = min(target_w / im.width, target_h / im.height)
+            out = im.convert("RGB") if im.mode in ("CMYK", "P") else im.copy()
+            out = out.resize(
+                (max(1, int(im.width * scale)), max(1, int(im.height * scale))),
+                Image.LANCZOS,
+            )
+            tmp = _encode_smaller(out)
+    except Exception:
+        _resized_cache[key] = src
+        return src
+    _resized_cache[key] = tmp
+    return tmp
 
 
 def iter_shapes(container):
@@ -120,7 +200,7 @@ def _fill_placeholder(slide, shape, image_path: Path) -> None:
     w, h = int(iw * scale), int(ih * scale)
     left = shape.left + (shape.width - w) // 2
     top = shape.top + (shape.height - h) // 2
-    slide.shapes.add_picture(str(image_path), left, top, w, h)
+    slide.shapes.add_picture(sized_for_slot(image_path, w, h), left, top, w, h)
     shape._element.getparent().remove(shape._element)
 
 
@@ -156,7 +236,9 @@ def replace_picture(slide, pic, image_path: Path) -> None:
     pic.top = top + (height - new_h) // 2
     pic.width, pic.height = new_w, new_h
 
-    image_part, rId = pic.part.get_or_add_image_part(str(image_path))
+    image_part, rId = pic.part.get_or_add_image_part(
+        sized_for_slot(image_path, new_w, new_h)
+    )
     blip = pic._element.blipFill.find(qn("a:blip"))
     blip.set(qn("r:embed"), rId)
 
@@ -171,6 +253,9 @@ def replace_picture(slide, pic, image_path: Path) -> None:
 def fill_freeform(pres: Presentation, job: dict) -> None:
     from pptx.util import Inches, Pt
 
+    from deck.brand import load_brand
+
+    brand = load_brand()
     slide = pres.slides[0]
     doomed = set()
     for shape in iter_shapes(slide):
@@ -188,37 +273,75 @@ def fill_freeform(pres: Presentation, job: dict) -> None:
     sw, sh = pres.slide_width, pres.slide_height
     margin = Inches(0.55)
 
+    # Geometry below is the numbered configuration step from
+    # deck/brand/design_guide.md — "byte-for-byte identical" across the five
+    # step templates, and the guide's instruction is to match it exactly.
+    # This layout is the fallback for a failed agent slide, so it lands in
+    # the middle of the numbered run and has to read as one of them; the
+    # previous ad-hoc geometry (text left, image right, 22 pt title, grey
+    # 13 pt body) was conspicuously not one of them.
     if title:
-        tb = slide.shapes.add_textbox(margin, Inches(0.35), sw - 2 * margin, Inches(0.75))
-        tb.text_frame.word_wrap = True
-        run = tb.text_frame.paragraphs[0].add_run()
+        from pptx.dml.color import RGBColor
+
+        tb = slide.shapes.add_textbox(
+            Inches(0.74), Inches(0.42), Inches(8.63), Inches(0.50)
+        )
+        tf = tb.text_frame
+        tf.word_wrap = True
+        tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+        para = tf.paragraphs[0]
+        para.line_spacing = 1.20
+        run = para.add_run()
         run.text = title
-        run.font.size = Pt(22)
+        run.font.name = brand["fonts"]["headline"]
+        run.font.size = Pt(30)
         run.font.bold = True
+        run.font.color.rgb = RGBColor.from_string(
+            brand["colors"]["headline_black"].lstrip("#")
+        )
     content_top = Inches(1.25)
     content_h = sh - content_top - Inches(0.35)
     if body and images:
-        text_w = int((sw - 2 * margin) * 0.4)
-        _freeform_body(slide, body, margin, content_top, text_w, content_h)
-        img_left = margin + text_w + Inches(0.25)
-        _freeform_images(slide, images, img_left, content_top, sw - margin - img_left, content_h)
+        # Left two-thirds evidence, right third explanation.
+        _freeform_images(
+            slide, images, Inches(0.70), Inches(1.73), Inches(5.48), Inches(3.14)
+        )
+        _freeform_body(
+            slide, body, Inches(6.30), Inches(2.85), Inches(3.60), content_h,
+            size_pt=17, bold=True, color=brand["colors"]["primary_purple"],
+        )
     elif images:
         _freeform_images(slide, images, margin, content_top, sw - 2 * margin, content_h)
     elif body:
         _freeform_body(slide, body, margin, content_top, sw - 2 * margin, content_h)
 
 
-def _freeform_body(slide, text: str, left, top, width, height) -> None:
+def _freeform_body(
+    slide, text: str, left, top, width, height,
+    size_pt: int = 13, bold: bool = False, color: str | None = None,
+) -> None:
+    """Body copy block. Defaults suit a text-only slide; the numbered-step
+    right-hand column passes Bold 17 pt purple per the design guide."""
+    from pptx.dml.color import RGBColor
     from pptx.util import Pt
 
+    from deck.brand import load_brand
+
+    brand = load_brand()
     tb = slide.shapes.add_textbox(left, top, width, height)
     tf = tb.text_frame
     tf.word_wrap = True
     for i, line in enumerate(text.split("\n")):
         para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        para.line_spacing = 1.0
         run = para.add_run()
         run.text = line
-        run.font.size = Pt(13)
+        run.font.name = brand["fonts"]["body"]
+        run.font.size = Pt(size_pt)
+        run.font.bold = bold
+        run.font.color.rgb = RGBColor.from_string(
+            (color or brand["colors"]["body_dark"]).lstrip("#")
+        )
 
 
 def _freeform_images(slide, paths: list, left, top, width, height) -> None:
@@ -235,8 +358,91 @@ def _freeform_images(slide, paths: list, left, top, width, height) -> None:
         scale = min(width / iw, cell_h / ih)
         w, h = int(iw * scale), int(ih * scale)
         slide.shapes.add_picture(
-            str(path), left + (width - w) // 2, cell_top + (cell_h - h) // 2, w, h
+            sized_for_slot(path, w, h),
+            left + (width - w) // 2,
+            cell_top + (cell_h - h) // 2,
+            w,
+            h,
         )
+
+
+# ---------------------------------------------------------------------------
+# Theme baking: make a slide's colours independent of which theme wins.
+# ---------------------------------------------------------------------------
+
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+
+
+def _theme_colors(slide) -> dict:
+    """Scheme-colour name → literal hex, resolved from the slide's OWN theme.
+
+    Includes the bg1/tx1/bg2/tx2 aliases, which are not scheme entries but
+    indirections through the master's ``clrMap`` — and which a layout or
+    slide may flip via ``clrMapOvr`` (dark designs swap the text and
+    background roles). Missing that override renders light text as dark.
+    Returns {} on any problem, which makes baking a no-op.
+    """
+    from lxml import etree
+    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+
+    try:
+        master = slide.slide_layout.slide_master
+        theme = etree.fromstring(master.part.part_related_by(RT.THEME).blob)
+        colors: dict[str, str] = {}
+        scheme = theme.find(f".//{{{_A_NS}}}clrScheme")
+        for child in scheme if scheme is not None else []:
+            name = etree.QName(child).localname
+            srgb = child.find(f"{{{_A_NS}}}srgbClr")
+            sysc = child.find(f"{{{_A_NS}}}sysClr")
+            val = (
+                srgb.get("val") if srgb is not None
+                else sysc.get("lastClr") if sysc is not None
+                else None
+            )
+            if val:
+                colors[name] = val
+
+        aliases: dict[str, str] = {}
+        clr_map = master.element.find(f"{{{_P_NS}}}clrMap")
+        if clr_map is not None:
+            aliases.update(clr_map.attrib)
+        for owner in (slide.slide_layout, slide):
+            ovr = owner._element.find(
+                f"{{{_P_NS}}}clrMapOvr/{{{_A_NS}}}overrideClrMapping"
+            )
+            if ovr is not None:
+                aliases.update(ovr.attrib)
+        for alias, target in aliases.items():
+            if target in colors:
+                colors[alias] = colors[target]
+        return colors
+    except Exception:
+        return {}
+
+
+def bake_theme_colors(slide) -> int:
+    """Rewrite ``<a:schemeClr val="accent1">`` as ``<a:srgbClr val="…">``
+    using the slide's own theme, so the slide carries its colours rather
+    than referencing a theme that a merge or an importer might change.
+
+    Only colours: our skeletons use explicit typefaces (zero ``+mn-lt`` /
+    ``+mj-lt`` tokens), which is why fonts already survive conversion.
+    Transform children (lumMod, alpha, …) are preserved automatically —
+    ``srgbClr`` accepts the same children as ``schemeClr``. Unknown
+    references are left alone. Returns how many references were baked.
+    """
+    colors = _theme_colors(slide)
+    if not colors:
+        return 0
+    baked = 0
+    for sc in slide._element.iter(f"{{{_A_NS}}}schemeClr"):
+        hex_val = colors.get(sc.get("val"))
+        if hex_val:
+            sc.tag = f"{{{_A_NS}}}srgbClr"
+            sc.set("val", hex_val)
+            baked += 1
+    return baked
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +553,16 @@ def build_deck(slide_jobs: list[dict], out_path: Path) -> None:
     if not slide_jobs:
         raise ValueError("no slides to build")
 
+    def load(job):
+        # Agent-built slides arrive as finished one-slide files; everything
+        # else starts from its skeleton and gets filled below.
+        if job.get("agent_pptx"):
+            return Presentation(str(job["agent_pptx"]))
+        return Presentation(str(job["skeleton"]))
+
     def fill(pres, job):
+        if job.get("agent_pptx"):
+            return  # authored complete by the agent session
         if job.get("freeform"):
             fill_freeform(pres, job)
             return
@@ -358,15 +573,19 @@ def build_deck(slide_jobs: list[dict], out_path: Path) -> None:
         if images:
             fill_images(slide, images)
 
-    base = Presentation(str(slide_jobs[0]["skeleton"]))
+    base = load(slide_jobs[0])
     fill(base, slide_jobs[0])
+    # Bake AFTER filling (filled runs can carry scheme colours too) and
+    # before transplant, while the slide still sits with its own theme.
+    bake_theme_colors(base.slides[0])
     ctx = {
         "used": {str(p.partname) for p in base.part.package.iter_parts()},
         "by_hash": {},
     }
     for job in slide_jobs[1:]:
-        src = Presentation(str(job["skeleton"]))
+        src = load(job)
         fill(src, job)
+        bake_theme_colors(src.slides[0])
         append_slide(base, src, ctx)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     base.save(str(out_path))

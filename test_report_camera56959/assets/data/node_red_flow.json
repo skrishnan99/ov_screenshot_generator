@@ -1,0 +1,126 @@
+[
+    {
+        "id": "eed653e799cc55a8",
+        "type": "tab",
+        "label": "Slave Camera 3 V5",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "116c1b2862d90ca2",
+        "type": "group",
+        "z": "eed653e799cc55a8",
+        "style": {
+            "fill": "none",
+            "color": "#a4a4a4",
+            "label": true,
+            "stroke": "#999999",
+            "fill-opacity": "1",
+            "label-position": "nw",
+            "stroke-opacity": "1"
+        },
+        "nodes": [
+            "1009d1369bf47cf7",
+            "1a94f97194f2f89f",
+            "39bc8a7b38534023",
+            "7bb66654259ee8d0",
+            "55e20ea1e4e0cf81"
+        ],
+        "x": 34,
+        "y": 19,
+        "w": 792,
+        "h": 182
+    },
+    {
+        "id": "1009d1369bf47cf7",
+        "type": "overview-unified-pipeline-input",
+        "z": "eed653e799cc55a8",
+        "g": "116c1b2862d90ca2",
+        "name": "Slave 3 Local Input",
+        "x": 140,
+        "y": 80,
+        "wires": [
+            [
+                "1a94f97194f2f89f"
+            ]
+        ]
+    },
+    {
+        "id": "1a94f97194f2f89f",
+        "type": "function",
+        "z": "eed653e799cc55a8",
+        "g": "116c1b2862d90ca2",
+        "name": "Process & Prepare Results",
+        "func": "// === DATA EXTRACTION ===\nconst rois = msg.payload.roi?.rois || [];\nconst blobs = msg.payload.segmentation?.blobs || [];\nconst classifications = msg.payload.classification?.predictions || [];\nconst imageUrl = msg.payload.image_url || '';\nconst inspTime = msg.payload.inspection_time || new Date().toISOString();\n\n// === ALIGNMENT CHECK ===\nconst alignmentFound = msg.payload.alignment?.predictions?.[0]?.success === true;\n\nconst PIXEL_THRESHOLD = 250;\n\n// === SEGMENTATION CHECK ===\nconst failingBlobs = blobs.filter(b => (b.pixel_count || 0) > PIXEL_THRESHOLD);\nconst segPass = failingBlobs.length === 0;\n\nconst segFailDetails = [];\nif (!segPass) {\n    const byRoi = {};\n    for (const b of failingBlobs) {\n        const key = b.roi_name || b.roi_id || 'Global';\n        if (!byRoi[key]) {\n            byRoi[key] = {\n                roiName: String(key),\n                classes: new Set(),\n                count: 0,\n                maxPixels: 0\n            };\n        }\n        byRoi[key].classes.add(b.predicted_class || 'unknown');\n        byRoi[key].count++;\n        byRoi[key].maxPixels = Math.max(byRoi[key].maxPixels, b.pixel_count || 0);\n    }\n\n    for (const val of Object.values(byRoi)) {\n        segFailDetails.push({\n            roiName: val.roiName,\n            classes: [...val.classes],\n            count: val.count,\n            maxPixels: val.maxPixels\n        });\n    }\n}\n\n// === CLASSIFICATION CHECK ===\nconst failingClassifications = classifications.filter(p => {\n    const predictedClass = String(p.predicted_class || '').trim().toLowerCase();\n    return !predictedClass.startsWith('pass');\n});\n\nconst classPass = failingClassifications.length === 0;\n\nconst classFailDetails = failingClassifications.map(p => {\n    const predClass = p.predicted_class || 'unknown';\n    const roiId = p.roi_id;\n    let roiName = p.roi_name || 'Global';\n\n    if (roiId) {\n        const matchedRoi = rois.find(r =>\n            r.id === roiId ||\n            r.id === Number(roiId) ||\n            String(r.id) === String(roiId)\n        );\n        roiName = matchedRoi ? (matchedRoi.name || ('ROI ' + matchedRoi.id)) : roiName;\n    }\n\n    return { roiName, className: predClass };\n});\n\n// === FINAL PASS/FAIL ===\nconst pass = !(\n    segPass === false ||\n    classPass === false ||\n    alignmentFound === false\n);\n\n// === FAIL REASONS ===\nconst failReasons = [];\n\nif (alignmentFound === false) {\n    failReasons.push('Alignment not found');\n}\n\nfor (const sf of segFailDetails) {\n    failReasons.push(\n        'Seg fail in ' + sf.roiName + ': ' +\n        sf.classes.join(', ') +\n        ' (max ' + sf.maxPixels + 'px, threshold ' + PIXEL_THRESHOLD + 'px)'\n    );\n}\nfor (const cf of classFailDetails) {\n    failReasons.push('Class fail in ' + cf.roiName + ': ' + cf.className);\n}\n\nnode.warn(\n    'Slave 3 - Align: ' + alignmentFound +\n    ', Seg: ' + (segPass ? 'PASS' : 'FAIL') +\n    ', Class: ' + (classPass ? 'PASS' : 'FAIL') +\n    ', Overall: ' + (pass ? 'PASS' : 'FAIL') +\n    ' | Blobs>' + PIXEL_THRESHOLD + 'px: ' + failingBlobs.length +\n    ', ClassFails: ' + failingClassifications.length\n);\n\n// Output 0: final-pass-fail\nconst passFailMsg = { payload: pass };\n\n// Output 1: HTTP POST to master\nconst MASTER_IP = '192.168.1.80';\nconst MASTER_PORT = 1880;\nconst httpMsg = {\n    payload: {\n        camera: 'Slave Camera 3',\n        pass: pass,\n        alignmentFound: alignmentFound,\n        segPass: segPass,\n        classPass: classPass,\n        failReasons: failReasons,\n        segFailDetails: segFailDetails,\n        classFailDetails: classFailDetails,\n        blobCount: blobs.length,\n        failingBlobCount: failingBlobs.length,\n        classificationCount: classifications.length,\n        failingClassificationCount: failingClassifications.length,\n        imageUrl: imageUrl,\n        timestamp: inspTime\n    },\n    url: 'http://' + MASTER_IP + ':' + MASTER_PORT + '/api/slave3/results',\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' }\n};\n\n// Output 2: PLC write\nconst plcMsg = {\n    payload: Buffer.from([pass ? 1 : 0])\n};\n\nreturn [passFailMsg, httpMsg, plcMsg];",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 420,
+        "y": 80,
+        "wires": [
+            [
+                "39bc8a7b38534023"
+            ],
+            [
+                "7bb66654259ee8d0"
+            ],
+            [
+                "55e20ea1e4e0cf81"
+            ]
+        ]
+    },
+    {
+        "id": "39bc8a7b38534023",
+        "type": "final-pass-fail",
+        "z": "eed653e799cc55a8",
+        "g": "116c1b2862d90ca2",
+        "name": "Final Pass/Fail",
+        "x": 680,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "7bb66654259ee8d0",
+        "type": "http request",
+        "z": "eed653e799cc55a8",
+        "g": "116c1b2862d90ca2",
+        "name": "POST Results to Master",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 690,
+        "y": 120,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "55e20ea1e4e0cf81",
+        "type": "ethernet-ip-user-data-write",
+        "z": "eed653e799cc55a8",
+        "g": "116c1b2862d90ca2",
+        "name": "Write PLC Data",
+        "x": 660,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "8d9d1960644ac168",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "overview-nodes": "0.0.0"
+        }
+    }
+]

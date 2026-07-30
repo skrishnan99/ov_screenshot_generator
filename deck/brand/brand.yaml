@@ -1,0 +1,63 @@
+# Overview brand kit — the single source of truth for every slide producer
+# and checker in the deck pipeline. Sampled from the canonical skeletons;
+# update alongside them (reference_slides/ are renders of those skeletons,
+# logos/ are the actual embedded assets).
+
+slide_size_in: [10.0, 5.63]
+
+fonts:
+  headline: Proxima Nova
+  body: Proxima Nova
+  display_numbers: Montserrat SemiBold
+  # Explicit font names allowed anywhere in a deck (inherited/theme fonts are
+  # always acceptable). Arial appears via Google-export fallbacks.
+  allowed:
+    - Proxima Nova
+    - Proxima Nova Light
+    - Montserrat
+    - Montserrat SemiBold
+    - Arial
+    - Calibri  # explicit in some canonical tail templates (Google export)
+
+colors:
+  primary_purple: "#532EE3"
+  mid_purple: "#735CFF"
+  purple_alt: "#7F60F9"
+  light_purple: "#A896F0"
+  dark_indigo: "#241465"
+  headline_black: "#000000"
+  body_dark: "#212B36"
+  on_dark: "#FFFFFF"
+  dark_background: "#1E1B3A"
+  # Palette-matching tolerance for lint (max per-channel delta, 0-255).
+  tolerance: 40
+
+typography:
+  title_pt: [20, 32]
+  body_pt: [11, 18]
+  display_pt: [36, 56]
+  min_pt: 7
+
+layout:
+  margin_in: 0.4
+  # Shapes may bleed past the slide edge by at most this much (full-bleed
+  # backgrounds and sidebars are exempted by size in the linter).
+  overhang_tolerance_in: 0.35
+  never_stretch_images: true
+  max_image_aspect_distortion: 0.04
+
+voice: |
+  Crisp, clear, confident copy sized for a slide. No technical internals:
+  no camera configuration minutiae (exposure/gain/gamma), no IP addresses,
+  no node or variable names, no UI/JSON field names, no UUIDs. Numbers only
+  when they tell the story: class names, training example counts,
+  accuracies, region counts. Use only facts present in the material — never
+  invent metrics, part names, or outcomes. The engineer's notes, when
+  present, are authoritative — where they conflict with anything inferred
+  from the material, the notes win.
+
+notes: >
+  Customer-facing Overview AI test-report deck; clean, confident, generous
+  whitespace; purple is the accent, never the wall of color. Reference
+  renders of canonical slides are in reference_slides/; real logo assets in
+  logos/ — use these, never fabricate a logo.

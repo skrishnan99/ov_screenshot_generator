@@ -72,12 +72,14 @@ def main() -> int:
     if len(sys.argv) > 1:
         run_dir = Path(sys.argv[1])
     else:
-        run_dir = sorted((Path(__file__).parent / "runs").iterdir())[-1]
+        from core import paths
+
+        run_dir = sorted((paths.output_base() / "runs").iterdir())[-1]
     descriptions = json.loads(_find(run_dir, "descriptions.json").read_text())
     node_red = _find(run_dir, "node_red_description.md").read_text()
 
     desc_text = "\n\n".join(f"### {name}\n{text}" for name, text in descriptions.items())
-    llm.select_backend(os.environ.get("SG_LLM_BACKEND", "api"))
+    llm.select_backend(os.environ.get("SG_LLM_BACKEND", "agent-sdk"))
     try:
         abstract = llm.complete(
             PROMPT.format(descriptions=desc_text, node_red=node_red), max_tokens=2000

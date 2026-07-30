@@ -16,7 +16,7 @@ import difflib
 import json
 from pathlib import Path
 
-TRACES_DIR = Path(__file__).resolve().parent.parent / "traces"
+from core.paths import traces_dir
 
 FIND_ATTEMPTS = 4
 FIND_RETRY_MS = 1500
@@ -24,7 +24,7 @@ FIND_RETRY_MS = 1500
 
 def trace_path(variant: str, version_key: str) -> Path:
     safe = "".join(c if c.isalnum() or c in "._-" else "-" for c in version_key)
-    return TRACES_DIR / variant / f"{safe}.json"
+    return traces_dir() / variant / f"{safe}.json"
 
 
 def load(variant: str, version_key: str) -> dict | None:
