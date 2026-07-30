@@ -166,7 +166,12 @@ panels (`summary`, `contact`) of ≤ 4 lines each.
 
 # Deck shape
 
-The house structure for a camera test report, mirroring the reference decks:
+> **For a camera test report, `default-deck.md` is authoritative** — it is the
+> required structure and it names the asset for every slide. What follows is
+> the generic shape those layouts assemble into, useful for decks that are not
+> test reports.
+
+The house structure, mirroring the reference decks:
 
 ```
 title

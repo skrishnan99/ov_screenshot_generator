@@ -104,6 +104,9 @@ decision.
 `content-rules.md` is the rule that matters most: no number, name or setting
 goes on a slide unless it appears in the source assets.
 
+Then `references/default-deck.md` — the slide-by-slide structure you are
+required to produce.
+
 ```bash
 python3 - <<'PY'
 import json; run="runs/20260730_005318"
@@ -128,11 +131,16 @@ bundled reference decks and what each is for:
 | Test report / case study from an extraction run | `Deck(out)` — `style="report"` |
 | Capability, application or intro deck | `Deck(out, style="presentation")` |
 
-Then read `references/layouts.md` for the ten layouts and their capacities, and
-use the house structure at the bottom of that file. Read that structure
-alongside the narrative arc in `report-brief.md`: the order is an argument —
-problem, then how it was built, then the per-model evidence, then how a
-decision reaches the line — not a walkthrough of the camera UI. Scale it to the recipe — one
+**`references/default-deck.md` is the required structure for a camera test
+report. Follow it slide for slide.** The only thing that overrides it is an
+explicit instruction in the user's *initial request*. An unstated preference is
+not an instruction — do not drop, reorder or invent sections because a recipe
+felt thin. What flexes is how many slides a section needs, never whether the
+section appears.
+
+Then read `references/layouts.md` for the ten layouts and their capacities.
+`report-brief.md` explains *why* the order is what it is — the question each
+slide answers — which is what tells you how to write it. Scale it to the recipe — one
 `split` per AI model, drop steps that produced no asset. Never pad.
 
 Write the slide list out before coding, and for each slide name the asset it
@@ -293,6 +301,7 @@ and note that the local `.pptx` remains the reference copy.
 | `scripts/make_logo_variants.py` | one-time logo derivation |
 | `references/brand.md` | palette, logo rules, type — sampled from the brand pack |
 | `references/layouts.md` | the ten layouts, both styles, and their capacities |
+| `references/default-deck.md` | **the required slide-by-slide structure** — build this unless told otherwise |
 | `references/report-brief.md` | **read first** — role, audience, the argument the deck makes, per-slide briefs |
 | `references/content-rules.md` | grounding, honesty and voice rules |
 | `references/example-decks.md` | the two reference decks: what to borrow, what to ignore |

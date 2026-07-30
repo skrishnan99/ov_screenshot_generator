@@ -69,7 +69,11 @@ the result — accuracy, counts, resolution, cycle time.
 ## The house shape, from the blank template
 
 `assets/example-decks/Overview AI blank test report.pptx` is the frame the team
-fills in. Follow it. Read it directly with python-pptx before planning.
+fills in. Read it directly with python-pptx before planning.
+
+**The exact slide list you must produce is `default-deck.md`.** This section
+explains where that shape comes from and what each part is doing; that one is
+the specification.
 
 **Title slide is a three-part identity**, not a sentence:
 
