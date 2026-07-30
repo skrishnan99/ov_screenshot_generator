@@ -92,8 +92,10 @@ previews, visual quality checks, and correct font rendering.
   build (its vision tier mis-flags inherited canonical slides — scope it to
   generated slides via its `slides=` argument before enabling).
 - Google Drive publishing (`publish/gdrive.py`, `publish_cli.py`, `--publish`):
-  uploads the assets and the deck to the engineer's own Drive, converting the
-  deck to editable **Google Slides**. Per-user OAuth2 with the `drive.file`
+  uploads the deck to the team-wide **shared drive** as editable **Google
+  Slides**, flat, so every report is in one place the team can find. Raw assets
+  go to the engineer's own Drive library instead (`--assets`); `--personal`
+  sends the deck there too. Override the destination with `SG_TEAM_DRIVE_ID`. Per-user OAuth2 with the `drive.file`
   scope — access only to files this tool creates — consented once and cached
   in the data dir. Every publish makes a NEW dated folder; nothing is ever
   overwritten, the deck uploads first, and a failed asset is reported rather
@@ -104,7 +106,7 @@ previews, visual quality checks, and correct font rendering.
   **Internal** consent screen restricts it to your Workspace). Engineers do
   nothing: their first `--publish` opens a browser for one consent, then
   refreshes silently forever. All
-  reports collect in one `OV Test Reports` folder in their Drive (override
+  personal-Drive publishes collect in one `OV Test Reports` folder (override
   with `--library`, or `--library ""` for the Drive root).
 - `preflight.py` — environment checks with auto-fix.
 - Model tiering (`core/llm.py`): Opus for quality-critical calls, Sonnet for

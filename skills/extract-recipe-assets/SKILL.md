@@ -95,9 +95,10 @@ camera has no live preview until someone captures one. Those screens are
 reported truthfully rather than retried or dropped. Say so plainly instead of
 presenting them as missing data.
 
-If the engineer wants the assets in their Google Drive, publish them. The
-first publish on a machine opens a browser for a one-time Google consent —
-after that it is silent, so no separate sign-in step is needed:
+If the engineer wants the assets in their Google Drive, publish them. Assets
+go to their OWN Drive library (the team shared drive is for finished decks
+only). The first publish on a machine opens a browser for a one-time Google
+consent — after that it is silent, so no separate sign-in step is needed:
 
 ```bash
 uv run --project "$PLUGIN_ROOT" python "$PLUGIN_ROOT/publish_cli.py" --run runs/<ts>

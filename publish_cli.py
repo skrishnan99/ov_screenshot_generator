@@ -1,13 +1,16 @@
-"""Publish a run's assets and deck to Google Drive (deck as Google Slides).
+"""Publish a deck to Google Drive as Google Slides (and optionally its assets).
 
 Usage:
   uv run python publish_cli.py login          # one-time Google sign-in
   uv run python publish_cli.py status         # is this machine signed in?
   uv run python publish_cli.py logout
-  uv run python publish_cli.py --run runs/<ts> [--deck path/to/deck.pptx] [--all]
+  uv run python publish_cli.py --deck path/to/deck.pptx        # -> team drive
+  uv run python publish_cli.py --run runs/<ts>                 # assets -> yours
+  uv run python publish_cli.py --run runs/<ts> --deck d.pptx --assets
 
-Publishing is additive and never overwrites a previous upload: every publish
-creates a new timestamped folder in the engineer's own Drive.
+By default the deck lands FLAT in the team-wide shared drive; assets go to your
+own Drive library. Publishing is additive and never overwrites a previous
+upload.
 """
 
 from __future__ import annotations
@@ -17,6 +20,22 @@ import sys
 from pathlib import Path
 
 from publish import gdrive
+
+
+def _include(args) -> tuple[str, ...]:
+    """What to upload alongside the deck. Nothing by default: a finished deck
+    is the artifact the team needs, and raw assets in a shared drive are noise.
+
+    A run with no deck is the exception — publishing assets is then plainly the
+    whole point, so do not make the caller say so twice.
+    """
+    if args.all:
+        return gdrive.ALL_INCLUDE
+    if args.assets:
+        return gdrive.DEFAULT_INCLUDE
+    if args.run and not args.deck:
+        return gdrive.DEFAULT_INCLUDE
+    return ()
 
 
 def main() -> int:
@@ -30,9 +49,20 @@ def main() -> int:
     ap.add_argument("--run", help="Extractor run directory whose assets to publish")
     ap.add_argument("--deck", help="Deck .pptx to upload and convert to Google Slides")
     ap.add_argument(
+        "--assets",
+        action="store_true",
+        help="Also upload the run's deliverables/ and data/ (default: the deck "
+        "alone). Assets reinstate a dated per-run folder around the deck.",
+    )
+    ap.add_argument(
         "--all",
         action="store_true",
-        help="Also publish archive/ and debug/ (default: deliverables/ and data/)",
+        help="Upload assets including archive/ and debug/ (implies --assets)",
+    )
+    ap.add_argument(
+        "--personal",
+        action="store_true",
+        help="Publish to your own Drive library instead of the team shared drive",
     )
     ap.add_argument("--name", help="Override this report's Drive folder name")
     ap.add_argument(
@@ -76,9 +106,10 @@ def main() -> int:
         plan = gdrive.plan_publish(
             Path(args.run) if args.run else None,
             Path(args.deck) if args.deck else None,
-            include=gdrive.ALL_INCLUDE if args.all else gdrive.DEFAULT_INCLUDE,
+            include=_include(args),
             folder_name=args.name,
             library=args.library or None,
+            team_drive="" if args.personal else None,
         )
         for line in plan["tree"]:
             print(line)
@@ -92,9 +123,10 @@ def main() -> int:
         report = gdrive.publish(
             Path(args.run) if args.run else None,
             Path(args.deck) if args.deck else None,
-            include=gdrive.ALL_INCLUDE if args.all else gdrive.DEFAULT_INCLUDE,
+            include=_include(args),
             folder_name=args.name,
             library=args.library or None,
+            team_drive="" if args.personal else None,
         )
     except gdrive.AuthError as e:
         print(f"\nGoogle sign-in needed: {e}", file=sys.stderr)

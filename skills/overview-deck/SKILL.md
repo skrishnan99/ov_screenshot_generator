@@ -224,10 +224,15 @@ uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/publish.py" out/repor
 uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/publish.py" out/report.pptx --assets runs/<ts>
 ```
 
-The deck converts to Google Slides and lands in the "OV Test Reports" Drive
-library. `--assets` also uploads the source `deliverables/` and `data/`. Always
-dry-run first and show the user what will be uploaded. The first upload on a
-machine opens a browser for a one-time Google consent.
+The deck converts to Google Slides and lands **flat in the team-wide shared
+drive**, where the whole team can find every report. Always dry-run first and
+show the user where it will go. The first upload on a machine opens a browser
+for a one-time Google consent.
+
+`--assets` also uploads the source `deliverables/` and `data/` — those go to
+the engineer's OWN Drive library instead, inside a dated folder, because raw
+assets would clutter a space the team reads. `--personal` sends the deck there
+too.
 
 Google Slides re-flows PowerPoint text with its own metrics. After uploading,
 tell the user to spot-check the tight layouts — chip rows and `flow` diagrams —

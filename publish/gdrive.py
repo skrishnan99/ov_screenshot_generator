@@ -1,8 +1,16 @@
-"""Publish a run's assets and deck to the engineer's own Google Drive.
+"""Publish a deck (and optionally a run's assets) to Google Drive.
 
 The deck is converted to native Google Slides on upload, because editing in
-Slides is what engineers actually do next. Everything lands in the
-engineer's own Drive, owned by them.
+Slides is what engineers actually do next.
+
+Two destinations, by design:
+- The finished DECK goes to the team-wide shared drive (TEAM_DRIVE_ID), flat,
+  so the whole team can find every report in one place.
+- Raw ASSETS are working material and go to the engineer's OWN Drive library,
+  inside a dated per-run folder. A shared space the team reads should not
+  accumulate 28-file asset dumps.
+
+`--personal` sends the deck to the engineer's library too.
 
 Auth: per-user OAuth2 (installed-app loopback flow), consented once and
 cached as a refresh token in the writable data dir. The scope is
@@ -20,7 +28,8 @@ Reliability rules baked in here:
 - Uploads are resumable with retry/backoff; a per-file failure is recorded
   and reported, never fatal.
 - Local artifacts stay canonical. Publishing is purely additive.
-- Sharing permissions are never touched — it is their file in their Drive.
+- Sharing permissions are never touched. In the shared drive the team's own
+  access applies; in a personal Drive it stays the engineer's file.
 """
 
 from __future__ import annotations
@@ -49,7 +58,29 @@ AUTH_TIMEOUT_S = 180
 # One stable library folder collects every report, so an engineer's Drive
 # root doesn't accumulate loose folders. Each run still gets its own dated
 # subfolder inside it — the library is a container, never a shared target.
+# Used only when publishing to a personal Drive (see TEAM_DRIVE_ID).
 DEFAULT_LIBRARY = "OV Test Reports"
+
+# The team-wide shared drive every report lands in by default. Finished decks
+# belong somewhere the whole team can find them, not scattered across personal
+# Drives. Override with SG_TEAM_DRIVE_ID; set it to "" to fall back to the
+# per-user library above.
+#
+# IMPORTANT — what our `drive.file` scope permits here, verified against this
+# drive rather than assumed:
+#
+#   drives.get(driveId)              -> 403
+#   files.get(fileId=driveId)        -> 404
+#   files.create(parents=[driveId])  -> OK
+#   files.delete(<file we created>)  -> OK
+#
+# So we can WRITE into the shared drive but cannot READ it: we cannot verify
+# the destination exists, list what is in it, or find a folder by name inside
+# it. Every code path here must therefore write blind and let the create call
+# be the check — never gate an upload on folder_exists()/find_folder(), which
+# will always fail for this target. The upside is that no broader scope is
+# needed, so the tool still only ever touches files it created itself.
+TEAM_DRIVE_ID = os.environ.get("SG_TEAM_DRIVE_ID", "0AEQ6bdfOEbU_Uk9PVA").strip()
 
 
 class AuthError(RuntimeError):
@@ -357,59 +388,90 @@ def _asset_files(run_dir: Path, include: tuple[str, ...]) -> list[Path]:
 def plan_publish(
     run_dir: Path | None,
     deck_path: Path | None = None,
-    include: tuple[str, ...] = DEFAULT_INCLUDE,
+    include: tuple[str, ...] = (),
     folder_name: str | None = None,
     library: str | None = DEFAULT_LIBRARY,
+    team_drive: str | None = None,
 ) -> dict:
-    """What a publish WOULD do — the folder tree, files and total size — with
+    """What a publish WOULD do — the destination, files and total size — with
     no credentials and no network. Lets an engineer sanity-check the payload
-    (and its size against their Drive quota) before uploading."""
+    before uploading. Defaults mirror publish() exactly, or the dry run would
+    describe an upload that will not happen."""
     run_dir = Path(run_dir) if run_dir else None
     _, manifest = _manifest(run_dir) if run_dir else (None, {})
     name = folder_name or _folder_name(run_dir or Path("deck"), _recipe_of(manifest))
+    team = TEAM_DRIVE_ID if team_drive is None else team_drive.strip()
+    if include:
+        team = ""  # assets go to the personal library, mirroring publish()
+    flat = bool(team) and not include
     tree: list[str] = []
     total = 0
     count = 0
-    if library:
-        tree.append(f"{library}/")
-    indent = "  " if library else ""
-    tree.append(f"{indent}{name}/")
+    if flat:
+        tree.append(f"team shared drive ({team})/")
+        indent = "  "
+    else:
+        if team:
+            tree.append(f"team shared drive ({team})/")
+        elif library:
+            tree.append(f"{library}/")
+        indent = "  " if (team or library) else ""
+        tree.append(f"{indent}{name}/")
+        indent += "  "
     if deck_path and Path(deck_path).exists():
         deck_path = Path(deck_path)
         size = deck_path.stat().st_size
         title = _recipe_of(manifest) or deck_path.stem
-        tree.append(f"{indent}  {title} — Test Report   (Google Slides, {size / 1e6:.1f} MB)")
+        label = name if flat else f"{title} — Test Report"
+        tree.append(f"{indent}{label}   (Google Slides, {size / 1e6:.1f} MB)")
         total += size
         count += 1
-    if run_dir:
+    if run_dir and include:
         files = _asset_files(run_dir, include)
-        tree.append(f"{indent}  assets/   ({len(files)} files)")
+        tree.append(f"{indent}assets/   ({len(files)} files)")
         for f in files:
             size = f.stat().st_size
             total += size
             count += 1
-            tree.append(f"{indent}    {f.relative_to(run_dir)}   ({size / 1e6:.2f} MB)")
-    return {"folder_name": name, "tree": tree, "file_count": count, "total_bytes": total}
+            tree.append(f"{indent}  {f.relative_to(run_dir)}   ({size / 1e6:.2f} MB)")
+    return {
+        "folder_name": name,
+        "tree": tree,
+        "file_count": count,
+        "total_bytes": total,
+        "target": "team-drive" if team else "personal-drive",
+        "flat": flat,
+    }
 
 
 def publish(
     run_dir: Path | None,
     deck_path: Path | None = None,
     client: DriveClient | None = None,
-    include: tuple[str, ...] = DEFAULT_INCLUDE,
+    include: tuple[str, ...] = (),
     folder_name: str | None = None,
     library: str | None = DEFAULT_LIBRARY,
+    team_drive: str | None = None,
     log=print,
 ) -> dict:
-    """Upload the deck (converted to Google Slides) and a run's assets into a
-    new folder in the engineer's Drive. Returns a report; never raises for a
-    single failed file."""
+    """Publish the deck as Google Slides, and optionally a run's assets.
+
+    By default the deck lands FLAT in the team shared drive (TEAM_DRIVE_ID)
+    with no surrounding folder and no assets — a finished report belongs
+    somewhere the whole team can find it, and that is the only artifact worth
+    sharing. Pass `include` to also upload assets, which reinstates the dated
+    per-run folder; pass `team_drive=""` to publish to the engineer's own
+    Drive library instead.
+
+    Returns a report; never raises for a single failed file.
+    """
     if run_dir is None and deck_path is None:
         raise ValueError("nothing to publish: pass a run directory and/or a deck")
     run_dir = Path(run_dir) if run_dir else None
     client = client or DriveClient(log=log)
     _, manifest = _manifest(run_dir) if run_dir else (None, {})
     name = folder_name or _folder_name(run_dir or Path("deck"), _recipe_of(manifest))
+    team = TEAM_DRIVE_ID if team_drive is None else team_drive.strip()
 
     report: dict = {
         "folder_name": name,
@@ -419,14 +481,46 @@ def publish(
         "folder_link": None,
         "warnings": [],
     }
-    parent = library_folder(client, library, log) if library else None
-    if parent:
-        report["library_id"] = parent
-        report["library_link"] = f"https://drive.google.com/drive/folders/{parent}"
-    root = client.create_folder(name, parent)
-    report["folder_id"] = root
-    report["folder_link"] = f"https://drive.google.com/drive/folders/{root}"
-    log(f"  Drive folder: {(library + '/') if library else ''}{name}")
+
+    # The shared drive holds finished decks and nothing else. Raw assets are
+    # working material, so a publish that includes them goes to the engineer's
+    # own library instead of cluttering a space the whole team reads.
+    if include:
+        team = ""
+        report["assets_note"] = "assets publish to your personal Drive library"
+
+    # Deck-only into the shared drive: no folder to create, and — critically —
+    # nothing to look up first. We cannot read this target at all (see
+    # TEAM_DRIVE_ID), so the upload itself is the only check available.
+    flat = bool(team) and not include
+    if flat:
+        root = team
+        report["target"] = "team-drive"
+        # There is no per-run folder here, but the report's shape must not
+        # change with the destination — callers read folder_id/folder_link
+        # unconditionally. The containing "folder" is the shared drive itself.
+        report["folder_id"] = team
+        report["folder_link"] = f"https://drive.google.com/drive/folders/{team}"
+        report["flat"] = True
+        log(f"  team shared drive: {report['folder_link']}")
+    else:
+        if team:
+            parent = team  # dated folder created inside the shared drive
+            report["target"] = "team-drive"
+            report["library_id"] = team
+            report["library_link"] = f"https://drive.google.com/drive/folders/{team}"
+        else:
+            parent = library_folder(client, library, log) if library else None
+            report["target"] = "personal-drive"
+            if parent:
+                report["library_id"] = parent
+                report["library_link"] = (
+                    f"https://drive.google.com/drive/folders/{parent}"
+                )
+        root = client.create_folder(name, parent)
+        report["folder_id"] = root
+        report["folder_link"] = f"https://drive.google.com/drive/folders/{root}"
+        log(f"  Drive folder: {(library + '/') if (library and not team) else ''}{name}")
 
     # The deck first — its link is the point of the exercise.
     if deck_path and Path(deck_path).exists():
@@ -440,9 +534,12 @@ def publish(
             )
             report.setdefault("warnings", []).append(warn)
             log(f"  warning: {warn}")
+        # Flat in a shared space, the file name is the only context there is,
+        # so it carries the full report name rather than just the recipe.
+        slides_name = name if flat else f"{title} — Test Report"
         try:
             slides = client.upload(
-                deck_path, root, convert_to=SLIDES_MIME, name=f"{title} — Test Report"
+                deck_path, root, convert_to=SLIDES_MIME, name=slides_name
             )
             report["slides_id"] = slides["id"]
             report["slides_link"] = (
