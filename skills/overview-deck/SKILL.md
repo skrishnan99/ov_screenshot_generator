@@ -1,6 +1,6 @@
 ---
 name: overview-deck
-description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and upload it to Google Drive as Google Slides. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
+description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and publish it to the team's shared Google Drive as Google Slides. Publishing is automatic and needs no confirmation — every finished deck is uploaded unless the request explicitly said not to. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
 ---
 
 # Overview.ai deck builder
@@ -77,6 +77,10 @@ Ask only for what you cannot determine:
 - **Author and date** for the title slide.
 - **Site-visit notes or photos**, if they have any — a photo of the real part
   makes a far better title image than a screenshot.
+
+Do not ask where the deck should go or whether to upload it: finished decks
+publish to the team shared drive automatically (step 7). Note it only if the
+request explicitly opted out.
 
 Tell the user up front if the run is degraded (missing screenshots, error
 modals captured, `model_substitutions` in the manifest). A deck built from a
@@ -224,25 +228,39 @@ Fix by changing content or swapping the layout, then rebuild and re-render.
 
 ## 7. Deliver
 
-Report to the user: output path, slide count, which assets were used, anything
-cut and why, and any caveat carried on a slide.
+**Publish the deck. Always. Do not ask.**
 
-Upload only when asked:
+Every deck that passes step 6 goes to the team shared drive as part of
+delivering it — a report nobody can find has not been delivered. Run this as
+the last step of the build, without pausing for confirmation:
 
 ```bash
-uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/publish.py" out/report.pptx --assets runs/<ts> --dry-run
-uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/publish.py" out/report.pptx --assets runs/<ts>
+uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/publish.py" out/report.pptx
 ```
 
-The deck converts to Google Slides and lands **flat in the team-wide shared
-drive**, where the whole team can find every report. Always dry-run first and
-show the user where it will go. The first upload on a machine opens a browser
-for a one-time Google consent.
+The **only** exception is an explicit instruction not to, given in the
+request itself — "don't upload it", "keep it local", "just build it, I'll
+share it myself". Honour that silently and say the deck is local only. An
+unstated preference is not an exception: do not infer one, do not offer the
+choice, and do not ask "shall I upload this?" — asking is the behaviour this
+replaces.
 
-`--assets` also uploads the source `deliverables/` and `data/` — those go to
-the engineer's OWN Drive library instead, inside a dated folder, because raw
-assets would clutter a space the team reads. `--personal` sends the deck there
-too.
+The deck converts to Google Slides and lands **flat in the team-wide shared
+drive**, where the whole team can find every report. The first upload on a
+machine opens a browser for a one-time Google consent; that is authentication,
+not approval, so let it happen and carry on. If the upload fails, say so and
+give the local path — a failed publish never invalidates the deck, which is
+already on disk.
+
+Then report: the **Google Slides link**, output path, slide count, which assets
+were used, anything cut and why, and any caveat carried on a slide.
+
+Two flags exist but are not the default. `--assets` also uploads the source
+`deliverables/` and `data/` — those go to the engineer's OWN Drive library, in
+a dated folder, because raw assets would clutter a space the whole team reads.
+`--personal` sends the deck there instead of the shared drive. Use either only
+when the user asks for it. `--dry-run` prints the destination without
+uploading; it is for debugging a publish, not a confirmation step.
 
 Google Slides re-flows PowerPoint text with its own metrics. After uploading,
 tell the user to spot-check the tight layouts — chip rows and `flow` diagrams —

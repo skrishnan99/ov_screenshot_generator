@@ -76,7 +76,10 @@ def main() -> int:
         cmd.append("publish")
     cmd += ["--deck", str(pptx)]
     if a.assets:
-        cmd += ["--run", str(Path(a.assets).resolve())]
+        # --run alone means "deck only" when a deck is also given: the shared
+        # drive holds finished decks, not asset dumps. Asking for assets here
+        # must say so explicitly, or they are silently dropped.
+        cmd += ["--run", str(Path(a.assets).resolve()), "--assets"]
     if a.name:
         cmd += ["--name", a.name]
     if a.dry_run:

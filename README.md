@@ -28,7 +28,8 @@ Then just ask, in any Claude Code session:
   → runs the **overview-deck** skill; it plans the deck against the assets,
   builds every slide through a layout engine that measures real font metrics,
   refuses to save a deck with overflowing text or off-brand colour, renders it
-  for a visual check, and can publish it to Drive as Google Slides.
+  for a visual check, and publishes it to the team's shared Drive as Google
+  Slides automatically (say so up front if you'd rather keep it local).
 
 The two are separate on purpose: extraction is a long camera session, deck
 building is iterative. Extract once, build as many decks from it as you like.
