@@ -23,10 +23,20 @@ Then just ask, in any Claude Code session:
 - *"Get me the assets for recipe `<name>` on `http://<camera-url>`"*
   → runs the **extract-recipe-assets** skill; you get a `runs/<ts>/` folder
   of screenshots, images, descriptions, and metadata.
-- *"Generate a test report for recipe `<name>` on `http://<camera-url>` —
-  here are my notes and photos from the visit"*
-  → runs the **generate-test-report** skill; you get one folder with the
-  deck (`report/deck.pptx`) and every extracted asset (`assets/`).
+- *"Build a test report deck from that run — here are my notes and photos
+  from the visit"*
+  → runs the **overview-deck** skill; it plans the deck against the assets,
+  builds every slide through a layout engine that measures real font metrics,
+  refuses to save a deck with overflowing text or off-brand colour, renders it
+  for a visual check, and can publish it to Drive as Google Slides.
+
+The two are separate on purpose: extraction is a long camera session, deck
+building is iterative. Extract once, build as many decks from it as you like.
+
+A third skill, **generate-test-report**, is **deprecated** — it drove the older
+skeleton-and-token deck builder (`pipeline.py` / `deck_cli.py`). Those scripts
+still work and the skill still documents them, but deck requests now go to
+**overview-deck**.
 
 First use auto-installs the browser it needs (~2 min). Asset extraction takes
 ~20 minutes; a full test report (extract + deck) ~45. Both scale with how many

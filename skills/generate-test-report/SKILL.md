@@ -1,9 +1,24 @@
 ---
 name: generate-test-report
-description: Generate a complete customer-facing test-report slide deck for an Overview AI camera recipe — extracts all inspection assets from the camera, then builds the branded PowerPoint automatically. Use when a sales engineer wants a test report, case study, or slide deck for a recipe, given a camera URL and recipe name, optionally with their own site-visit notes and photos.
+description: "DEPRECATED — superseded by the overview-deck skill. Do NOT use for deck, report, slides or case-study requests; overview-deck handles those. Retained only as reference for the legacy skeleton-and-token deck builder (deck_cli.py / pipeline.py). Never select this skill unless the user explicitly names it or asks for the legacy pipeline by name."
 ---
 
-# Generate a full test report from an OV camera
+# DEPRECATED — use `overview-deck` instead
+
+> **This skill is no longer the deck generator.** Every request to build a
+> deck, report, slides or case study — including from an OV camera extraction
+> run — goes to **`ov-test-reports:overview-deck`**, which owns the layout
+> engine, the brand pack and the verification loop.
+>
+> The current path is two skills:
+> **`extract-recipe-assets`** to gather assets from the camera, then
+> **`overview-deck`** to build the deck from them.
+>
+> Nothing here is deleted: `pipeline.py` and `deck_cli.py` still work, and
+> this file documents them. Use it only when the user explicitly asks for the
+> legacy skeleton-and-token builder by name, or when maintaining that code.
+
+# Generate a full test report from an OV camera (legacy)
 
 You orchestrate a battle-tested two-phase pipeline (asset extraction, then
 deck generation). **Never navigate the camera UI yourself, never re-implement

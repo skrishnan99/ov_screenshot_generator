@@ -126,3 +126,16 @@ Two failures have specific answers rather than a retry:
 - **Recipe ambiguous / not found** — the output lists the candidate recipe
   names it saw on the camera. Show them and ask the engineer which one, then
   rerun with that exact name.
+
+## 6. Offer the deck
+
+Extraction produces the assets; it does not produce a deck. Once the run is
+complete, offer to build one and hand the run directory to the
+**`ov-test-reports:overview-deck`** skill, which owns the layout engine, the
+brand pack and the verification loop:
+
+> "The assets are in `runs/<ts>/`. Want me to build the report deck from
+> them?"
+
+Do not build a deck yourself, and do not route to `generate-test-report` —
+that skill is deprecated.
