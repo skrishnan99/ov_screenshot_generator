@@ -515,6 +515,29 @@ def capture_reports(
     if not ok:
         print(f"  warning: train models table {msg}")
     models = list_training_reports(_stable_snapshot(browser))
+
+    # Cross-check against the roster we already enumerated on the ROI page.
+    # The Train table stacks a model's name over its type in one cell, and the
+    # reader has come back with the TYPE as the name ("segmentation" for a
+    # model actually called "Model S"). Navigating to a model that does not
+    # exist cannot succeed, and costs a whole turn budget discovering that.
+    # meta["models"] is authoritative here; anything not in it is a misread.
+    if meta.get("models"):
+        keep = []
+        for m in models:
+            entry = _envelope_entry(meta, m["name"], m.get("type", ""))
+            if entry is None:
+                print(
+                    f"  ignoring enumerated report for {m['name']!r}: no such model "
+                    f"in this recipe ({[e['name'] for e in meta['models']]})"
+                )
+                continue
+            # Trust the roster's spelling over the table reader's.
+            m["name"] = entry["name"]
+            m["type"] = entry.get("type") or m.get("type", "")
+            keep.append(m)
+        models = keep
+
     step_record["report_models"] = [f"{m['name']} ({m['type']})" for m in models]
     if not models:
         print("  no models with an available training report")
@@ -533,9 +556,16 @@ def capture_reports(
                 browser, goal, f'The training report for "{m["name"]}" is displayed.'
             )
             if result.status != "success":
-                raise RuntimeError(
-                    f"could not open training report for {m['name']}: {result.evidence}"
+                # One unreachable report must not cost the whole run. The three
+                # steps after this one (settings, Node-RED, library) are worth
+                # more than a single model's report screenshot, and a report
+                # that will not open is usually a model that has none.
+                print(
+                    f"  warning: could not open training report for "
+                    f"\"{m['name']}\": {result.evidence}",
+                    file=sys.stderr,
                 )
+                continue
         ok, msg = poll_image_loaded(browser, max_wait_s=60, interval_s=5)
         if not ok:
             print(f"  warning: training report for \"{m['name']}\" {msg}")
