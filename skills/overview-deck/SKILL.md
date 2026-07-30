@@ -91,8 +91,18 @@ first.
 
 ## 2. Read the facts before writing any slide
 
-**Read `references/content-rules.md` now.** The rule that matters most: no
-number, name or setting goes on a slide unless it appears in the source assets.
+**Read `references/report-brief.md` and `references/content-rules.md` now,
+before writing anything.**
+
+`report-brief.md` is who you are writing as (the vision sales engineer who ran
+the test), who reads it (a quality manager, a controls engineer, a buyer —
+none of whom has used the camera UI), the argument the slide order makes, and
+what each slide must say and at what length. Without it you will write a
+competent tour of a settings UI instead of a report that earns a deployment
+decision.
+
+`content-rules.md` is the rule that matters most: no number, name or setting
+goes on a slide unless it appears in the source assets.
 
 ```bash
 python3 - <<'PY'
@@ -119,7 +129,10 @@ bundled reference decks and what each is for:
 | Capability, application or intro deck | `Deck(out, style="presentation")` |
 
 Then read `references/layouts.md` for the ten layouts and their capacities, and
-use the house structure at the bottom of that file. Scale it to the recipe — one
+use the house structure at the bottom of that file. Read that structure
+alongside the narrative arc in `report-brief.md`: the order is an argument —
+problem, then how it was built, then the per-model evidence, then how a
+decision reaches the line — not a walkthrough of the camera UI. Scale it to the recipe — one
 `split` per AI model, drop steps that produced no asset. Never pad.
 
 Write the slide list out before coding, and for each slide name the asset it
@@ -280,16 +293,20 @@ and note that the local `.pptx` remains the reference copy.
 | `scripts/make_logo_variants.py` | one-time logo derivation |
 | `references/brand.md` | palette, logo rules, type — sampled from the brand pack |
 | `references/layouts.md` | the ten layouts, both styles, and their capacities |
+| `references/report-brief.md` | **read first** — role, audience, the argument the deck makes, per-slide briefs |
 | `references/content-rules.md` | grounding, honesty and voice rules |
 | `references/example-decks.md` | the two reference decks: what to borrow, what to ignore |
 | `assets/tokens.json` | machine-readable brand tokens |
 | `assets/brand/` | the brand pack; `derived/` holds generated logo variants |
 | `assets/example-decks/` | the STADLER and Hot Bar Soldering reference decks |
 
-## The three rules that matter most
+## The rules that matter most
 
 1. **Ground every claim** in the source assets — no number reaches a slide
    unless it is in `meta.json`, the descriptions, or the manifest.
-2. **Never hand-position or hand-colour anything.** If it does not fit a
+2. **Write for someone who has never seen the camera UI.** Say what a setting
+   achieves, never what it is called — no config minutiae, no node or variable
+   names. `report-brief.md` has the before/after table.
+3. **Never hand-position or hand-colour anything.** If it does not fit a
    layout, the content is too long.
-3. **Look at the render before you deliver.** Every deck, every time.
+4. **Look at the render before you deliver.** Every deck, every time.
