@@ -1,6 +1,6 @@
 ---
 name: extract-recipe-assets
-description: Capture a complete folder of inspection assets from an Overview AI camera for one recipe — screenshots of every configuration screen, native-resolution images, vision descriptions, structured metadata, and the Node-RED IO logic summary. Use when a sales engineer wants recipe assets or screenshots from an OV camera, given a camera URL and recipe name.
+description: "Capture a complete folder of inspection assets from an Overview AI camera for one recipe — screenshots of every configuration screen, native-resolution images, vision descriptions, structured metadata, and the Node-RED IO logic summary. Use when a sales engineer wants recipe assets or screenshots from an OV camera, given a camera URL and recipe name. This is step 1 of the two-step report flow: if the same request also asks for a deck, report or case study, run this first and then continue into the overview-deck skill without stopping to ask."
 ---
 
 # Extract recipe assets from an OV camera
@@ -128,15 +128,26 @@ Two failures have specific answers rather than a retry:
   names it saw on the camera. Show them and ask the engineer which one, then
   rerun with that exact name.
 
-## 6. Offer the deck
+## 6. Hand off to the deck skill
 
-Extraction produces the assets; it does not produce a deck. Once the run is
-complete, offer to build one and hand the run directory to the
-**`ov-test-reports:overview-deck`** skill, which owns the layout engine, the
-brand pack and the verification loop:
+Extraction produces the assets; it does not produce a deck. The deck is built
+by **`ov-test-reports:overview-deck`**, which owns the layout engine, the brand
+pack and the verification loop.
+
+**If the request also asked for a deck, report, slides or a case study**
+— "get the assets and build a test report", "make me a report for recipe X" —
+then extraction was only the first half. Continue straight into
+`overview-deck` with the run directory as its source assets. Do **not** stop to
+ask whether to build the deck; they already said so, and after a 20-minute
+extraction an unnecessary question is the last thing they want. Say what you
+are doing and keep going:
+
+> "Assets are in `runs/<ts>/` — 13 steps, 3 models. Building the deck now."
+
+**If they asked for assets only**, stop here and offer:
 
 > "The assets are in `runs/<ts>/`. Want me to build the report deck from
 > them?"
 
-Do not build a deck yourself, and do not route to `generate-test-report` —
-that skill is deprecated.
+Either way: do not build a deck yourself, and do not route to
+`generate-test-report` — that skill is deprecated.

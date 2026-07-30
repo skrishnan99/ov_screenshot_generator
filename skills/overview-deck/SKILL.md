@@ -1,6 +1,6 @@
 ---
 name: overview-deck
-description: Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and upload it to Google Drive as Google Slides. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour.
+description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and upload it to Google Drive as Google Slides. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
 ---
 
 # Overview.ai deck builder
@@ -60,8 +60,18 @@ uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/make_logo_variants.py
 Ask only for what you cannot determine:
 
 - **Source assets** — usually an OV extraction run directory (`runs/<ts>/`)
-  containing `deliverables/` and `data/`. If the user has not run one, the
-  `ov-test-reports:extract-recipe-assets` skill produces it.
+  containing `deliverables/` and `data/`.
+
+  **If no run exists yet and they gave you a camera URL and recipe name, run
+  the extraction yourself**: invoke `ov-test-reports:extract-recipe-assets`,
+  wait for it to finish (~20 minutes), then carry on here with the run
+  directory it produced. "Get the assets and build a report" is one request,
+  not two — do not hand the user a homework assignment and stop.
+
+  Tell them the shape of it before you start, because the whole thing is
+  ~45 minutes: roughly 20 extracting from the camera, then 25 building and
+  verifying the deck. Only ask for a run directory when there is genuinely no
+  way to produce one — no camera URL, or the camera is unreachable.
 - **Audience** — customer-facing or internal. This decides whether the
   engineering-observations slide stays (see `references/content-rules.md`).
 - **Author and date** for the title slide.
