@@ -173,33 +173,41 @@ understood.
 
 ### 8. Library
 
-**Transplant the template's own library slide** and swap in this run's
+**Place the skill's owned library skeleton** and swap in this run's
 screenshot. Do not re-author it:
 
 ```python
-d.template_slide("library", image=run/"deliverables/screenshots/12_library.png")
+d.skeleton_slide("library", image=run/"deliverables/screenshots/12_library.png")
 ```
 
 The slide arrives verbatim — title, bullets, styling — with the screenshot
-dropped into the "Insert screenshot here" placeholder the template provides.
+dropped into its "Insert screenshot here" hole, exactly at the hole's frame.
 
 ---
 
 ### 9. Standing closing slides
 
-Carry the template's closing run **verbatim**. These are company content:
+Carry the standing closing run **verbatim**. These are company content:
 re-authoring them through the layout engine produces a different approximation
 every time, which is why they used to be inconsistent or missing.
 
 ```python
 for name in ("capabilities", "team", "thank_you"):
-    d.template_slide(name)
+    d.skeleton_slide(name)
 ```
 
-`template_slides.py` holds the registry — `library`, `capabilities` (the "5
-factors" slide), `defect_generator`, `integration`, `team`, `thank_you`. Run it
-directly to list them. `DEFAULT_CLOSING` is the set every report carries;
-add `defect_generator` or `integration` only when the request calls for them.
+The slides live as owned single-slide skeletons in `assets/skeletons/`
+(extracted once from the blank template; `template_slides.py --extract`
+regenerates them and reapplies the recorded fixups when the company template
+changes). The registry: `library`, `capabilities` (the "5 factors" slide),
+`defect_generator`, `integration`, `team`, `thank_you` — run
+`template_slides.py` to list them with their holes. `DEFAULT_CLOSING` is the
+set every report carries; add `defect_generator` or `integration` only when
+the request calls for them.
+
+If a filled skeleton looks wrong in the render, the remedy is the skeleton
+file (a committed maintainer fix that then holds for every deck) or shorter
+content — never a patch to the built deck.
 
 Transplanted slides are exempt from the layout checks and the brand audit by
 design — this engine did not lay them out, they legitimately use the brand's
@@ -219,7 +227,7 @@ finding.
 - [ ] Every model: setup, labelled regions, plus report and settings where they exist
 - [ ] Node-RED explained with a diagram, no node names
 - [ ] Library slide with this run's screenshot
-- [ ] Library + closing slides TRANSPLANTED via template_slide(), not re-authored
+- [ ] Library + closing slides placed via skeleton_slide(), not re-authored
 - [ ] No camera serial, device name, hostname, firmware version or capture id
       anywhere in the deck's text
 

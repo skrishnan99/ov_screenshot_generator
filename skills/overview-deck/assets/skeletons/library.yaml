@@ -1,0 +1,9 @@
+# Content-hole descriptions for library.pptx (extracted from the blank
+# test-report template; regenerate with template_slides.py --extract).
+image_slots:
+  - name: library_screen
+    expects: >
+      The camera's Library page for this recipe: the capture browser with a
+      grid of stored capture thumbnails, filters, and a selected capture's
+      detail panel. Shows the volume of real training and production data
+      held on the device — not a single model's training view.

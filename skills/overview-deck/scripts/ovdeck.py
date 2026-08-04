@@ -862,28 +862,42 @@ class Deck:
                                     "the closing slide must carry the logo"))
         return issues
 
-    def template_slide(self, name: str, *, image: str | Path | None = None) -> None:
-        """Carry a standing boilerplate slide over from the blank template,
-        verbatim — library, capabilities, team, thank-you.
+    def skeleton_slide(
+        self,
+        name: str,
+        *,
+        image: str | Path | None = None,
+        tokens: dict | None = None,
+    ) -> None:
+        """Place a boilerplate slide from the skill's owned skeletons —
+        library, capabilities, team, thank-you — exactly as designed.
 
-        These are the same in every report, so they are transplanted rather
-        than re-authored: the layout engine would produce a fresh
-        approximation each time. The library slide takes this run's screenshot
-        via `image`; the rest take nothing.
+        Each skeleton is a single-slide pptx extracted once from the company
+        template (assets/skeletons/, see template_slides.py). `image` fills
+        the slide's "Insert screenshot here" hole (the library slide has
+        one); `tokens` fills {{token}} text holes if a skeleton ever grows
+        any. Unfilled holes raise rather than ship placeholder text.
 
         Slides added this way bypass check() by design — they are known-good
         company content, not something this engine laid out, and measuring
         them against its capacities would report failures it cannot fix.
+        If a filled skeleton looks wrong in the render, fix the skeleton
+        (a maintainer change, reapplied on re-extraction) or shorten the
+        content — never patch the built deck.
         """
         from template_slides import append
 
-        append(self.prs, name, image=image)
+        append(self.prs, name, image=image, tokens=tokens)
         self._template_slides = getattr(self, "_template_slides", 0) + 1
         # Position in the finished file, so the audit can tell what this
         # engine laid out from what it merely carried over.
         self._template_indices = getattr(self, "_template_indices", [])
-        self._template_indices.append(len(self.prs.slides.__iter__.__self__._sldIdLst))
+        self._template_indices.append(len(self.prs.slides._sldIdLst))
         self._ends_with_template = True
+
+    def template_slide(self, name: str, *, image: str | Path | None = None) -> None:
+        """Deprecated alias for skeleton_slide()."""
+        self.skeleton_slide(name, image=image)
 
     def save(self, path: str | Path | None = None) -> Path:
         out = Path(path or self.out_path)

@@ -339,6 +339,8 @@ and note that the local `.pptx` remains the reference copy.
 | `scripts/render.py` | `.pptx` → per-slide PNGs |
 | `scripts/publish.py` | Drive upload via the ov-test-reports plugin |
 | `scripts/make_logo_variants.py` | one-time logo derivation |
+| `scripts/template_slides.py` | owned boilerplate skeletons: list, fill, `--extract` |
+| `assets/skeletons/` | single-slide skeletons of the standing company slides |
 | `references/brand.md` | palette, logo rules, type — sampled from the brand pack |
 | `references/layouts.md` | the ten layouts, both styles, and their capacities |
 | `references/default-deck.md` | **the required slide-by-slide structure** — build this unless told otherwise |
