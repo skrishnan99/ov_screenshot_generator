@@ -173,22 +173,39 @@ understood.
 
 ### 8. Library
 
-Use the blank template's library slide and **swap in this run's screenshot**:
-`deliverables/screenshots/12_library.png`.
+**Transplant the template's own library slide** and swap in this run's
+screenshot. Do not re-author it:
 
-Its framing is already right — on-device storage feeding retraining. Keep it
-and make the numbers this recipe's own (capture counts from `meta.json`
-facts).
+```python
+d.template_slide("library", image=run/"deliverables/screenshots/12_library.png")
+```
+
+The slide arrives verbatim — title, bullets, styling — with the screenshot
+dropped into the "Insert screenshot here" placeholder the template provides.
 
 ---
 
 ### 9. Standing closing slides
 
-Carry the blank template's closing run **as-is**: camera info, the unique
-factors, defect generator, integration, team & locations, thank you.
+Carry the template's closing run **verbatim**. These are company content:
+re-authoring them through the layout engine produces a different approximation
+every time, which is why they used to be inconsistent or missing.
 
-Do not re-author them per customer, do not mine them for the report's voice —
-they are marketing register and the rest of the deck is not.
+```python
+for name in ("capabilities", "team", "thank_you"):
+    d.template_slide(name)
+```
+
+`template_slides.py` holds the registry — `library`, `capabilities` (the "5
+factors" slide), `defect_generator`, `integration`, `team`, `thank_you`. Run it
+directly to list them. `DEFAULT_CLOSING` is the set every report carries;
+add `defect_generator` or `integration` only when the request calls for them.
+
+Transplanted slides are exempt from the layout checks and the brand audit by
+design — this engine did not lay them out, they legitimately use the brand's
+other faces and colours, and a build script cannot fix the corporate template.
+`brandcheck` names which slides it skipped. Do not re-author one to silence a
+finding.
 
 ---
 
@@ -202,7 +219,7 @@ they are marketing register and the rest of the deck is not.
 - [ ] Every model: setup, labelled regions, plus report and settings where they exist
 - [ ] Node-RED explained with a diagram, no node names
 - [ ] Library slide with this run's screenshot
-- [ ] Closing slides carried over unchanged
+- [ ] Library + closing slides TRANSPLANTED via template_slide(), not re-authored
 - [ ] No camera serial, device name, hostname, firmware version or capture id
       anywhere in the deck's text
 

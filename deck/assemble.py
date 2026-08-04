@@ -552,9 +552,17 @@ def _import_part(base: Presentation, src_part, mapping: dict, ctx: dict):
     return new_part
 
 
-def append_slide(base: Presentation, src_pres: Presentation, ctx: dict) -> None:
-    """Append src's (single, already-filled) slide to the base deck."""
-    src_slide_part = src_pres.slides[0].part
+def append_slide(
+    base: Presentation, src_pres: Presentation, ctx: dict, index: int = 0
+) -> None:
+    """Append one of src's (already-filled) slides to the base deck.
+
+    Defaults to the first slide, which is what the skeleton pipeline builds.
+    ``index`` lets a caller lift a specific slide out of a multi-slide source —
+    used to transplant boilerplate verbatim from the reference template rather
+    than re-authoring an approximation of it.
+    """
+    src_slide_part = src_pres.slides[index].part
     mapping: dict = {}
     new_part = _import_part(base, src_slide_part, mapping, ctx)
     rId = base.part.relate_to(new_part, RT.SLIDE)

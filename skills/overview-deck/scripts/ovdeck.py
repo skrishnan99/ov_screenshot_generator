@@ -302,6 +302,7 @@ class Deck:
         sl = self.prs.slides.add_slide(self._blank)
         st = _SlideState(index=len(self.states) + 1, dark=dark)
         self.states.append(st)
+        self._ends_with_template = False
         self._rect(sl, st, 0, 0, SLIDE_W, SLIDE_H,
                    fill=DARK_BG if dark else self.page_bg, register=False)
         if not dark and self.style == "presentation":
@@ -851,10 +852,38 @@ class Deck:
             if not self.states[0].has_logo:
                 issues.append(Issue(1, "missing-logo",
                                     "the opening slide must carry the logo"))
-            if not self.states[-1].has_logo:
+            # When the deck ends with transplanted boilerplate, the real
+            # closing slide is the template's own and carries the template's
+            # logo — this engine never laid it out and cannot see it. Checking
+            # the last AUTHORED slide instead would flag whatever happens to
+            # precede the boilerplate, which is not the closing slide at all.
+            if not getattr(self, "_ends_with_template", False) and not self.states[-1].has_logo:
                 issues.append(Issue(len(self.states), "missing-logo",
                                     "the closing slide must carry the logo"))
         return issues
+
+    def template_slide(self, name: str, *, image: str | Path | None = None) -> None:
+        """Carry a standing boilerplate slide over from the blank template,
+        verbatim — library, capabilities, team, thank-you.
+
+        These are the same in every report, so they are transplanted rather
+        than re-authored: the layout engine would produce a fresh
+        approximation each time. The library slide takes this run's screenshot
+        via `image`; the rest take nothing.
+
+        Slides added this way bypass check() by design — they are known-good
+        company content, not something this engine laid out, and measuring
+        them against its capacities would report failures it cannot fix.
+        """
+        from template_slides import append
+
+        append(self.prs, name, image=image)
+        self._template_slides = getattr(self, "_template_slides", 0) + 1
+        # Position in the finished file, so the audit can tell what this
+        # engine laid out from what it merely carried over.
+        self._template_indices = getattr(self, "_template_indices", [])
+        self._template_indices.append(len(self.prs.slides.__iter__.__self__._sldIdLst))
+        self._ends_with_template = True
 
     def save(self, path: str | Path | None = None) -> Path:
         out = Path(path or self.out_path)
@@ -869,6 +898,13 @@ class Deck:
                 "Fix the content or pick a layout with more room — never nudge "
                 "coordinates by hand."
             )
+        idx = getattr(self, "_template_indices", [])
+        if idx:
+            # Self-describing: the audit reads this instead of guessing which
+            # slides came from the reference template.
+            self.prs.core_properties.keywords = (
+                "ovdeck:template-slides=" + ",".join(str(i) for i in idx)
+            )
         self.prs.save(str(out))
         # the circular title image is embedded at save time; the scratch copy
         # on disk is no longer referenced
@@ -878,7 +914,10 @@ class Deck:
                 tmp.unlink()
             except OSError:
                 pass
-        print(f"\nsaved: {out}  ({len(self.states)} slides, {len(errors)} error(s), "
+        n_tmpl = getattr(self, "_template_slides", 0)
+        n_all = len(self.states) + n_tmpl
+        carried = f" (+{n_tmpl} carried from template)" if n_tmpl else ""
+        print(f"\nsaved: {out}  ({n_all} slides{carried}, {len(errors)} error(s), "
               f"{len(issues) - len(errors)} warning(s), style={self.style}, "
               f"font={self.font})")
         return out
