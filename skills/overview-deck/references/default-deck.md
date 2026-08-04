@@ -28,6 +28,9 @@ d.title_slide("OV80i", "Automotive", meta=["Horn end inspection",
               "Report by: …", "Date: 2026.07.30"])
 ```
 
+Camera **model** only. Never the serial, device name, hostname or firmware
+version — on this slide or any other (`content-rules.md` §1b).
+
 ---
 
 ### 1. What the inspection was about — problem, then solution
@@ -200,6 +203,8 @@ they are marketing register and the rest of the deck is not.
 - [ ] Node-RED explained with a diagram, no node names
 - [ ] Library slide with this run's screenshot
 - [ ] Closing slides carried over unchanged
+- [ ] No camera serial, device name, hostname, firmware version or capture id
+      anywhere in the deck's text
 
 If you are dropping any of these, you should be able to point at the sentence
 in the user's request that told you to.

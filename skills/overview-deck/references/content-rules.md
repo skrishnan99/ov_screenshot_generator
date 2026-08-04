@@ -44,6 +44,42 @@ protocol support, library size.
 
 ---
 
+## 1b. Grounded is not the same as worth printing
+
+Some facts are in the assets and must still **never reach a slide**. Being
+extracted is not a licence to print.
+
+**Never put on a slide:**
+
+| Excluded | Example from a run |
+|---|---|
+| Camera serial | `gsac586423` |
+| Camera nickname / device name | `c204` |
+| Camera URL or hostname | `ov80i-gsac586423.tail48746.ts.net` |
+| Firmware or build version | `v2026.6.0-OV80i` |
+| Capture reference numbers, file IDs, internal record ids | `1785196184493.jpg` |
+
+The test: **does it mean anything to the reader, and will it still be true in
+six months?** A serial identifies one unit on one bench; the customer will be
+running different hardware, the camera gets reimaged, the recipe is exported to
+another device — and none of it changes what the inspection does. It is noise
+that dates the document.
+
+**The camera MODEL is not in this list and belongs on the title slide** —
+`OV80i`, `OV20i`. That is the product being reported on. What is excluded is
+the identity of the *particular unit* it was tested on.
+
+Also fine, because they explain the result rather than identify the hardware:
+resolution, exposure, trigger mode, lighting, defect classes, counts,
+thresholds, accuracy.
+
+**This governs the words you write, not the screenshots.** A camera UI header
+showing a serial is evidence and stays as captured — never crop or edit a
+screenshot to hide one (see §5). The rule is that *you* do not restate it in a
+title, caption, bullet or stat.
+
+---
+
 ## 2. Report what is missing, plainly
 
 Extraction runs fail partially all the time. When an asset is absent, say so

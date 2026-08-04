@@ -78,10 +78,15 @@ the specification.
 **Title slide is a three-part identity**, not a sentence:
 
 ```
-OV20i                      <- the camera model tested
+OV20i                      <- the camera MODEL tested
 Logistics                  <- the customer's industry
 Measurement box size       <- the application, in their words
 ```
+
+The model, never the unit. No serial, no device nickname, no hostname, no
+firmware version — see `content-rules.md` §1b. `OV80i` is the product being
+reported on; `c204 (gsac586423)` identifies one camera on one bench and will
+be wrong the moment the recipe moves.
 
 **Slide 2 states the outcome before any method.** The application name, one
 sentence of what was achieved, and the result screenshot:

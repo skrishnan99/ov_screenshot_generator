@@ -356,6 +356,9 @@ and note that the local `.pptx` remains the reference copy.
 2. **Write for someone who has never seen the camera UI.** Say what a setting
    achieves, never what it is called — no config minutiae, no node or variable
    names. `report-brief.md` has the before/after table.
+   Nor any identifier of the particular unit: no camera serial, device name,
+   hostname, firmware version or capture id. The model (`OV80i`) yes, the unit
+   no — `content-rules.md` §1b.
 3. **Never hand-position or hand-colour anything.** If it does not fit a
    layout, the content is too long.
 4. **Look at the render before you deliver.** Every deck, every time.
