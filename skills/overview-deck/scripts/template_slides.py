@@ -264,11 +264,24 @@ def _fix_library_subtitle(slide) -> None:
             sh.height = Inches(0.45)
 
 
+def _strip_integration_page_number(slide) -> None:
+    """The integration slide carries its page number as a bare "12", which
+    the NN / NN pattern cannot catch — and a generic bare-number strip would
+    also delete legitimate design numerals (defect_generator's 01/02/03 step
+    markers, its 12.4x stat). Target exactly this one box."""
+    from deck.assemble import iter_shapes
+
+    for sh in list(iter_shapes(slide)):
+        if sh.has_text_frame and sh.text_frame.text.strip() == "12":
+            sh._element.getparent().remove(sh._element)
+
+
 # Applied in order after transplant, before save. _strip_page_numbers runs on
 # every skeleton; per-name fixups follow.
 FIXUPS: dict[str, tuple] = {
     "*": (_strip_page_numbers,),
     "library": (_fix_library_subtitle,),
+    "integration": (_strip_integration_page_number,),
 }
 
 
