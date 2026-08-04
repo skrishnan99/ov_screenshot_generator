@@ -110,6 +110,18 @@ def append(prs, name: str, image: str | Path | None = None,
     src = Presentation(str(skeleton_path(name)))
     slide = src.slides[0]
 
+    # THE CANVAS INVARIANT (see the extraction section): a skeleton on a
+    # different canvas than the deck renders shrunken in a corner. Refuse
+    # loudly — the fix is re-extraction, not a build-time workaround.
+    if (src.slide_width, src.slide_height) != (prs.slide_width, prs.slide_height):
+        raise TemplateError(
+            f"skeleton {name!r} canvas is "
+            f"{src.slide_width}x{src.slide_height} EMU but the deck is "
+            f"{prs.slide_width}x{prs.slide_height}. The skeletons predate a "
+            f"canvas change — regenerate with `python {Path(__file__).name} "
+            f"--extract`."
+        )
+
     if tokens:
         have = set(find_tokens(slide))
         surplus = set(tokens) - have
@@ -161,6 +173,61 @@ def append(prs, name: str, image: str | Path | None = None,
 #
 # Owning the skeletons is the point: template defects are fixed HERE, once,
 # and re-extraction reapplies them. Never fix a defect in the built deck.
+#
+# THE CANVAS INVARIANT. The deprecated deck generator was reliable because
+# every slide shared one coordinate space: its base presentation WAS the
+# first skeleton, so the canvas came from the skeletons themselves. ovdeck
+# authors at 13.333x7.5in while the company template is 10x5.625in — same
+# 16:9, different absolute EMUs — so a verbatim transplant huddled in the
+# top-left 75% of the deck. Extraction therefore normalises every skeleton
+# to ovdeck's canvas, scaling geometry AND type by the exact ratio (4/3),
+# once, here, where a maintainer can eyeball the result. Build-time append
+# stays verbatim and refuses a skeleton whose canvas disagrees with the deck.
+
+
+def _scale_part_xml(blob: bytes, factor: float) -> bytes:
+    """Uniformly scale one slide/layout/master part's XML.
+
+    Both canvases are 16:9, so a single factor maps everything: shape frames
+    (off/ext, and group child spaces chOff/chExt — scaling all four uniformly
+    is self-consistent), font sizes (sz, 1/100 pt), line widths, text insets,
+    fixed paragraph spacing, table geometry and shadow offsets. Percentages
+    (srcRect, spcPct, normAutofit) need no scaling and are left alone; the
+    isdigit guard also skips non-numeric attrs like p:ph's sz="quarter".
+    """
+    from lxml import etree
+
+    root = etree.fromstring(blob)
+
+    def scale(el, *names):
+        for name in names:
+            v = el.get(name)
+            if v is not None and v.lstrip("-").isdigit():
+                el.set(name, str(round(int(v) * factor)))
+
+    for el in root.iter():
+        tag = etree.QName(el).localname
+        if tag in ("off", "chOff"):
+            scale(el, "x", "y")
+        elif tag in ("ext", "chExt"):
+            scale(el, "cx", "cy")
+        elif tag == "ln":
+            scale(el, "w")
+        elif tag in ("rPr", "defRPr", "endParaRPr"):
+            scale(el, "sz")
+        elif tag == "bodyPr":
+            scale(el, "lIns", "tIns", "rIns", "bIns")
+        elif tag in ("spcPts", "buSzPts"):
+            scale(el, "val")
+        elif tag == "gridCol":
+            scale(el, "w")
+        elif tag == "tr":
+            scale(el, "h")
+        elif tag in ("outerShdw", "innerShdw", "prstShdw"):
+            scale(el, "blurRad", "dist")
+    return etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
 
 def _strip_page_numbers(slide) -> None:
     """The template's slides carry hardcoded "NN / 15" page markers. Any
@@ -197,7 +264,7 @@ FIXUPS: dict[str, tuple] = {
 }
 
 
-def _shrink_pictures(slide) -> int:
+def _shrink_pictures(slide, scale: float = 1.0) -> int:
     """Re-embed each picture at the size its frame actually displays.
 
     The template's slides carry photography at capture resolution — one slide
@@ -224,11 +291,15 @@ def _shrink_pictures(slide) -> int:
             blip = sh._element.blipFill.find(qn("a:blip"))
             part = sh.part.related_part(blip.get(qn("r:embed")))
             with Image.open(io.BytesIO(part.blob)) as im:
-                tw = max(1, int(Emu(sh.width).inches * EMBED_DPI))
-                th = max(1, int(Emu(sh.height).inches * EMBED_DPI))
+                tw = max(1, int(Emu(sh.width).inches * EMBED_DPI * scale))
+                th = max(1, int(Emu(sh.height).inches * EMBED_DPI * scale))
                 if im.width <= tw and im.height <= th:
                     continue
-                scale = min(tw / im.width, th / im.height)
+                # NB: never name this `scale` — it would shadow the
+                # parameter and compound across pictures (each raster ends up
+                # shrunk by the PREVIOUS picture's resize ratio, collapsing
+                # geometrically down the slide: 687 -> 180 -> 47 -> 12 px).
+                ratio = min(tw / im.width, th / im.height)
                 if im.mode == "P":
                     out = im.convert("RGBA" if "transparency" in im.info else "RGB")
                 elif im.mode == "CMYK":
@@ -236,7 +307,7 @@ def _shrink_pictures(slide) -> int:
                 else:
                     out = im.copy()
                 out = out.resize(
-                    (max(1, int(im.width * scale)), max(1, int(im.height * scale))),
+                    (max(1, int(im.width * ratio)), max(1, int(im.height * ratio))),
                     Image.LANCZOS,
                 )
                 tmp = _encode_smaller(out)
@@ -293,6 +364,21 @@ def extract(template: Path | None = None, out_dir: Path | None = None) -> list[P
     out.mkdir(parents=True, exist_ok=True)
 
     src = Presentation(str(src_path))
+
+    # Normalise to the deck's canvas (see THE CANVAS INVARIANT above). Both
+    # must be the same aspect or a single factor cannot map the geometry.
+    from pptx.util import Inches
+
+    from ovdeck import SLIDE_H, SLIDE_W
+
+    factor = Inches(SLIDE_W) / src.slide_width
+    if abs(factor - Inches(SLIDE_H) / src.slide_height) > 1e-4:
+        raise TemplateError(
+            f"template canvas {src.slide_width}x{src.slide_height} EMU is a "
+            f"different aspect than the deck's {SLIDE_W}x{SLIDE_H} in; a "
+            f"uniform scale cannot map it"
+        )
+
     written = []
     for name, num in TEMPLATE_SLIDES.items():
         if num - 1 >= len(src.slides):
@@ -300,22 +386,35 @@ def extract(template: Path | None = None, out_dir: Path | None = None) -> list[P
                 f"template has {len(src.slides)} slides; {name!r} expected at "
                 f"{num}. The template changed — update TEMPLATE_SLIDES."
             )
-        # A fresh base per skeleton, sized like the template. The default
+        # A fresh base per skeleton, on the DECK's canvas. The default
         # python-pptx master stays in the file unused (~10 KB) — harmless,
         # and pruning it is not worth the surgery.
         base = Presentation()
-        base.slide_width = src.slide_width
-        base.slide_height = src.slide_height
-        n = _shrink_pictures(src.slides[num - 1])
+        base.slide_width = Inches(SLIDE_W)
+        base.slide_height = Inches(SLIDE_H)
+        # Shrink targets the size the picture will DISPLAY at post-scale, so
+        # the raster still meets EMBED_DPI on the larger canvas.
+        n = _shrink_pictures(src.slides[num - 1], scale=factor)
         # Fixups run on the source slide: the transplanted copy's part is a
         # raw OPC Part without python-pptx's typed shape API. Mutating the
         # in-memory template is safe — it is never saved back.
         for fix in FIXUPS.get("*", ()) + FIXUPS.get(name, ()):
             fix(src.slides[num - 1])
         bake_theme_colors(src.slides[num - 1])
-        ctx = {"used": {str(p.partname) for p in base.part.package.iter_parts()},
-               "by_hash": {}}
+        before = {str(p.partname) for p in base.part.package.iter_parts()}
+        ctx = {"used": set(before), "by_hash": {}}
         append_slide(base, src, ctx, index=num - 1)
+        # Scale every part the transplant brought in — slide, layout AND
+        # master, since layouts/masters carry positioned chrome of their own.
+        # These are the skeleton's private copies; the source template's
+        # shared parts are never touched (two skeletons share layouts there).
+        for part in base.part.package.iter_parts():
+            if str(part.partname) in before:
+                continue
+            if part.content_type.endswith(
+                ("slide+xml", "slideLayout+xml", "slideMaster+xml")
+            ):
+                part._blob = _scale_part_xml(part.blob, factor)
         dest = out / f"{name}.pptx"
         base.save(str(dest))
         written.append(dest)

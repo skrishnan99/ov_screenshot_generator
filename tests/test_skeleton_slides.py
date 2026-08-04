@@ -61,7 +61,7 @@ def main() -> int:
             continue
         size = p.stat().st_size
         total += size
-        if size > 1_000_000:
+        if size > 1_500_000:
             failures.append(f"{name}.pptx is {size/1024:.0f} KB; media shrink regressed")
         pres = Presentation(str(p))
         if len(pres.slides) != 1:
@@ -72,14 +72,57 @@ def main() -> int:
                  if sh.has_text_frame and PAGE_RE.match(sh.text_frame.text or "")]
         if pages:
             failures.append(f"{name}: template page number survived: {pages}")
-    if total > 3_000_000:
-        failures.append(f"skeleton store is {total/1048576:.1f} MB; want < 3 MB")
+    if total > 3_500_000:
+        failures.append(f"skeleton store is {total/1048576:.1f} MB; want < 3.5 MB")
+
+    # THE CANVAS INVARIANT: every skeleton must be on ovdeck's canvas, or it
+    # renders huddled in the top-left of the deck (absolute EMUs on a bigger
+    # slide). This is the defect that prompted the normalisation.
+    from pptx.util import Inches
+
+    from ovdeck import SLIDE_H, SLIDE_W
+
+    for name in ts.TEMPLATE_SLIDES:
+        pres = Presentation(str(ts.skeleton_path(name)))
+        if (pres.slide_width, pres.slide_height) != (Inches(SLIDE_W), Inches(SLIDE_H)):
+            failures.append(
+                f"{name}: canvas {pres.slide_width}x{pres.slide_height} EMU != "
+                f"deck canvas {SLIDE_W}x{SLIDE_H} in"
+            )
+
+    # Anti-shadowing: _shrink_pictures once reused its `scale` parameter as
+    # the per-picture resize ratio, compounding down the slide (rasters of
+    # 687 -> 180 -> 47 -> 12 -> 3 px). Healthy skeletons have no tiny rasters
+    # and large frames keep detailed rasters.
+    import io as _io
+
+    from pptx.oxml.ns import qn
+    from PIL import Image as _Image
+
+    cap = Presentation(str(ts.skeleton_path("capabilities"))).slides[0]
+    for sh in cap.shapes:
+        if sh.shape_type != 13:
+            continue
+        part = sh.part.related_part(
+            sh._element.blipFill.find(qn("a:blip")).get(qn("r:embed"))
+        )
+        with _Image.open(_io.BytesIO(part.blob)) as im:
+            w_in = Emu(sh.width).inches
+            if min(im.size) < 90:
+                failures.append(
+                    f"capabilities: {w_in:.2f}in picture raster {im.size} — "
+                    f"compounding shrink is back"
+                )
+            if w_in > 3 and im.width < 500:
+                failures.append(
+                    f"capabilities: {w_in:.2f}in frame with {im.width}px raster"
+                )
 
     # the fix that started all this: subtitle wrap headroom on the library
     lib = Presentation(str(ts.skeleton_path("library"))).slides[0]
     sub = [Emu(sh.height).inches for sh in lib.shapes
            if sh.has_text_frame and sh.text_frame.text.startswith("Easier root cause")]
-    if not sub or sub[0] < 0.4:
+    if not sub or sub[0] < 0.55:
         failures.append(f"library subtitle headroom fix missing (H={sub})")
 
     # ---- query: profile sees the hole, sidecar names it, no drift ----
@@ -110,7 +153,13 @@ def main() -> int:
         if len(pics) != 1:
             failures.append(f"library fill produced {len(pics)} pictures, want 1")
         else:
-            box = (0.79, 1.66, 5.65, 3.60)  # the placeholder's frame
+            # The hole's frame, read from the skeleton itself so the test
+            # tracks the canvas normalisation instead of hardcoding EMUs.
+            from deck.assemble import image_slots as _slots
+
+            hole = _slots(Presentation(str(ts.skeleton_path("library"))).slides[0])[0]
+            box = (Emu(hole.left).inches, Emu(hole.top).inches,
+                   Emu(hole.width).inches, Emu(hole.height).inches)
             L, T = Emu(pics[0].left).inches, Emu(pics[0].top).inches
             W, H = Emu(pics[0].width).inches, Emu(pics[0].height).inches
             if not (box[0] - 0.02 <= L and T >= box[1] - 0.02
