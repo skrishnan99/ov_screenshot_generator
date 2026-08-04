@@ -232,10 +232,26 @@ def main() -> int:
         # ---- ovdeck integration: stamp + carried count + alias ----
         from ovdeck import Deck
 
+        # DEFAULT_CLOSING is the template's own closing run, in its order,
+        # complete — slides 11-15 of the blank test report.
+        if ts.DEFAULT_CLOSING != (
+            "capabilities", "defect_generator", "integration", "team", "thank_you"
+        ):
+            failures.append(f"DEFAULT_CLOSING drifted: {ts.DEFAULT_CLOSING}")
+        nums = [ts.TEMPLATE_SLIDES[n] for n in ts.DEFAULT_CLOSING]
+        if nums != sorted(nums):
+            failures.append(f"DEFAULT_CLOSING not in template order: {nums}")
+
         d = Deck(str(tmp / "deck.pptx"))
         d.title_slide("OV80i", "Test")
         d.skeleton_slide("library", image=shot)
         d.template_slide("thank_you")  # deprecated alias still works
+        # a standing slide can never be placed twice
+        try:
+            d.skeleton_slide("thank_you")
+            failures.append("duplicate skeleton_slide did not raise")
+        except ts.TemplateError:
+            pass
         out = d.save()
         pr = Presentation(str(out))
         if len(pr.slides) != 3:

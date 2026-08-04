@@ -192,18 +192,22 @@ re-authoring them through the layout engine produces a different approximation
 every time, which is why they used to be inconsistent or missing.
 
 ```python
-for name in ("capabilities", "team", "thank_you"):
-    d.skeleton_slide(name)
+from template_slides import DEFAULT_CLOSING
+for name in DEFAULT_CLOSING:   # capabilities, defect_generator, integration,
+    d.skeleton_slide(name)     # team, thank_you — the template's own order
 ```
+
+**All five closing slides, in the template's own order** (its slides 11-15):
+capabilities ("5 factors"), defect_generator, integration, team & locations,
+thank you. Each appears exactly once — `skeleton_slide` raises on a repeat —
+and none is optional unless the user's request says to drop it. Iterate
+`DEFAULT_CLOSING` rather than writing the names out, so the order cannot be
+retyped wrongly.
 
 The slides live as owned single-slide skeletons in `assets/skeletons/`
 (extracted once from the blank template; `template_slides.py --extract`
 regenerates them and reapplies the recorded fixups when the company template
-changes). The registry: `library`, `capabilities` (the "5 factors" slide),
-`defect_generator`, `integration`, `team`, `thank_you` — run
-`template_slides.py` to list them with their holes. `DEFAULT_CLOSING` is the
-set every report carries; add `defect_generator` or `integration` only when
-the request calls for them.
+changes). Run `template_slides.py` to list them with their holes.
 
 If a filled skeleton looks wrong in the render, the remedy is the skeleton
 file (a committed maintainer fix that then holds for every deck) or shorter
@@ -228,6 +232,7 @@ finding.
 - [ ] Node-RED explained with a diagram, no node names
 - [ ] Library slide with this run's screenshot
 - [ ] Library + closing slides placed via skeleton_slide(), not re-authored
+- [ ] Closing run is DEFAULT_CLOSING, complete and in template order
 - [ ] No camera serial, device name, hostname, firmware version or capture id
       anywhere in the deck's text
 

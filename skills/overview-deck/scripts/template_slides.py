@@ -58,8 +58,16 @@ TEMPLATE_SLIDES = {
     "thank_you": 15,         # closing
 }
 
-# Carried by every report unless the request says otherwise.
-DEFAULT_CLOSING = ("library", "capabilities", "team", "thank_you")
+# The closing run every report carries, in the TEMPLATE's own order
+# (slides 11-15). Library is not listed here: it is its own numbered section
+# of the default deck, placed earlier with this run's screenshot.
+DEFAULT_CLOSING = (
+    "capabilities",
+    "defect_generator",
+    "integration",
+    "team",
+    "thank_you",
+)
 
 
 class TemplateError(RuntimeError):
@@ -436,7 +444,7 @@ def main() -> int:
             continue
         holes = [s["name"] + ("*" if not s["is_picture"] else "")
                  for s in p["slots"]]
-        star = " [default]" if name in DEFAULT_CLOSING else ""
+        star = " [default]" if name in DEFAULT_CLOSING or name == "library" else ""
         print(f"  {name:17} tokens={p['tokens'] or '—'}  "
               f"image-holes={holes or '—'}  {p['title'][:40]!r}{star}")
         for w in p["warnings"]:

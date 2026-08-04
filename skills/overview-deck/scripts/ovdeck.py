@@ -885,9 +885,16 @@ class Deck:
         (a maintainer change, reapplied on re-extraction) or shorten the
         content — never patch the built deck.
         """
-        from template_slides import append
+        from template_slides import TemplateError, append
 
+        used = getattr(self, "_skeletons_used", set())
+        if name in used:
+            raise TemplateError(
+                f"boilerplate slide {name!r} was already placed in this deck; "
+                f"each standing slide appears exactly once"
+            )
         append(self.prs, name, image=image, tokens=tokens)
+        self._skeletons_used = used | {name}
         self._template_slides = getattr(self, "_template_slides", 0) + 1
         # Position in the finished file, so the audit can tell what this
         # engine laid out from what it merely carried over.
