@@ -99,7 +99,11 @@ rather than papering over it:
 
 ---
 
-## 3. The observations slide
+## 3. The observations slide (on request only)
+
+Not part of the default deck. Build it only when the user asks for candid
+observations on a slide; otherwise this material belongs in the chat summary
+to the engineer. When it IS requested:
 
 Every report ends with an honest `rows` slide before the closing. Its job is to
 surface what the engineer should check, from evidence:

@@ -196,7 +196,7 @@ question, and knowing which question tells you what to write:
 | Step 5 — HMI | What does my operator see? |
 | Results | Is it good enough, and what did it cost to get here? |
 | Library | Is there real data behind this, and can we improve it? |
-| Observations | What would you tell me candidly? |
+| Observations *(on request only — not in the default deck)* | What would you tell me candidly? |
 
 **Step 3 is the heart of the report** — one block per AI model, and where a
 sceptical quality manager decides whether to believe you. Give each model its
@@ -235,7 +235,7 @@ sentence; use one shape or the other, never both.
 | Training results | Accuracy or loss/IoU, image counts, per-class counts with class names. | 3–5 short lines |
 | IO logic | The crux of the pass/fail rule, and how results reach the plant's systems (PLC / line controller). **No node or variable names.** | 2–3 sentences |
 | Library | The volume and variety of real captures behind the models. | 1–2 sentences |
-| Observations | What you would tell them candidly — see `content-rules.md` §3. | ≤ 4 rows |
+| Observations *(only when requested)* | What you would tell them candidly — see `content-rules.md` §3. Caveats otherwise go in the chat summary, not the deck. | ≤ 4 rows |
 
 For any stat with no supporting fact, write `—`. Never estimate a number the
 assets do not contain, and never present a plausible-looking figure you

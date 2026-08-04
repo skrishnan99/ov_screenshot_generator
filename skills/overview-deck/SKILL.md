@@ -103,7 +103,7 @@ of questions.
 
 | Input | Default when unstated |
 |---|---|
-| Audience | **Customer-facing.** Keep the observations slide, written the way `content-rules.md` §3 describes. |
+| Audience | **Customer-facing.** No observations slide either way — it is not part of the default deck; put caveats in the final summary instead. |
 | Date | Today. |
 | Author | Omit the line. A missing byline is better than a blocked run. |
 | Camera model / industry / application | Read from `manifest.json` (`variant`), the recipe name, and the descriptions. |

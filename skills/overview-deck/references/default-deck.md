@@ -104,17 +104,24 @@ not a gap.
 
 ---
 
-### 5. ROI setup — every model in the recipe
+### 5. Inspection regions — ONE ROI SCREENSHOT PER MODEL
 
-The inspection regions for **all** models. One slide per model, or several
-models combined — whichever suits the recipe. All of it must appear.
+Each model inspects its own set of regions, and the extractor captures the
+Inspection Setup screen once per model with that model's regions drawn:
+`meta.json` → `models[].roi_screenshot` (e.g. `04_roi_horn-quality.png`,
+`04_roi_model-s.png`).
 
-Per-model asset: `meta.json` → `models[].roi_screenshot`
-(e.g. `04_roi_horn-quality.png`).
+**Show every model's ROI screenshot.** Not one combined overview — the whole
+point of this section is that the regions differ per model, and the
+screenshot itself shows which model it belongs to (the model is selected on
+screen). Never drop a model here; a reader must be able to see, for each
+model, exactly where on the part it looks.
 
-For each: which regions it checks and what they cover on the part, 1–2
-sentences. Three or fewer models usually fits one `figure` each or a `two_up`
-pair; more than three, group them.
+One `figure` per model with the model's name in the title
+("Step 3: Inspection Regions — Horn Quality") and 1–2 sentences on which
+regions it checks and what they cover on the part. Two models of similar
+shape can share a `two_up` when their captions stay legible; with a single
+model it is simply one slide.
 
 ---
 
@@ -145,6 +152,16 @@ Content per model:
 - **training results** — accuracy or loss/IoU, image counts, per-class counts
   with class names. 3–5 short lines. Pair every figure with its requirement
   (`report-brief.md` → *Numbers need their requirement*).
+
+---
+
+### Not in the default deck
+
+**No engineering-observations slide.** The default deck is exactly the slide
+set above; candid caveats, degraded assets and open questions go in the chat
+summary to the engineer, not on a slide. Build the observations slide
+(`rows`, content per `content-rules.md` §3) only when the user's request
+asks for it.
 
 ---
 
@@ -224,10 +241,11 @@ finding.
 ## Checklist before building
 
 - [ ] Problem and solution, ≤ 4 sentences each
+- [ ] No observations slide (unless the request asked for one)
 - [ ] Raw and overlay library capture, side by side
 - [ ] Imaging setup, with any notable setting called out
 - [ ] Aligner setup — configured, or skipped with the reason
-- [ ] ROI setup covering **every** model
+- [ ] One ROI screenshot per model — every model, none combined away
 - [ ] Every model: setup, labelled regions, plus report and settings where they exist
 - [ ] Node-RED explained with a diagram, no node names
 - [ ] Library slide with this run's screenshot
