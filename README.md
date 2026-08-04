@@ -18,7 +18,16 @@ One-time setup:
 No API key is needed — everything runs on your Claude Code login (a plan
 tier with Opus access is required; runs draw from your plan's usage limits).
 
-Then just ask, in any Claude Code session:
+Then, in any Claude Code session, the one-command path:
+
+```
+/ov-report http://<camera-url> <recipe name>
+```
+
+runs the whole flow — extract assets, build the branded deck, publish it to
+the team shared drive as Google Slides — with no questions in the middle
+(~45 minutes; append instructions like "don't upload it" to override
+defaults). Or just ask in natural language:
 
 - *"Get me the assets for recipe `<name>` on `http://<camera-url>`"*
   → runs the **extract-recipe-assets** skill; you get a `runs/<ts>/` folder
