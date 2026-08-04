@@ -32,6 +32,24 @@ below is enforced at `save()`.
 
 ---
 
+## The type scale
+
+Every size comes from `tokens.json` → `typography.scale_pt`; never set a
+point size directly. The scale is grounded in the company template's own
+slides (measured from the skeletons): body copy there runs 13–18.7 pt, card
+titles 15–18, slide titles 28–48, and only the dense data slides (team,
+integration) drop to the 11 pt floor. Authored slides sit inside those
+ranges — display 42, slide titles 31, card titles 18, lead 16, body 15,
+bullets 14, captions 13, chips 11.5, footnotes 11 — so generated content
+reads at the same size as the standing slides. `typography.range_pt` records
+the permitted ranges; nothing may be authored below the floor.
+
+Bigger type means the char capacities below are tighter than they once were.
+They are guidance for writing; the engine's real-font measurement is the
+enforcement, and `text-overflow` means cut words, never shrink type.
+
+---
+
 ## `title_slide(title, subtitle, *, meta, image, footer)`
 
 Opening slide. Navy ground, white horizontal logo top-left, headline, accent
@@ -39,7 +57,7 @@ rule, optional circular part photo in a purple halo on the right.
 
 | Arg | Notes |
 |---|---|
-| `title` | ≤ 2 lines at 40 pt ≈ 34 chars/line with an image, 52 without |
+| `title` | ≤ 2 lines at 42 pt ≈ 32 chars/line with an image, 49 without |
 | `subtitle` | one line, the engagement/recipe name |
 | `meta` | up to 3 short lines (author, date, serial) |
 | `image` | optional; auto centre-cropped to a circle. Use the part, not a screenshot |
@@ -51,8 +69,8 @@ circle reads as noise.
 
 ## `cards(title, cards, *, columns=3)`
 
-Value/benefit grid. **2–6 cards.** Each card: bold title (≤ 34 chars, 2 lines
-max) and a description of ≤ 110 chars.
+Value/benefit grid. **2–6 cards.** Each card: bold title (≤ 30 chars, 2 lines
+max) and a description of ≤ 90 chars.
 
 Ground every card in something observable. "23,051 captures on device" is a
 card; "industry-leading performance" is not.
@@ -81,10 +99,10 @@ The "what this is" slide.
 
 | Arg | Capacity |
 |---|---|
-| `intro` | ≤ 300 chars (3 lines) |
-| `card_title` | ≤ 45 chars |
+| `intro` | ≤ 250 chars (3 lines) |
+| `card_title` | ≤ 40 chars |
 | `badge` | ≤ 18 chars, optional; renders in the yellow highlight |
-| `bullets` | 4–6 items, ≤ 105 chars each |
+| `bullets` | 4–6 items, ≤ 88 chars each |
 
 ---
 
@@ -94,7 +112,7 @@ One screenshot at full content width. The default for any configuration screen.
 
 | Arg | Capacity |
 |---|---|
-| `caption` | ≤ 240 chars (2 lines) |
+| `caption` | ≤ 200 chars (2 lines) |
 | `chips` | 0–8 short spec pills; they wrap to a second row automatically |
 | `note` | optional footnote in muted type — provenance, caveats, "this screen is composited" |
 
@@ -110,10 +128,10 @@ workhorse for "here is a thing, here is what it means".
 
 | Arg | Capacity |
 |---|---|
-| `card_title` | ≤ 32 chars (2 lines at 16 pt) |
-| `para` | ≤ 170 chars |
+| `card_title` | ≤ 28 chars (2 lines at 18 pt) |
+| `para` | ≤ 140 chars |
 | `chips` | 0–2 — the card is narrow, a third chip wraps and eats bullet room |
-| `bullets` | 3–5 items, ≤ 60 chars each |
+| `bullets` | 3–5 items, ≤ 50 chars each |
 
 Overrun any of these and `save()` reports `text-overflow` for the card. The fix
 is fewer words, or move detail to a following `figure`.
@@ -140,7 +158,7 @@ explanation cards beneath.
 |---|---|
 | `nodes` | 2–3 `(label, sub)` pairs — the in-line chain |
 | `fan_out` | 0–3 `(label, sub)` boxes the last node branches to |
-| `cards` | 0–2 `(title, [bullets])`; 3 bullets each, ≤ 55 chars |
+| `cards` | 0–2 `(title, [bullets])`; 3 bullets each, ≤ 46 chars |
 
 Use this when there is **no screenshot** of the logic — a Node-RED flow, an
 integration path, a decision rule. Do not draw a diagram of something you have
@@ -152,7 +170,7 @@ a screenshot of.
 
 Label/detail rows with an accent spine. Findings, observations, spec tables.
 
-**Maximum 5 rows.** Label ≤ 34 chars, detail ≤ 210 chars. More than five rows
+**Maximum 5 rows.** Label ≤ 30 chars, detail ≤ 175 chars. More than five rows
 means two slides.
 
 ---

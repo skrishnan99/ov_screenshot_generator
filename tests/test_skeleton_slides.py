@@ -125,6 +125,33 @@ def main() -> int:
     if not sub or sub[0] < 0.55:
         failures.append(f"library subtitle headroom fix missing (H={sub})")
 
+    # ---- the type scale stays inside the skeleton-grounded ranges ----
+    # Authored slides must read at the same size as the standing template
+    # slides: body there is 13-18.7pt, card titles 15-18, slide titles 28-48,
+    # floor 11 (the dense team/integration slides). A scale that drifts back
+    # down makes generated content illegibly small next to the carried slides.
+    import json as _json
+
+    tokens = _json.loads(
+        (REPO / "skills" / "overview-deck" / "assets" / "tokens.json").read_text()
+    )["typography"]
+    sz, rng = tokens["scale_pt"], tokens.get("range_pt") or {}
+    if not rng:
+        failures.append("tokens.typography.range_pt missing — the grounded ranges are gone")
+    floor = rng.get("floor", 11)
+    for k, v in sz.items():
+        if v < floor:
+            failures.append(f"scale_pt[{k}] = {v} is below the {floor}pt floor")
+    lo, hi = rng.get("body", [13, 19])
+    if not (lo <= sz["body"] <= hi and lo <= sz["bullet"] + 1):
+        failures.append(f"body/bullet ({sz['body']}/{sz['bullet']}) outside body range {lo}-{hi}")
+    lo, hi = rng.get("card_titles", [15, 18])
+    if not (lo <= sz["card_title"] <= hi):
+        failures.append(f"card_title {sz['card_title']} outside {lo}-{hi}")
+    lo, hi = rng.get("slide_titles", [28, 48])
+    if not (lo <= sz["slide_title"] <= hi):
+        failures.append(f"slide_title {sz['slide_title']} outside {lo}-{hi}")
+
     # ---- query: profile sees the hole, sidecar names it, no drift ----
     prof = ts.profile("library")
     if [s["name"] for s in prof["slots"]] != ["library_screen"]:
