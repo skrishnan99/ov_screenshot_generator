@@ -21,7 +21,7 @@ tier with Opus access is required; runs draw from your plan's usage limits).
 Then, in any Claude Code session, the one-command path:
 
 ```
-/ov-report http://<camera-url> <recipe name>
+/ov-test-report http://<camera-url> <recipe name>
 ```
 
 runs the whole flow — extract assets, build the branded deck, publish it to
