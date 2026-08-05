@@ -112,6 +112,15 @@ of questions.
 | Where it goes | The team shared drive, automatically (step 7). |
 | Structure | `references/default-deck.md`. |
 
+**Check Google sign-in before building, not after.** Unless the request
+opted out of uploading, run
+`uv run --project "$PLUGIN_ROOT" python "$PLUGIN_ROOT/preflight.py" --ensure-google-auth`
+first: if sign-in is missing, the one-time browser consent happens now — say
+so — and the build then runs start-to-publish with no interaction. A consent
+prompt after the deck is built is exactly the mid-run interruption this
+skill exists to avoid. (In the chained flow the extract skill has already
+done this.)
+
 A degraded run (missing screenshots, error modals captured,
 `model_substitutions` in the manifest) is **not** a reason to stop and ask.
 Build the deck from what exists, omit what is missing, and say plainly in the

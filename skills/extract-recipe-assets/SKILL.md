@@ -74,6 +74,12 @@ camera whose UI version has been seen before.
 uv run --project "$PLUGIN_ROOT" python "$PLUGIN_ROOT/preflight.py" --fix --url "<URL>" --variant "<variant if given>"
 ```
 
+**When the request also asks for a deck or report** (the chained flow), add
+`--ensure-google-auth`: publishing will need Google sign-in, and if it is
+missing the one-time browser consent then happens HERE, at minute zero — the
+only interaction of the whole run — instead of interrupting the publish step
+~45 minutes later. Tell the user that is what the browser window is.
+
 If it fails, relay the printed fix instructions verbatim and stop. The usual
 one-time fix is connecting Tailscale/VPN (camera unreachable). No API key is
 needed — everything runs on the engineer's Claude Code login. A "LibreOffice

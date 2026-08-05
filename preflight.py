@@ -127,6 +127,13 @@ def main() -> int:
     ap.add_argument("--variant", help="Expected camera variant (e.g. ov80i)")
     ap.add_argument("--fix", action="store_true", help="Auto-install missing Chromium")
     ap.add_argument(
+        "--ensure-google-auth",
+        action="store_true",
+        help="If Google Drive sign-in is missing, run the one-time browser "
+        "consent NOW. For runs that will publish: the consent then happens "
+        "up front instead of interrupting an unattended run ~45 minutes in.",
+    )
+    ap.add_argument(
         "--llm-backend",
         choices=["api", "claude-code", "agent-sdk"],
         default=os.environ.get("SG_LLM_BACKEND", "agent-sdk"),
@@ -139,17 +146,39 @@ def main() -> int:
     ok &= check_claude_cli()
     ok &= check_api_key(args.llm_backend)
     ok &= check_browser(args.fix)
-    # Informational: Google Drive publishing is opt-in (--publish).
+    # Google Drive: informational for asset-only runs, but a run that will
+    # publish should pass --ensure-google-auth so the ONE interactive moment
+    # (the browser consent) happens here at minute zero, not at the publish
+    # step after ~45 unattended minutes.
     try:
-        from publish.gdrive import auth_state
+        from publish.gdrive import AuthError, auth_state, credentials
 
         state = auth_state()
-        _check(
-            "Google Drive publishing ready"
-            if state["ready"]
-            else f"Google Drive publishing not set up ({state['reason'][:110]})",
-            True,
-        )
+        if not state["ready"] and args.ensure_google_auth:
+            print("         Google sign-in needed — opening a browser now so the")
+            print("         rest of the run needs no interaction at all...")
+            try:
+                credentials()  # interactive; caches the refresh token
+                state = auth_state()
+            except AuthError as e:
+                _check(f"Google sign-in failed ({str(e)[:100]})", False,
+                       "run: uv run python publish_cli.py login")
+                ok = False
+        if args.ensure_google_auth:
+            ok &= _check(
+                "Google Drive publishing ready"
+                if state["ready"]
+                else f"Google Drive publishing not set up ({state['reason'][:110]})",
+                state["ready"],
+                "run: uv run python publish_cli.py login",
+            )
+        else:
+            _check(
+                "Google Drive publishing ready"
+                if state["ready"]
+                else f"Google Drive publishing not set up ({state['reason'][:110]})",
+                True,
+            )
     except Exception as e:
         _check(f"Google Drive publishing unavailable ({str(e)[:80]})", True)
     # Informational: agent-built slides iterate with visual feedback when

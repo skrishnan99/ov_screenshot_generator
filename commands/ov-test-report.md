@@ -25,14 +25,22 @@ missing piece once, then start. That is the only up-front question permitted.
 This command is the fire-and-forget flow the plugin's skills define — follow
 them, do not improvise around them:
 
-1. Invoke the **`ov-test-reports:extract-recipe-assets`** skill with the URL
+1. **Front-load the one interactive moment.** Unless the request opted out
+   of uploading, run the plugin's preflight with `--ensure-google-auth`
+   (plus `--fix` and the camera `--url`) BEFORE anything else. If Google
+   sign-in is missing, a browser opens once, now — tell the user that this
+   consent is the only interaction the whole run needs. Never let it surface
+   at the publish step, ~45 unattended minutes in. If the request said to
+   keep the deck local, skip the flag and run plain preflight.
+2. Invoke the **`ov-test-reports:extract-recipe-assets`** skill with the URL
    and recipe. State once that the whole job takes ~45 minutes and that the
    run will activate the recipe on the camera if it is inactive, then start.
-2. When extraction completes, continue straight into the
+3. When extraction completes, continue straight into the
    **`ov-test-reports:overview-deck`** skill with the run directory. Build
    the default deck exactly as `references/default-deck.md` specifies.
-3. Publish the deck — the deck only, as Google Slides, to the team shared
-   drive — automatically, per the skill's step 7.
+4. Publish the deck — the deck only, as Google Slides, to the team shared
+   drive — automatically, per the skill's step 7. Sign-in already happened in
+   step 1, so this must not prompt for anything.
 
 Both skills' operating mode applies in full: no mid-run questions, fill gaps
 with the documented defaults, retry a failed extraction step once
