@@ -1,6 +1,7 @@
 ---
 name: overview-deck
 description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and publish it to the team's shared Google Drive as Google Slides. Runs end to end without check-ins: a sales engineer gives one instruction and comes back to a finished, published deck ~45 minutes later, so gaps are filled with documented defaults rather than questions. Publishing is automatic and needs no confirmation — every finished deck is uploaded unless the request explicitly said not to. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
+user-invocable: false
 ---
 
 # Overview.ai deck builder

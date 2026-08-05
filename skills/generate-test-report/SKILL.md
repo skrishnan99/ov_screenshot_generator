@@ -1,6 +1,7 @@
 ---
 name: generate-test-report
 description: "DEPRECATED — superseded by the overview-deck skill. Do NOT use for deck, report, slides or case-study requests; overview-deck handles those. Retained only as reference for the legacy skeleton-and-token deck builder (deck_cli.py / pipeline.py). Never select this skill unless the user explicitly names it or asks for the legacy pipeline by name."
+user-invocable: false
 ---
 
 # DEPRECATED — use `overview-deck` instead

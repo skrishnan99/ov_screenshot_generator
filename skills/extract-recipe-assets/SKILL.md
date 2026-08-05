@@ -1,6 +1,7 @@
 ---
 name: extract-recipe-assets
 description: "Capture a complete folder of inspection assets from an Overview AI camera for one recipe — screenshots of every configuration screen, native-resolution images, vision descriptions, structured metadata, and the Node-RED IO logic summary. Use when a sales engineer wants recipe assets or screenshots from an OV camera, given a camera URL and recipe name. Runs unattended — states what it is doing and proceeds, rather than asking for confirmation. This is step 1 of the two-step report flow: if the same request also asks for a deck, report or case study, run this first and then continue into the overview-deck skill without stopping to ask."
+user-invocable: false
 ---
 
 # Extract recipe assets from an OV camera
