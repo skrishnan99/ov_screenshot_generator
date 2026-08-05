@@ -66,6 +66,33 @@ the result — accuracy, counts, resolution, cycle time.
 
 ---
 
+## The report is about the camera, never about its own production
+
+The pipeline that gathers assets and builds this deck has internals —
+screenshots get captured, composited, described, matched, placed into
+skeleton holes. **None of that vocabulary ever reaches a slide.** The reader
+is looking at a camera inspecting their part; how the report was assembled
+is as irrelevant to them as the name of the presentation software.
+
+A real leak, and its fix:
+
+| Never | Instead |
+|---|---|
+| "Screenshot composited: the template image is rendered into this settings screen's viewer, which is otherwise empty." | "The imaging screen for this recipe: full-resolution capture with fixed exposure and white balance." |
+
+Banned from slide copy: *composited, screenshot captured, extracted,
+rendered into, described, matched, skeleton, placeholder, pipeline, asset* —
+any verb whose subject is this report's own tooling rather than the camera.
+
+The extractor's records (`descriptions.json`, manifest `item` strings)
+legitimately narrate their own production — "imaging screen with the
+template image composited into its viewer" is a correct *internal* label.
+Use those records for their **facts** (settings, counts, class names), and
+write the slide as a description of what the screen shows. Never quote their
+production narration.
+
+---
+
 ## The house shape, from the blank template
 
 `assets/example-decks/Overview AI blank test report.pptx` is the frame the team

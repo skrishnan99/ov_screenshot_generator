@@ -20,7 +20,10 @@ For OV camera reports the sources are, in order of authority:
 4. `deliverables/report/node_red_description.md` — the IO logic summary.
 5. `data/manifest.json` — step status, timings, warnings, model substitutions.
 
-Read the facts before writing a single slide. A useful first pass:
+These sources describe both the camera AND their own production ("screenshot
+composited", "captured at step X"). Only the camera part is slide material —
+see `report-brief.md` → *The report is about the camera, never about its own
+production*. Read the facts before writing a single slide. A useful first pass:
 
 ```python
 import json

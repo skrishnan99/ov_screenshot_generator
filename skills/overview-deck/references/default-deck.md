@@ -77,8 +77,10 @@ use `figure` with whichever is real and say which it is. Pick whatever shows
 
 ### 3. Imaging setup
 
-Screenshot `deliverables/screenshots/02_imaging_setup.png` (already composited
-with the template image — see `report-brief.md`).
+Screenshot `deliverables/screenshots/02_imaging_setup.png`. (Internally this
+file already has the template image composited into its viewer — useful to
+know when choosing assets, and **never mentioned on the slide**: to the
+reader it is simply the imaging screen.)
 
 Say what the camera and lighting achieve, and **call out any notable setting
 that was deliberately used** — photometric stereo, HDR, a specific trigger
