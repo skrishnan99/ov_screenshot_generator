@@ -150,8 +150,9 @@ required alongside what was achieved** — tolerance, cycle-time budget,
 acceptable false-reject rate. It converts a number into a verdict, and it is
 what a quality manager is actually looking for.
 
-If the requirement is not in the assets or the engineer's notes, say the
-measurement and note the requirement is unstated. Do not invent one.
+If the requirement is not in the assets or the engineer's notes, state the
+measurement on its own. Do not invent a requirement — and do not remark that
+one is missing; the plain figure is the slide's content.
 
 ## Mark what you did not actually do
 
@@ -243,26 +244,39 @@ inferred.
 
 ---
 
+## Write to the data that is present
+
+This is a test report. Slide commentary describes what the data shows —
+never what was not run, not configured, or not there yet. "No validation
+run", "validation metrics not populated", "only one class had examples":
+none of that belongs on a slide. Absent validation and similar are common,
+expected states of a test recipe, already accounted for; remarking on them
+turns a results slide into a caveats slide.
+
+The mechanics of an absence are silent ones:
+- a stat with no supporting fact shows `—`, with no explanation attached
+- an optional artifact that does not exist (a segmenter's training report)
+  is simply omitted — no placeholder slide, no "not available" line
+- training-results lines cover exactly the metrics that exist: if the report
+  shows training accuracy and image counts, those are the lines — there is
+  no line for what it does not show
+
+Caveats and open questions still reach the engineer — in the **chat
+summary**, where they decide what to do next, or on the observations slide
+when one was explicitly requested. Never in default slide copy.
+
 ## What earns trust, and what destroys it
 
-Engineers buy from people who tell them what does not work yet.
-
 **Earns it**
-- A named limitation: "Validation metrics are not yet populated — the models
-  were trained but not validated against a held-out set."
-- Exact counts, including small ones. "9 defect examples" is honest; it also
-  tells them what to collect next.
+- Exact figures, stated plainly. "Training accuracy 100% on 83 images",
+  "23 Pass / 7 Fail examples".
 - Saying which screen a number came from when it might be questioned.
+- Sentences that could only be about THIS customer's part and defects.
+  Specificity *is* the credibility.
 
 **Destroys it**
 - Rounding 97.6% to "~98%" or, worse, "near-perfect".
-- Omitting a metric because it looks weak. A missing number reads as a hidden
-  one.
-- Any sentence that would appear unchanged in a report about a different
-  customer. Specificity *is* the credibility.
+- Inventing or estimating a number the assets do not contain.
+- Commentary about what is absent — see above.
 - Marketing register. "Seamless", "powerful", "cutting-edge", "leverage",
   "revolutionise" — see `content-rules.md` §4.
-
-A report that says "this catches the missing-horn condition reliably; the
-crack model needs more defect examples before deployment" is worth more to
-both sides than one that claims everything is perfect.

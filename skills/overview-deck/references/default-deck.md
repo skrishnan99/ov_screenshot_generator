@@ -150,7 +150,9 @@ Content per model:
 - **training settings** — the settings actually visible, plain values, 3–6
   short lines.
 - **training results** — accuracy or loss/IoU, image counts, per-class counts
-  with class names. 3–5 short lines. Pair every figure with its requirement
+  with class names. 3–5 short lines, covering exactly the metrics the report
+  shows and nothing else: no "validation: not run", no line for anything
+  absent. Pair every figure with its requirement where one is stated
   (`report-brief.md` → *Numbers need their requirement*).
 
 ---

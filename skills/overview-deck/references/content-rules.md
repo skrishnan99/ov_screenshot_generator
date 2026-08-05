@@ -80,13 +80,16 @@ title, caption, bullet or stat.
 
 ---
 
-## 2. Report what is missing, plainly
+## 2. Handle what is missing — silently on slides, plainly in the summary
 
-Extraction runs fail partially all the time. When an asset is absent, say so
-rather than papering over it:
+Extraction runs fail partially all the time. The deck simply does not show
+the gap; the **chat summary to the engineer** is where it gets named. Slide
+copy never says "not available", "not run" or "not populated" — this is a
+test report, and commentary belongs to the data that is present (see
+`report-brief.md` → *Write to the data that is present*).
 
-- A step that produced no screenshot → omit the slide, and note the gap in the
-  closing summary or an `rows` entry.
+- A step that produced no screenshot → omit the slide, and note the gap in
+  the chat summary.
 - A screenshot showing an error state (a "camera not reachable" modal, an empty
   viewer) → **do not use it as a hero image**. Either omit it or caption what it
   shows.
