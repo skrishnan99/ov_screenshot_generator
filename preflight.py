@@ -131,7 +131,7 @@ def main() -> int:
         action="store_true",
         help="If Google Drive sign-in is missing, run the one-time browser "
         "consent NOW. For runs that will publish: the consent then happens "
-        "up front instead of interrupting an unattended run ~45 minutes in.",
+        "up front instead of interrupting an unattended run ~25-30 minutes in.",
     )
     ap.add_argument(
         "--llm-backend",
@@ -149,7 +149,7 @@ def main() -> int:
     # Google Drive: informational for asset-only runs, but a run that will
     # publish should pass --ensure-google-auth so the ONE interactive moment
     # (the browser consent) happens here at minute zero, not at the publish
-    # step after ~45 unattended minutes.
+    # step after ~25-30 unattended minutes.
     try:
         from publish.gdrive import AuthError, auth_state, credentials
 

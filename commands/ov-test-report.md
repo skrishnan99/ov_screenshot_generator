@@ -1,5 +1,5 @@
 ---
-description: Build and publish a full OV camera test report — extract recipe assets, build the branded deck, upload it to the team Drive as Google Slides. Fire-and-forget; ~45 minutes.
+description: Build and publish a full OV camera test report — extract recipe assets, build the branded deck, upload it to the team Drive as Google Slides. Fire-and-forget; ~25-30 minutes.
 argument-hint: <camera-url> <recipe name> [extra instructions]
 ---
 
@@ -30,10 +30,10 @@ them, do not improvise around them:
    (plus `--fix` and the camera `--url`) BEFORE anything else. If Google
    sign-in is missing, a browser opens once, now — tell the user that this
    consent is the only interaction the whole run needs. Never let it surface
-   at the publish step, ~45 unattended minutes in. If the request said to
+   at the publish step, ~25-30 unattended minutes in. If the request said to
    keep the deck local, skip the flag and run plain preflight.
 2. Invoke the **`ov-test-reports:extract-recipe-assets`** skill with the URL
-   and recipe. State once that the whole job takes ~45 minutes and that the
+   and recipe. State once that the whole job takes ~25-30 minutes and that the
    run will activate the recipe on the camera if it is inactive, then start.
 3. When extraction completes, continue straight into the
    **`ov-test-reports:overview-deck`** skill with the run directory. Build

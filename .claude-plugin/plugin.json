@@ -1,6 +1,6 @@
 {
   "name": "ov-test-reports",
-  "version": "0.23.0",
+  "version": "0.23.1",
   "description": "Generate Overview camera inspection assets and customer-facing test-report decks from natural language",
   "author": {
     "name": "Surya Krishnan",

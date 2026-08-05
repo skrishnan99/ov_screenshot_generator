@@ -1,6 +1,6 @@
 ---
 name: overview-deck
-description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and publish it to the team's shared Google Drive as Google Slides. Runs end to end without check-ins: a sales engineer gives one instruction and comes back to a finished, published deck ~45 minutes later, so gaps are filled with documented defaults rather than questions. Publishing is automatic and needs no confirmation — every finished deck is uploaded unless the request explicitly said not to. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
+description: "Build a brand-compliant Overview.ai PowerPoint deck (customer test report, case study, demo summary) from inspection assets, then verify it and publish it to the team's shared Google Drive as Google Slides. Runs end to end without check-ins: a sales engineer gives one instruction and comes back to a finished, published deck ~25-30 minutes later, so gaps are filled with documented defaults rather than questions. Publishing is automatic and needs no confirmation — every finished deck is uploaded unless the request explicitly said not to. Use whenever someone asks for an Overview deck, report, slides or case study — including from an OV camera extraction run. If no extraction run exists yet but a camera URL and recipe name were given, invoke the extract-recipe-assets skill first, wait for it, then build the deck from what it produced; do not ask the user to go run extraction themselves. Enforces the Overview brand pack (palette, logo, type) and refuses to emit a deck with overflowing text, colliding shapes or off-brand colour."
 user-invocable: false
 ---
 
@@ -26,7 +26,7 @@ colour (see the warning in step 5).
 
 A sales engineer gives one instruction — a camera, an approximate recipe name,
 maybe some notes — and expects to come back to a finished deck. The whole job
-takes ~45 minutes, and **every question you ask blocks it for as long as they
+takes ~25-30 minutes, and **every question you ask blocks it for as long as they
 take to notice.** They are not watching. A run that stalls on "which audience
 is this for?" wastes the entire window and is the worst outcome this skill has.
 
@@ -97,8 +97,9 @@ of questions.
   for it (~20 minutes), then carry on here with the run directory it produced.
   "Get the assets and build a report" is one request, not two.
 
-  Say the shape of it once, before you start — ~45 minutes, roughly 20
-  extracting and 25 building — then go quiet and work.
+  Say the shape of it once, before you start — ~25-30 minutes, most of it
+  extraction (scales with the recipe's model count), with the deck built and
+  published in the final few minutes — then go quiet and work.
 
 **Everything else has a default. Use it; do not ask.**
 

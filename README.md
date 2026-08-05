@@ -26,7 +26,7 @@ Then, in any Claude Code session, the one-command path:
 
 runs the whole flow — extract assets, build the branded deck, publish it to
 the team shared drive as Google Slides — with no questions in the middle
-(~45 minutes; append instructions like "don't upload it" to override
+(~25-30 minutes; append instructions like "don't upload it" to override
 defaults). Or just ask in natural language:
 
 - *"Get me the assets for recipe `<name>` on `http://<camera-url>`"*
@@ -49,7 +49,7 @@ still work and the skill still documents them, but deck requests now go to
 **overview-deck**.
 
 First use auto-installs the browser it needs (~2 min). Asset extraction takes
-~20 minutes; a full test report (extract + deck) ~45. Both scale with how many
+~20 minutes; a full test report (extract + deck) ~25-30. Both scale with how many
 AI models the recipe has. A run will activate the recipe on the camera if it's
 inactive — confirm that's okay on production lines. Installing LibreOffice and the brand fonts
 (Proxima Nova, Montserrat) is optional but recommended: they enable PDF

@@ -19,7 +19,7 @@ levels above this SKILL.md file; when the environment variable
 
 A sales engineer gives one instruction — a camera, an approximate recipe name,
 maybe some notes — and expects to come back to a finished deck. The whole job
-takes ~45 minutes, and **every question you ask blocks it for as long as they
+takes ~25-30 minutes, and **every question you ask blocks it for as long as they
 take to notice.** They are not watching. A run that stalls on "which audience
 is this for?" wastes the entire window and is the worst outcome this skill has.
 
@@ -78,7 +78,7 @@ uv run --project "$PLUGIN_ROOT" python "$PLUGIN_ROOT/preflight.py" --fix --url "
 `--ensure-google-auth`: publishing will need Google sign-in, and if it is
 missing the one-time browser consent then happens HERE, at minute zero — the
 only interaction of the whole run — instead of interrupting the publish step
-~45 minutes later. Tell the user that is what the browser window is.
+~25-30 minutes later. Tell the user that is what the browser window is.
 
 If it fails, relay the printed fix instructions verbatim and stop. The usual
 one-time fix is connecting Tailscale/VPN (camera unreachable). No API key is
