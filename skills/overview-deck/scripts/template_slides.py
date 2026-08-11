@@ -58,6 +58,22 @@ TEMPLATE_SLIDES = {
     "thank_you": 15,         # closing
 }
 
+# Content-hole skeletons imported from the v1 corpus (assets/reference/,
+# copied verbatim from deck/skeletons and the case_study repo). Unlike the
+# template boilerplate above, these carry {{token}} text holes and PICTURE /
+# placeholder image slots, and are filled with the v1 semantics
+# (fill_tokens + fill_images) that shipped hundreds of slides. They are
+# normalised to the deck canvas at --extract exactly like the template
+# slides — THE CANVAS INVARIANT applies to every imported skeleton.
+CONTENT_SKELETONS = {
+    "recipe_title_ov80i": "recipe_title_ov80i.pptx",
+    "recipe_title_ov20i": "recipe_title_ov20i.pptx",
+    "results_image": "results_image.pptx",
+    "concise_results_classifier": "concise_results_classifier.pptx",
+    "concise_results_segmenter": "concise_results_segmenter.pptx",
+}
+REFERENCE_DIR = SKILL / "assets" / "reference"
+
 # The closing run every report carries, in the TEMPLATE's own order
 # (slides 11-15). Library is not listed here: it is its own numbered section
 # of the default deck, placed earlier with this run's screenshot.
@@ -74,10 +90,14 @@ class TemplateError(RuntimeError):
     """A skeleton is missing or does not match what the build needs."""
 
 
+def all_skeleton_names() -> set[str]:
+    return set(TEMPLATE_SLIDES) | set(CONTENT_SKELETONS)
+
+
 def skeleton_path(name: str) -> Path:
-    if name not in TEMPLATE_SLIDES:
+    if name not in all_skeleton_names():
         raise TemplateError(
-            f"unknown boilerplate slide {name!r}; have {sorted(TEMPLATE_SLIDES)}"
+            f"unknown skeleton {name!r}; have {sorted(all_skeleton_names())}"
         )
     p = SKELETON_DIR / f"{name}.pptx"
     if not p.exists():
@@ -98,23 +118,36 @@ def profile(name: str) -> dict:
 
 
 def append(prs, name: str, image: str | Path | None = None,
-           tokens: dict | None = None) -> None:
+           tokens: dict | None = None,
+           images: list | None = None) -> None:
     """Fill skeleton `name` and append it to an open Presentation, verbatim.
 
-    `image` fills the slide's picture hole (the library slide has one);
-    `tokens` fills any {{token}} text holes. Unknown surplus is an error —
-    a hole that silently stays unfilled ships placeholder text to a customer.
+    `images` (or the single-image `image` alias) fill the slide's image
+    holes; `tokens` fill its {{token}} text holes. Unknown surplus is an
+    error — a hole that silently stays unfilled ships placeholder text to a
+    customer.
+
+    Two fill modes, decided by the registry:
+    - TEMPLATE_SLIDES: "Insert screenshot here" placeholders only; standing
+      PICTUREs are content and never touched.
+    - CONTENT_SKELETONS (imported v1 corpus): the v1 semantics — PICTURE
+      slots are replaceable holes (largest first), then placeholders; fewer
+      images than picture slots leaves the remainder standing (the recipe
+      title keeps its hero photo when no image is passed).
     """
     from pptx import Presentation
 
     from deck.assemble import (
         append_slide,
         bake_theme_colors,
+        fill_images,
         fill_tokens,
         find_tokens,
         image_slots,
     )
 
+    if images is None:
+        images = [image] if image is not None else []
     src = Presentation(str(skeleton_path(name)))
     slide = src.slides[0]
 
@@ -146,28 +179,50 @@ def append(prs, name: str, image: str | Path | None = None,
             f"pass them via tokens={{...}}"
         )
 
-    # For a skeleton, holes are the "Insert screenshot here" placeholders;
-    # PICTURE shapes are standing content and must never be replaced.
-    # (fill_images targets pictures first, so it is the wrong tool here.)
-    from deck.assemble import MSO_PICTURE, _fill_placeholder
+    for img in images:
+        if not Path(img).exists():
+            raise TemplateError(f"image for skeleton {name!r} not found: {img}")
 
-    holes = [sh for sh in image_slots(slide) if sh.shape_type != MSO_PICTURE]
-    if image is not None:
-        if not holes:
+    if name in CONTENT_SKELETONS:
+        # v1 semantics: pictures are holes (largest first), then any
+        # placeholders. Fewer images than picture slots leaves the remainder
+        # standing; leftover PLACEHOLDERS would ship their note, so refuse.
+        from deck.assemble import MSO_PICTURE
+
+        slots = image_slots(slide)
+        n_placeholders = sum(1 for sh in slots if sh.shape_type != MSO_PICTURE)
+        n_pics = len(slots) - n_placeholders
+        if len(images) > len(slots):
             raise TemplateError(
-                f"skeleton {name!r} has no 'Insert screenshot here' hole "
-                f"to put an image in"
+                f"skeleton {name!r} has {len(slots)} image slot(s); got {len(images)}"
             )
-        if not Path(image).exists():
-            raise TemplateError(f"image for skeleton {name!r} not found: {image}")
-        _fill_placeholder(slide, holes[0], Path(image))
-        holes = holes[1:]
-    if holes:
-        # An unfilled hole would ship its placeholder note to a customer.
-        raise TemplateError(
-            f"skeleton {name!r} has {len(holes)} unfilled screenshot hole(s); "
-            f"pass image=..."
-        )
+        if n_placeholders and len(images) < len(slots):
+            raise TemplateError(
+                f"skeleton {name!r} has {n_placeholders} placeholder hole(s) "
+                f"after {n_pics} picture slot(s); {len(images)} image(s) would "
+                f"leave placeholder text on the slide"
+            )
+        fill_images(slide, [str(i) for i in images])
+    else:
+        # Template boilerplate: placeholders only; standing PICTUREs are
+        # content and must never be replaced. (fill_images targets pictures
+        # first, so it is the wrong tool here.)
+        from deck.assemble import MSO_PICTURE, _fill_placeholder
+
+        holes = [sh for sh in image_slots(slide) if sh.shape_type != MSO_PICTURE]
+        for img in images:
+            if not holes:
+                raise TemplateError(
+                    f"skeleton {name!r} has no 'Insert screenshot here' hole "
+                    f"to put an image in"
+                )
+            _fill_placeholder(slide, holes.pop(0), Path(img))
+        if holes:
+            # An unfilled hole would ship its placeholder note to a customer.
+            raise TemplateError(
+                f"skeleton {name!r} has {len(holes)} unfilled screenshot hole(s); "
+                f"pass images=..."
+            )
 
     # Idempotent when the extraction already baked; load-bearing if a skeleton
     # was hand-edited afterwards and picked up scheme colours again.
@@ -407,41 +462,68 @@ def extract(template: Path | None = None, out_dir: Path | None = None) -> list[P
                 f"template has {len(src.slides)} slides; {name!r} expected at "
                 f"{num}. The template changed — update TEMPLATE_SLIDES."
             )
-        # A fresh base per skeleton, on the DECK's canvas. The default
-        # python-pptx master stays in the file unused (~10 KB) — harmless,
-        # and pruning it is not worth the surgery.
-        base = Presentation()
-        base.slide_width = Inches(SLIDE_W)
-        base.slide_height = Inches(SLIDE_H)
-        # Shrink targets the size the picture will DISPLAY at post-scale, so
-        # the raster still meets EMBED_DPI on the larger canvas.
-        n = _shrink_pictures(src.slides[num - 1], scale=factor)
-        # Fixups run on the source slide: the transplanted copy's part is a
-        # raw OPC Part without python-pptx's typed shape API. Mutating the
-        # in-memory template is safe — it is never saved back.
-        for fix in FIXUPS.get("*", ()) + FIXUPS.get(name, ()):
-            fix(src.slides[num - 1])
-        bake_theme_colors(src.slides[num - 1])
-        before = {str(p.partname) for p in base.part.package.iter_parts()}
-        ctx = {"used": set(before), "by_hash": {}}
-        append_slide(base, src, ctx, index=num - 1)
-        # Scale every part the transplant brought in — slide, layout AND
-        # master, since layouts/masters carry positioned chrome of their own.
-        # These are the skeleton's private copies; the source template's
-        # shared parts are never touched (two skeletons share layouts there).
-        for part in base.part.package.iter_parts():
-            if str(part.partname) in before:
-                continue
-            if part.content_type.endswith(
-                ("slide+xml", "slideLayout+xml", "slideMaster+xml")
-            ):
-                part._blob = _scale_part_xml(part.blob, factor)
-        dest = out / f"{name}.pptx"
-        base.save(str(dest))
-        written.append(dest)
-        print(f"  {dest.relative_to(SKILL)}  {dest.stat().st_size / 1024:.0f} KB"
-              + (f"  ({n} picture(s) re-embedded at display size)" if n else ""))
+        written.append(_import_one(src, num - 1, name, factor, out))
+
+    # Content skeletons: single-slide files from the v1 corpus, same
+    # normalisation pipeline (shrink, fixups, bake, transplant, scale).
+    # Their sidecar YAMLs travel with them so profile() keeps working.
+    for name, fname in CONTENT_SKELETONS.items():
+        ref = REFERENCE_DIR / fname
+        if not ref.exists():
+            raise TemplateError(f"reference skeleton missing: {ref}")
+        ref_pres = Presentation(str(ref))
+        f2 = Inches(SLIDE_W) / ref_pres.slide_width
+        if abs(f2 - Inches(SLIDE_H) / ref_pres.slide_height) > 1e-4:
+            raise TemplateError(f"{fname}: aspect differs from the deck canvas")
+        written.append(_import_one(ref_pres, 0, name, f2, out))
+        sidecar = ref.with_suffix(".yaml")
+        if sidecar.exists():
+            (out / f"{name}.yaml").write_text(sidecar.read_text())
     return written
+
+
+def _import_one(src_pres, index: int, name: str, factor: float, out: Path) -> Path:
+    """Normalise one source slide into skeletons/<name>.pptx on the deck
+    canvas: shrink rasters to post-scale display size, apply fixups, bake
+    theme colours, transplant, scale every imported part (slide, layout AND
+    master — layouts/masters carry positioned chrome of their own)."""
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    from deck.assemble import append_slide, bake_theme_colors
+
+    from ovdeck import SLIDE_H, SLIDE_W
+
+    # A fresh base per skeleton, on the DECK's canvas. The default
+    # python-pptx master stays in the file unused (~10 KB) — harmless.
+    base = Presentation()
+    base.slide_width = Inches(SLIDE_W)
+    base.slide_height = Inches(SLIDE_H)
+    slide = src_pres.slides[index]
+    # Shrink targets the size the picture will DISPLAY at post-scale, so
+    # the raster still meets EMBED_DPI on the larger canvas.
+    n = _shrink_pictures(slide, scale=factor)
+    # Fixups run on the source slide: the transplanted copy's part is a
+    # raw OPC Part without python-pptx's typed shape API. Mutating the
+    # in-memory source is safe — it is never saved back.
+    for fix in FIXUPS.get("*", ()) + FIXUPS.get(name, ()):
+        fix(slide)
+    bake_theme_colors(slide)
+    before = {str(p.partname) for p in base.part.package.iter_parts()}
+    ctx = {"used": set(before), "by_hash": {}}
+    append_slide(base, src_pres, ctx, index=index)
+    for part in base.part.package.iter_parts():
+        if str(part.partname) in before:
+            continue
+        if part.content_type.endswith(
+            ("slide+xml", "slideLayout+xml", "slideMaster+xml")
+        ):
+            part._blob = _scale_part_xml(part.blob, factor)
+    dest = out / f"{name}.pptx"
+    base.save(str(dest))
+    print(f"  {dest.relative_to(SKILL)}  {dest.stat().st_size / 1024:.0f} KB"
+          + (f"  ({n} picture(s) re-embedded at display size)" if n else ""))
+    return dest
 
 
 def main() -> int:

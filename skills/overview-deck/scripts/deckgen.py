@@ -124,7 +124,9 @@ def _emit_arranged(d, planned: list[dict], run_dir: Path) -> None:
             d.split(s["title"], imgs[0], card_title=text.get("card_title", ""),
                     para=text.get("para", ""), bullets=_as_list(text.get("bullets", "")))
         elif s["layout"] == "two_up":
-            d.two_up(s["title"], imgs[0], imgs[1], caption=text.get("caption", ""))
+            d.two_up(s["title"], imgs[0], imgs[1], caption=text.get("caption", ""),
+                     left_caption=text.get("left_caption", ""),
+                     right_caption=text.get("right_caption", ""))
         elif s["layout"] == "rows":
             d.rows(s["title"], entries=_as_pairs(text.get("entries", "")),
                    intro=text.get("intro", ""))
@@ -189,6 +191,18 @@ def compile_deck(
                            f"(see matching report)",
             })
             continue
+        if job.kind in ("tier3", "tier4") and job.images and not any(
+            m.assignments.get(f"{job.id}#{i}") for i in range(len(job.images))
+        ):
+            # An adaptive slide whose every image hole (all optional) came up
+            # empty has no evidence to show — a real build shipped a
+            # title-only slide this way. Dropping HERE, before numbering,
+            # keeps "Step N" contiguous.
+            plan["skipped"].append({
+                "id": job.id,
+                "skipped": "adaptive slide: no image hole matched anything",
+            })
+            continue
         survivors.append(job)
 
     finalize_steps(survivors)
@@ -215,7 +229,18 @@ def compile_deck(
                   for i in range(len(job.images))
                   if m.assignments.get(f"{job.id}#{i}")]
         if job.kind == "skeleton":
-            d.skeleton_slide(job.skeleton, image=images[0] if images else None)
+            # Skeleton {{tokens}} take the resolver's RAW value: on a stat
+            # card an em dash IS the designed no-data mark (v1's
+            # deployment_time brief says 'otherwise exactly —'), unlike layout
+            # copy where absence means omitting the line.
+            skel_tokens = {}
+            for name, raw in job.tokens.items():
+                if isinstance(raw, (str, list)):
+                    skel_tokens[name] = raw if isinstance(raw, str) else "\n".join(raw)
+                else:
+                    skel_tokens[name] = resolved.get(f"{job.id}.{name}", "—")
+            d.skeleton_slide(job.skeleton, images=images or None,
+                             tokens=skel_tokens or None)
         elif job.kind == "layout":
             _emit_layout(d, job, images, resolved)
         else:  # tier3 / tier4: fixed content, arranged
@@ -229,7 +254,17 @@ def compile_deck(
             rel_images = [m.assignments[f"{job.id}#{i}"]
                           for i in range(len(job.images))
                           if m.assignments.get(f"{job.id}#{i}")]
-            planned = arrange_mod.arrange(job.title or job.id, rel_images, text, log=log)
+            if not rel_images and not any(v.strip() for v in text.values()):
+                # Nothing matched, nothing resolved: a title-only slide is
+                # worse than no slide (a real build shipped one). Skip + record.
+                plan["skipped"].append({
+                    "id": job.id,
+                    "skipped": "tier-3/4 slide with no matched images and no "
+                               "resolved text",
+                })
+                continue
+            planned = arrange_mod.arrange(job.title or job.id, rel_images, text,
+                                          hint=job.hint, log=log)
             rec["arranged"] = planned
             _emit_arranged(d, planned, run_dir)
         plan["slides"].append(rec)

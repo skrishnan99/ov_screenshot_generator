@@ -119,13 +119,31 @@ def _facts_by_subject(meta: dict) -> dict[str, list[str]]:
     return out
 
 
+# Fact properties that carry a model's RESULTS — surfaced first in the model
+# slice so the per-subject cap cannot bury them. A real run's train screen
+# emits ~100 augmentation-slider facts per model, and train_accuracy sat
+# below the cap: every stat card resolved to dashes with the data present.
+_RESULT_KEYS = ("last_trained", "train", "acc", "iou", "loss", "image",
+                "label", "class", "deploy", "status", "iteration")
+
+
+def _fact_rank(line: str) -> int:
+    prop = line.split(":", 1)[0].lower()
+    return 0 if any(k in prop for k in _RESULT_KEYS) else 1
+
+
 def _model_slice(model: dict, facts: dict, descriptions: dict, matched_paths: list[str]) -> str:
     """Everything this model's slides may draw on, and nothing else."""
-    name = model.get("name", "")
-    parts = [f"MODEL: {name} ({model.get('type', '')})"]
+    name = (model.get("name", "") or "").lower()
+    parts = [f"MODEL: {model.get('name', '')} ({model.get('type', '')})"]
     for subj, lines in facts.items():
-        if name.lower() in subj.lower() or subj.lower().startswith("class:"):
-            parts.append(f"facts [{subj}]:\n  " + "\n  ".join(lines[:20]))
+        # Exact subject match, not substring: on a real camera the roster was
+        # "Model", "Model 2", "Model 3" — a substring test handed Model every
+        # other model's facts.
+        sl = subj.lower()
+        if sl == f"model: {name}" or sl == name or sl.startswith(f"class: {name}/"):
+            ranked = sorted(lines, key=_fact_rank)
+            parts.append(f"facts [{subj}]:\n  " + "\n  ".join(ranked[:40]))
     for rel in matched_paths:
         d = descriptions.get(Path(rel).name)
         if d:

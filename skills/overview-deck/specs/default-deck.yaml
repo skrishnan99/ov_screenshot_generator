@@ -1,63 +1,51 @@
 # The default OV camera test report — THE base spec.
 #
-# This file IS the default deck: it compiles verbatim, and it mutates only
-# when the user's request explicitly asks, only in the way the request asks
-# (adapt.py governs that; every change must be justified by a quoted request
-# sentence or the whole adaptation is rejected).
+# Compiles verbatim; mutates only on an explicit user request, only as
+# requested (adapt.py). Content holes are DESCRIPTIONS — matching is
+# semantic, so file renames and camera variants cannot break this file.
 #
-# Content holes are DESCRIPTIONS, not file paths — matching is semantic
-# (matching.py), so extractor renames and camera variants cannot break this
-# file, and an engineer's photo can win a hole on merit.
+# TRAINED MODELS ONLY: the ROI section and the per-model blocks cover the
+# models the Train screen shows as actually trained (last_trained date /
+# training metrics / a training report). Models with ROIs that were never
+# trained are ignored by design. When the run carries no training signal at
+# all, every model is included and the gap is recorded in the plan.
 #
-# Slides with `step: true` are numbered contiguously over the slides that
-# SURVIVE conditions/repeats, so "Step {step}:" never skips a number.
-#
-# Structure mirrors references/default-deck.md (the prose commentary);
-# where they disagree, THIS FILE wins.
+# Skeleton fill notes:
+# - recipe_title_* keep their standing hero photo (no image passed).
+# - concise results skeletons are chosen by TOKEN CONTENT: classification ->
+#   concise_results_classifier (train_acc), segmentation ->
+#   concise_results_segmenter (mean_iou). On a stat card an em dash is the
+#   designed no-data mark, so their tokens resolve "—" when unstated.
 
 spec_version: 1
 
 slides:
-  # -- intro: three-part identity. Camera MODEL only — never serial,
-  #    hostname or firmware (content-rules §1b).
-  - id: title
-    layout: title_slide
+  # -- 1. recipe title: the variant's own v1 skeleton, hero photo standing.
+  - id: title_ov80i
+    skeleton: recipe_title_ov80i
+    when: {camera.variant: ov80i}
     tokens:
-      title: "{camera.title}"
-      subtitle:
-        llm: >
-          The application, in the customer's words — what this recipe
-          inspects, as a short noun phrase ("Surface Defect Segmentation").
-        max_chars: 60
-      meta:
-        - "Recipe: {recipe.name}"
-        - "Date: {date}"
+      recipe_title: "{recipe.name}"
 
-  # -- 1. problem, then solution. Text only; the claim the deck evidences.
-  - id: problem_solution
-    layout: statement
+  - id: title_ov20i
+    skeleton: recipe_title_ov20i
+    when:
+      any:
+        - {camera.variant: ov20i}
+        - {camera.variant: ov10i}
     tokens:
-      title:
-        llm: "A short title naming the inspection ('Surface Defect Detection')."
-        max_chars: 45
-      intro:
-        llm: >
-          The problem: the part or product being inspected, which defects or
-          conditions are checked, and the production context. 3-4 crisp
-          sentences.
-        max_chars: 250
-      card_title: "How the system solves it"
-      bullets:
-        llm: >
-          How the vision system solves it: the key stages and what each
-          decides, and how it worked out. 4-6 short bullet lines.
-        shape: lines
-        max_chars: 420
+      recipe_title: "{recipe.name}"
 
-  # -- 2. the inspection, seen whole: raw beside overlay.
-  - id: seen_whole
-    layout: two_up
-    title: "What the Camera Sees"
+  # -- 2. overall results: one-liner + raw|overlay pair, fixed skeleton.
+  - id: results_overview
+    skeleton: results_image
+    tokens:
+      recipe_name: "{recipe.name}"
+      brief_description:
+        llm: >
+          One line: the inspection problem and how the camera solves it —
+          the part, what is checked, and the decision made.
+        max_chars: 160
     images:
       - expects: >
           The library capture as imaged — the part photograph at native
@@ -65,139 +53,144 @@ slides:
       - expects: >
           The same library capture WITH the inspection overlay drawn —
           regions and marks as the UI shows them.
-    tokens:
-      left_caption: "Captured frame, as imaged"
-      right_caption: "With inspection regions"
-      caption:
-        llm: >
-          One or two lines: what the reader is looking at — the part as
-          captured, and the same capture with the recipe's inspection
-          drawn on it.
-        max_chars: 200
 
-  # -- 3. imaging setup. Notable deliberate settings (HDR, photometric,
-  #    trigger, lens) are the interesting part; no config minutiae.
+  # -- 3. imaging setup: fixed content, near-fixed layout (tier 3 + hint).
   - id: imaging
-    layout: split
+    tier: 3
     step: true
-    title: "Step {step}: Image Settings"
+    title: "Step {step}: Imaging Setup"
+    hint: >
+      One split slide, exactly like the house imaging-setup template: the
+      imaging screen on the left at about 55% width, and a short bold
+      explanation in the right-hand column. Title stays as given.
     images:
       - expects: >
           The Imaging Setup screen: camera settings panel (exposure, white
-          balance, trigger mode) beside the viewer.
-    tokens:
-      card_title: "Capture conditions"
-      para:
-        llm: >
-          What the capture setup achieves, in plain language — resolution
-          class, trigger mode, and why the conditions give comparable frames.
-          1-2 sentences.
-        max_chars: 170
-      bullets:
-        llm: >
-          The capture settings as short plain-value lines (resolution,
-          trigger, exposure/gain, white balance), plus any notable deliberate
-          choice (HDR, photometric). 3-5 lines.
-        shape: lines
-        max_chars: 200
-
-  # -- 4. alignment. NEVER skipped: when Skip Aligner is on, the slide says
-  #    so and why — the truthful state of the recipe, not a gap.
-  - id: aligner
-    layout: split
-    step: true
-    title: "Step {step}: Alignment"
-    images:
-      - expects: >
-          The Template Image and Alignment screen — template viewer and
-          Skip Aligner / search area controls.
-    tokens:
-      card_title:
-        llm: >
-          "Alignment" if a template is configured, "Alignment skipped" when
-          the aligner is disabled. Two or three words.
-        max_chars: 30
-      para:
-        llm: >
-          How alignment is set up for this part — what it orients against;
-          or, if skipped, that the part presents consistently so no
-          alignment is needed. 1-2 sentences.
-        max_chars: 170
-      bullets:
-        llm: "2-3 short lines on the alignment configuration as it stands."
-        shape: lines
-        max_chars: 160
-
-  # -- 5. inspection regions: ONE ROI SCREENSHOT PER MODEL, never combined.
-  - id: rois
-    repeat: models
-    layout: figure
-    step: true
-    title: "Step {step}: Inspection Regions — {model.name}"
-    images:
-      - expects: >
-          The Inspection Setup screen with {model.name} selected and its
-          regions of interest drawn on the part — where THIS model looks.
-    tokens:
-      caption:
-        llm: >
-          Which regions {model.name} checks and what they cover on the part.
-          1-2 sentences.
-        max_chars: 220
-
-  # -- 6a. per model: what it is and decides.
-  - id: model_setup
-    repeat: models
-    layout: split
-    step: true
-    title: "Step {step}: {model.name}"
-    images:
-      - expects: >
-          The {model.type} block page showing {model.name} — the model's
-          setup screen with a capture in the viewer.
-    tokens:
-      card_title: "{model.name} — {model.type}"
-      para:
-        llm: >
-          What {model.name} decides: for a classifier, what it classifies
-          and its class names; for a segmenter, its defect classes and its
-          pixel-level role. 1-2 sentences.
-        max_chars: 170
-      bullets:
-        llm: >
-          3-4 short lines: classes/regions counts and what the model marks
-          or separates. Plain values from the material only.
-        shape: lines
-        max_chars: 180
-
-  # -- 6b. per model, adaptive: the evidence. Content fixed, layout adapts
-  #    to how many of these artifacts this model actually has (a segmenter
-  #    often has no training report — absent means silently absent).
-  - id: model_evidence
-    repeat: models
-    tier: 3
-    step: true
-    title: "Step {step}: Training — {model.name}"
-    images:
-      - expects: >
-          {model.name}'s labelled-regions view — the grid of labelled ROI
-          crops with class labels.
-        optional: true
-      - expects: "{model.name}'s training report — metrics after training."
-        optional: true
-      - expects: "{model.name}'s training settings dialog."
-        optional: true
+          balance, trigger mode) beside the main viewer.
     tokens:
       text:
         llm: >
-          {model.name}'s training, as plain-value lines: accuracy or
-          loss/IoU, image counts, per-class counts with class names —
-          exactly the metrics the material shows, nothing else. 3-5 lines.
-        shape: lines
-        max_chars: 320
+          One line on the imaging configuration, leading with any special
+          technique deliberately used — photometric stereo, HDR, rotation,
+          multi-exposure. If none, the capture conditions in plain language
+          (resolution class, trigger mode).
+        max_chars: 170
 
-  # -- 7. IO logic as a diagram. Decision path in plain language;
-  #    thresholds welcome, node/variable names banned.
+  # -- 4. alignment, ONLY when the aligner is actually configured.
+  - id: aligner
+    tier: 3
+    step: true
+    when: {aligner.skipped: false}
+    title: "Step {step}: Alignment"
+    hint: >
+      One split slide, exactly like the house aligner-setup template: the
+      alignment screen left at about 55% width, short bold explanation right.
+    images:
+      - expects: >
+          The Template Image and Alignment screen — template viewer and
+          search-area controls.
+    tokens:
+      text:
+        llm: >
+          One or two lines on how alignment is set up: what the template
+          anchors to and what the search areas cover.
+        max_chars: 220
+
+  # -- 5. inspection regions: every TRAINED model's ROI screen, one section.
+  - id: rois
+    tier: 3
+    step: true
+    title: "Step {step}: Inspection Regions"
+    hint: >
+      Show every region screen at a readable size — pair two per slide when
+      there are several, one large when there is one. Keep the shared
+      description with the first slide.
+    images:
+      # optional: a model whose region screen went uncaptured must not sink
+      # the models that WERE captured; all-unmatched still drops the slide.
+      - foreach: models
+        where: {trained: true}
+        optional: true
+        expects: >
+          The Inspection Setup screen with {model.name} selected and its
+          regions of interest drawn on the part — where THIS model looks.
+    tokens:
+      text:
+        llm: >
+          A brief description of how the inspection regions are set up
+          across the trained models: which areas of the part each model
+          covers and how the regions divide the work. 2-3 sentences.
+        max_chars: 300
+
+  # -- 6. per trained model: training slide, then its concise results card.
+  - id: model_block
+    repeat: models
+    where: {trained: true}
+    slides:
+      - id: training
+        tier: 3
+        step: true
+        title: "Step {step}: Training — {model.name}"
+        hint: >
+          Prefer a single split or figure: the model's training screen with
+          the setup/training summary beside or beneath it.
+        images:
+          - expects: >
+              {model.name}'s labelled-regions view — the grid of labelled
+              ROI crops with class labels.
+            optional: true
+          - expects: "{model.name}'s training settings dialog."
+            optional: true
+        tokens:
+          text:
+            llm: >
+              How {model.name} was set up and trained, in plain language:
+              what it decides (classes / defect classes), and the training
+              choices visible in the material. 2-4 short lines.
+            shape: lines
+            max_chars: 280
+
+      - id: results_cls
+        when_model: {type: classification}
+        skeleton: concise_results_classifier
+        tokens:
+          train_acc:
+            llm: >
+              {model.name}'s training accuracy as a short value, e.g.
+              "100%". "—" if not stated.
+            max_chars: 20
+          train_imgs:
+            llm: >
+              Number of training images used by {model.name}, as a short
+              value like "83". "—" if not stated.
+            max_chars: 20
+          deployment_time:
+            llm: >
+              Deployment/setup time ONLY if the engineer's notes explicitly
+              state it, formatted like "3 days". Otherwise exactly "—".
+            max_chars: 20
+
+      - id: results_seg
+        when_model: {type: segmentation}
+        skeleton: concise_results_segmenter
+        tokens:
+          mean_iou:
+            llm: >
+              {model.name}'s mean IoU if stated; otherwise its final
+              training loss as e.g. "0.028 loss". "—" if neither is stated.
+            max_chars: 24
+          train_imgs:
+            llm: >
+              Number of training images used by {model.name}, as a short
+              value like "83". "—" if not stated.
+            max_chars: 20
+          deployment_time:
+            llm: >
+              Deployment/setup time ONLY if the engineer's notes explicitly
+              state it, formatted like "3 days". Otherwise exactly "—".
+            max_chars: 20
+
+  # -- 7. IO logic as a diagram — unchanged from the current deck.
   - id: logic
     layout: flow
     step: true
@@ -219,13 +212,5 @@ slides:
           2-3 sentences.
         max_chars: 240
 
-  # -- 8. library: the skeleton's own slide, this run's screen in its hole.
-  - id: library
-    skeleton: library
-    images:
-      - expects: >
-          The camera's Library page — the capture browser with thumbnails
-          of stored captures and a selected capture's details.
-
-  # -- 9. the standing closing run, verbatim, template order.
+  # -- 8. the standing closing run, verbatim, template order.
   - closing: default

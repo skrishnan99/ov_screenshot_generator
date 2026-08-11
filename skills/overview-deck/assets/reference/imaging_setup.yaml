@@ -1,0 +1,8 @@
+# Content-hole descriptions for imaging_setup.pptx.
+image_slots:
+  - name: imaging_screen
+    expects: >
+      The Imaging Setup screen of the camera UI: the camera/lighting
+      configuration page showing a live capture of the part with exposure,
+      gain, and lighting controls in the side panel. Not a template/alignment
+      screen and not an ROI screen.

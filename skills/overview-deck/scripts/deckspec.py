@@ -124,6 +124,20 @@ def build_context(run_dir: Path) -> Context:
 
     v: dict[str, object] = {}
     variant = manifest.get("variant") or ""
+    if not variant:
+        # Fallback: the variant is visible top-left on every product screen,
+        # so the screenshot descriptions name it. Majority vote across them.
+        import collections
+
+        desc_path = run_dir / "deliverables" / "report" / "descriptions.json"
+        if desc_path.exists():
+            text = desc_path.read_text().lower()
+            counts = collections.Counter()
+            for cand in ("ov80i", "ov20i", "ov10i"):
+                counts[cand] = text.count(cand)
+            best, n = counts.most_common(1)[0]
+            if n > 0:
+                variant = best
     if variant:
         v["camera.variant"] = variant
         v["camera.model"] = _camera_model(variant)
@@ -135,8 +149,39 @@ def build_context(run_dir: Path) -> Context:
         v["recipe.name"] = recipe
     v["date"] = datetime.date.today().strftime("%Y.%m.%d")
 
-    models = meta.get("models") or []
+    models = [dict(m) for m in (meta.get("models") or [])]
+    # TRAINED derivation, per model. The Train screen's per-model facts are
+    # the primary signal: last_trained is either a date or "Never trained".
+    # Fallbacks: a training metric with a real digit, then a training-report
+    # screenshot (reports only exist after training). When NO model carries
+    # any signal the information is absent, not negative — include all and
+    # record it, rather than silently emptying every trained-filtered slide.
+    any_signal = False
+    for m in models:
+        subj = f"model: {m.get('name', '')}".lower()
+        last = next((val for (sj, pr), val in facts.items()
+                     if sj.lower() == subj and "last_trained" in pr.lower()), None)
+        metric = any(
+            sj.lower() == subj and any(t in pr.lower() for t in ("train", "acc", "iou", "loss"))
+            and any(c.isdigit() for c in val)
+            for (sj, pr), val in facts.items()
+        )
+        if last is not None:
+            m["trained"] = "never" not in last.lower() and any(c.isdigit() for c in last)
+            any_signal = True
+        elif metric:
+            m["trained"] = True
+            any_signal = True
+        elif m.get("report_screenshot"):
+            m["trained"] = True
+            any_signal = True
+        else:
+            m["trained"] = False
+    if models and not any_signal:
+        for m in models:
+            m["trained"] = True
     v["models"] = models  # for repeat expansion, not for `when`
+    v["models.trained_signal"] = any_signal or not models
     v["models.count"] = len(models)
     for t in ("classification", "segmentation"):
         v[f"models.{t}"] = sum(1 for m in models if m.get("type") == t)
@@ -208,6 +253,121 @@ def _validate_when(sid: str, when: dict) -> None:
                     raise SpecError(f"{sid}.when.{key}: unknown operators {sorted(bad)}")
 
 
+def _validate_entry(s: dict, sid: str, in_repeat: bool) -> None:
+    """One slide definition — used for top-level entries and block inners."""
+    kinds = [k for k in ("layout", "skeleton", "tier") if k in s]
+    if len(kinds) != 1:
+        raise SpecError(f"{sid}: exactly one of layout/skeleton/tier is required")
+    kind = kinds[0]
+
+    images = s.get("images", [])
+    if not isinstance(images, list):
+        raise SpecError(f"{sid}.images: must be a list")
+    for img in images:
+        if not isinstance(img, dict) or not img.get("expects", "").strip():
+            raise SpecError(f"{sid}.images: every hole needs a non-empty `expects`")
+        if "foreach" in img:
+            if img["foreach"] != "models":
+                raise SpecError(f"{sid}.images: foreach supports only 'models'")
+            if in_repeat:
+                raise SpecError(
+                    f"{sid}: foreach image holes inside repeat: models is "
+                    f"ambiguous — use one or the other"
+                )
+
+    if kind == "layout":
+        name = s["layout"]
+        if name not in LAYOUTS:
+            raise SpecError(f"{sid}: unknown layout {name!r} (have {sorted(LAYOUTS)})")
+        allowed = LAYOUTS[name]["tokens"]
+        for tname, tval in (s.get("tokens") or {}).items():
+            if tname not in allowed:
+                raise SpecError(
+                    f"{sid}.tokens.{tname}: layout {name!r} accepts {sorted(allowed)}"
+                )
+            _validate_token(sid, tname, tval)
+        lo, hi = LAYOUTS[name]["images"]
+        n_req = sum(1 for i in images if not i.get("optional"))
+        if any("foreach" in i for i in images):
+            pass  # arity depends on the roster; checked at expansion
+        elif not (lo <= n_req <= hi and len(images) <= hi):
+            raise SpecError(
+                f"{sid}: layout {name!r} takes {lo}-{hi} image(s); "
+                f"spec declares {len(images)} ({n_req} required)"
+            )
+    elif kind == "skeleton":
+        from template_slides import all_skeleton_names, profile
+
+        if s["skeleton"] not in all_skeleton_names():
+            raise SpecError(f"{sid}: unknown skeleton {s['skeleton']!r}")
+        prof = profile(s["skeleton"])
+        want = set(prof["tokens"])
+        have = set(s.get("tokens") or {})
+        if have - want:
+            raise SpecError(
+                f"{sid}: skeleton {s['skeleton']!r} has no token(s) "
+                f"{sorted(have - want)}; it has {sorted(want) or 'none'}"
+            )
+        if want - have:
+            # An unfilled {{token}} ships literal braces to a customer.
+            raise SpecError(
+                f"{sid}: skeleton {s['skeleton']!r} tokens {sorted(want - have)} "
+                f"are not provided by the spec"
+            )
+        for tname, tval in (s.get("tokens") or {}).items():
+            _validate_token(sid, tname, tval)
+        max_slots = len(prof["slots"])
+        if len(images) > max_slots:
+            raise SpecError(
+                f"{sid}: skeleton {s['skeleton']!r} has {max_slots} image "
+                f"slot(s); spec declares {len(images)}"
+            )
+    else:  # tier
+        if s["tier"] not in (3, 4):
+            raise SpecError(f"{sid}: tier must be 3 or 4")
+        if s["tier"] == 3 and not (images or s.get("tokens")):
+            raise SpecError(f"{sid}: tier 3 fixes content — declare images and/or tokens")
+        if s["tier"] == 4 and not str(s.get("brief", "")).strip():
+            raise SpecError(f"{sid}: tier 4 requires a `brief`")
+        for tname, tval in (s.get("tokens") or {}).items():
+            _validate_token(sid, tname, tval)
+        if "hint" in s and not (s["tier"] == 3 and str(s["hint"]).strip()):
+            raise SpecError(f"{sid}: `hint` is a non-empty tier-3 layout hint")
+
+    if "when_model" in s:
+        if not in_repeat:
+            raise SpecError(f"{sid}: `when_model` only applies inside a repeated block")
+        if not isinstance(s["when_model"], dict) or not s["when_model"]:
+            raise SpecError(f"{sid}.when_model: must be a non-empty mapping")
+
+    # every interpolation must resolve to a known namespace. A foreach image
+    # hole fans over the roster, so ITS strings get model-scope even outside
+    # a repeat — the rest of the entry does not (expansion would have no
+    # model to interpolate).
+    foreach_holes = [i for i in images if "foreach" in i]
+    rest = {k: v for k, v in s.items() if k != "images"}
+    rest["images"] = [i for i in images if "foreach" not in i]
+
+    def _check(obj, model_ok: bool, where: str) -> None:
+        for text in _iter_strings(obj):
+            for ref in _INTERP_RE.findall(text):
+                ok = (
+                    ref in CONTEXT_KEYS
+                    or ref == "step"
+                    or (ref.startswith("model.") and model_ok)
+                )
+                if not ok:
+                    raise SpecError(
+                        f"{where}: interpolation {{{ref}}} is not a context key"
+                        + (" (model.* needs repeat: models or a foreach hole)"
+                           if ref.startswith("model.") else "")
+                    )
+
+    _check(rest, in_repeat, sid)
+    for hole in foreach_holes:
+        _check(hole, True, f"{sid}.images(foreach)")
+
+
 def validate(spec: dict) -> None:
     if not isinstance(spec, dict) or spec.get("spec_version") != 1:
         raise SpecError("spec_version: 1 is required")
@@ -228,53 +388,6 @@ def validate(spec: dict) -> None:
             raise SpecError(f"duplicate slide id {sid!r}")
         seen.add(sid)
 
-        kinds = [k for k in ("layout", "skeleton", "tier") if k in s]
-        if len(kinds) != 1:
-            raise SpecError(f"{sid}: exactly one of layout/skeleton/tier is required")
-        kind = kinds[0]
-
-        images = s.get("images", [])
-        if not isinstance(images, list):
-            raise SpecError(f"{sid}.images: must be a list")
-        for img in images:
-            if not isinstance(img, dict) or not img.get("expects", "").strip():
-                raise SpecError(f"{sid}.images: every hole needs a non-empty `expects`")
-
-        if kind == "layout":
-            name = s["layout"]
-            if name not in LAYOUTS:
-                raise SpecError(f"{sid}: unknown layout {name!r} (have {sorted(LAYOUTS)})")
-            allowed = LAYOUTS[name]["tokens"]
-            for tname, tval in (s.get("tokens") or {}).items():
-                if tname not in allowed:
-                    raise SpecError(
-                        f"{sid}.tokens.{tname}: layout {name!r} accepts {sorted(allowed)}"
-                    )
-                _validate_token(sid, tname, tval)
-            lo, hi = LAYOUTS[name]["images"]
-            n_req = sum(1 for i in images if not i.get("optional"))
-            if not (lo <= n_req <= hi and len(images) <= hi):
-                raise SpecError(
-                    f"{sid}: layout {name!r} takes {lo}-{hi} image(s); "
-                    f"spec declares {len(images)} ({n_req} required)"
-                )
-        elif kind == "skeleton":
-            from template_slides import TEMPLATE_SLIDES
-
-            if s["skeleton"] not in TEMPLATE_SLIDES:
-                raise SpecError(f"{sid}: unknown skeleton {s['skeleton']!r}")
-            if len(images) > 1:
-                raise SpecError(f"{sid}: skeletons take at most one image hole")
-        else:  # tier
-            if s["tier"] not in (3, 4):
-                raise SpecError(f"{sid}: tier must be 3 or 4")
-            if s["tier"] == 3 and not (images or s.get("tokens")):
-                raise SpecError(f"{sid}: tier 3 fixes content — declare images and/or tokens")
-            if s["tier"] == 4 and not str(s.get("brief", "")).strip():
-                raise SpecError(f"{sid}: tier 4 requires a `brief`")
-            for tname, tval in (s.get("tokens") or {}).items():
-                _validate_token(sid, tname, tval)
-
         if "when" in s:
             _validate_when(sid, s["when"])
         if "repeat" in s and s["repeat"] != "models":
@@ -282,19 +395,27 @@ def validate(spec: dict) -> None:
         if "where" in s and "repeat" not in s:
             raise SpecError(f"{sid}: `where` requires `repeat`")
 
-        # every interpolation must resolve to a known namespace
-        for text in _iter_strings(s):
-            for ref in _INTERP_RE.findall(text):
-                ok = (
-                    ref in CONTEXT_KEYS
-                    or ref == "step"
-                    or (ref.startswith("model.") and "repeat" in s)
-                )
-                if not ok:
+        if "slides" in s:
+            # A block: a group of slides fanned out together per model, so a
+            # model's slides stay adjacent (training then results) instead of
+            # all-trainings-then-all-results — the v1 per_model_blocks lesson.
+            if s.get("repeat") != "models":
+                raise SpecError(f"{sid}: a `slides` block requires repeat: models")
+            inner_seen: set[str] = set()
+            for inner in s["slides"]:
+                iid = inner.get("id")
+                if not iid or iid in inner_seen:
+                    raise SpecError(f"{sid}: block inners need unique ids")
+                inner_seen.add(iid)
+                if "repeat" in inner or "slides" in inner or "when" in inner:
                     raise SpecError(
-                        f"{sid}: interpolation {{{ref}}} is not a context key"
-                        + (" (model.* needs repeat: models)" if ref.startswith("model.") else "")
+                        f"{sid}.{iid}: block inners may not nest repeat/slides/when "
+                        f"(use when_model)"
                     )
+                _validate_entry(inner, f"{sid}.{iid}", in_repeat=True)
+            continue
+
+        _validate_entry(s, sid, in_repeat="repeat" in s)
 
 
 def _iter_strings(obj):
@@ -331,6 +452,7 @@ class SlideJob:
     model: dict | None = None
     step: int | None = None
     wants_step: bool = False
+    hint: str = ""
 
 
 def _eval_when(when: dict, ctx: Context, notes: list[str], sid: str) -> bool:
@@ -393,22 +515,62 @@ def _interp_deep(obj, ctx, model, step, sid):
     return obj
 
 
+def _model_matches(m: dict, where: dict) -> bool:
+    return all(str(m.get(k, "")).lower() == str(v).lower() for k, v in where.items())
+
+
+def _make_job(entry: dict, model, ctx, sid: str, job_id: str) -> SlideJob:
+    kind = ("skeleton" if "skeleton" in entry
+            else "layout" if "layout" in entry
+            else f"tier{entry['tier']}")
+    # foreach image holes fan out over the roster INSIDE one slide — the
+    # combined-ROI slide shows every trained model's regions together.
+    images = []
+    for img in entry.get("images") or []:
+        if img.get("foreach") == "models":
+            for m in ctx.values.get("models") or []:
+                if not _model_matches(m, img.get("where") or {}):
+                    continue
+                fanned = {k: v for k, v in img.items() if k not in ("foreach", "where")}
+                images.append(_interp_deep(copy.deepcopy(fanned), ctx, m, None, sid))
+        else:
+            images.append(_interp_deep(copy.deepcopy(img), ctx, model, None, sid))
+    return SlideJob(
+        id=job_id,
+        origin=sid,
+        kind=kind,
+        layout=entry.get("layout"),
+        skeleton=entry.get("skeleton"),
+        tier=entry.get("tier"),
+        title=_interp(entry.get("title", ""), ctx, model, None, sid),
+        tokens=_interp_deep(copy.deepcopy(entry.get("tokens") or {}), ctx, model, None, sid),
+        images=images,
+        brief=_interp(entry.get("brief", ""), ctx, model, None, sid),
+        model=model,
+        step=None,
+        wants_step=bool(entry.get("step")),
+        hint=" ".join(str(entry.get("hint", "")).split()),
+    )
+
+
 def expand(spec: dict, ctx: Context) -> tuple[list[SlideJob], list[dict]]:
     """Spec -> concrete SlideJobs. Deterministic: conditions evaluated,
-    repeats fanned out over the model roster, `closing: default` expanded in
-    template order, step numbers assigned over the slides that SURVIVED
-    (numbering after conditions is what keeps Step N contiguous — a v1
-    lesson), every string interpolated. Returns (jobs, skip_report)."""
+    repeats and blocks fanned out over the model roster (a block keeps each
+    model's slides adjacent), foreach image holes fanned inside their slide,
+    `closing: default` expanded in template order, every string interpolated.
+    Step numbers are deferred to finalize_steps(), after match-skips.
+    Returns (jobs, skip_report)."""
     notes: list[str] = []
     skipped: list[dict] = []
-    pre: list[tuple[dict, dict | None]] = []  # (entry, model)
+    jobs: list[SlideJob] = []
 
     for entry in spec["slides"]:
         if entry.get("closing") == "default":
             from template_slides import DEFAULT_CLOSING
 
             for name in DEFAULT_CLOSING:
-                pre.append(({"id": f"closing_{name}", "skeleton": name}, None))
+                jobs.append(_make_job({"id": f"closing_{name}", "skeleton": name},
+                                      None, ctx, f"closing_{name}", f"closing_{name}"))
             continue
 
         sid = entry["id"]
@@ -420,39 +582,23 @@ def expand(spec: dict, ctx: Context) -> tuple[list[SlideJob], list[dict]]:
         if entry.get("repeat") == "models":
             models = ctx.values.get("models") or []
             where = entry.get("where") or {}
-            hits = [m for m in models
-                    if all(str(m.get(k, "")).lower() == str(v).lower() for k, v in where.items())]
+            hits = [m for m in models if _model_matches(m, where)]
             if not hits:
-                skipped.append({"id": sid, "skipped": f"repeat: models matched none (where={where})"})
+                skipped.append({"id": sid,
+                                "skipped": f"repeat: models matched none (where={where})"})
+                continue
+            inners = entry.get("slides") or [entry]
             for m in hits:
-                pre.append((entry, m))
+                suffix = f"_{m['slug']}" if m.get("slug") else f"_{m.get('name', '')}"
+                for inner in inners:
+                    iid = inner["id"] if inner is not entry else sid
+                    if "when_model" in inner and not _model_matches(m, inner["when_model"]):
+                        continue  # silent per-model selection (e.g. cls vs seg results)
+                    jobs.append(_make_job(inner, m, ctx, f"{sid}.{iid}" if inner is not entry else sid,
+                                          f"{iid}{suffix}"))
         else:
-            pre.append((entry, None))
+            jobs.append(_make_job(entry, None, ctx, sid, sid))
 
-    jobs: list[SlideJob] = []
-    for entry, model in pre:
-        sid = entry["id"]
-        n = None  # numbering deferred to finalize_steps(), after match-skips
-        suffix = f"_{model['slug']}" if model and model.get("slug") else ""
-        kind = ("skeleton" if "skeleton" in entry
-                else "layout" if "layout" in entry
-                else f"tier{entry['tier']}")
-        job = SlideJob(
-            id=f"{sid}{suffix}",
-            origin=sid,
-            kind=kind,
-            layout=entry.get("layout"),
-            skeleton=entry.get("skeleton"),
-            tier=entry.get("tier"),
-            title=_interp(entry.get("title", ""), ctx, model, n, sid),
-            tokens=_interp_deep(copy.deepcopy(entry.get("tokens") or {}), ctx, model, n, sid),
-            images=_interp_deep(copy.deepcopy(entry.get("images") or []), ctx, model, n, sid),
-            brief=_interp(entry.get("brief", ""), ctx, model, n, sid),
-            model=model,
-            step=None,
-            wants_step=bool(entry.get("step")),
-        )
-        jobs.append(job)
     return jobs, skipped + [{"note": x} for x in notes]
 
 

@@ -849,7 +849,12 @@ class Deck:
                                     f"#{c} is not in the Overview palette"))
 
         if self.states:
-            if not self.states[0].has_logo:
+            # When the deck OPENS with transplanted boilerplate (the recipe
+            # title skeleton), the real opening slide carries the template's
+            # own branding, which this engine never laid out and cannot see —
+            # states[0] is then a mid-deck slide and owes no logo.
+            opens_with_template = 1 in getattr(self, "_template_indices", [])
+            if not opens_with_template and not self.states[0].has_logo:
                 issues.append(Issue(1, "missing-logo",
                                     "the opening slide must carry the logo"))
             # When the deck ends with transplanted boilerplate, the real
@@ -867,6 +872,7 @@ class Deck:
         name: str,
         *,
         image: str | Path | None = None,
+        images: list | None = None,
         tokens: dict | None = None,
     ) -> None:
         """Place a boilerplate slide from the skill's owned skeletons —
@@ -893,7 +899,7 @@ class Deck:
                 f"boilerplate slide {name!r} was already placed in this deck; "
                 f"each standing slide appears exactly once"
             )
-        append(self.prs, name, image=image, tokens=tokens)
+        append(self.prs, name, image=image, images=images, tokens=tokens)
         self._skeletons_used = used | {name}
         self._template_slides = getattr(self, "_template_slides", 0) + 1
         # Position in the finished file, so the audit can tell what this

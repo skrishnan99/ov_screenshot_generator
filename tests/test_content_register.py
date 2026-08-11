@@ -83,19 +83,52 @@ def main() -> int:
         reqs = content_mod.collect(jobs, material, assignments)
 
         by_id = {r.id: r for r in reqs}
-        cap = by_id.get("rois_model-s.caption")
+        cap = by_id.get("training_model-s.text")
         if cap is None:
-            failures.append("no request collected for rois_model-s.caption")
+            failures.append("no request collected for training_model-s.text")
         else:
             if "Model S" not in cap.scope:
                 failures.append("model slide scope lacks its model")
             if "Horn Quality" in cap.scope:
                 failures.append("Model S scope leaked Horn Quality material")
-            if "Inspection Setup screen with Model S" not in cap.scope:
+            if "labelled-regions view" not in cap.scope:
                 failures.append("scope lacks the MATCHED image's description")
+        # the combined-ROI slide is model-neutral: its text sees BOTH trained
+        # models' matched region screens, and not the untrained model's
+        rois = by_id.get("rois.text")
+        if rois is None:
+            failures.append("no request collected for rois.text")
+        else:
+            for want in ("Inspection Setup screen with Model S",
+                         "Inspection Setup screen with Horn Quality"):
+                if want not in rois.scope:
+                    failures.append(f"rois scope lacks {want!r}")
+            if "Edge Check" in rois.scope:
+                failures.append("rois scope leaked the never-trained model")
         logic = [r for r in reqs if r.id.startswith("logic.")]
         if not logic or all("defect pixels" not in r.scope for r in logic):
             failures.append("logic tokens did not receive the IO analysis")
+
+        # ---- model slice: exact-name scoping and result-fact priority ----
+        # A real roster was "Model", "Model 2", ... — substring matching gave
+        # "Model" every other model's facts. And train_accuracy sat below the
+        # per-subject cap behind ~100 slider facts: dashes with data present.
+        slider_facts = [f"aug_slider_{i}: 0.5  [from 05]" for i in range(60)]
+        tricky_facts = {
+            "model: Model": slider_facts + ["train_accuracy: 100%  [from 07]"],
+            "model: Model 2": ["training_images: 40  [from 07]"],
+            "class: Model 2/Zero": ["label_count: 11  [from 08]"],
+        }
+        s1 = content_mod._model_slice({"name": "Model", "type": "segmentation"},
+                                      tricky_facts, {}, [])
+        if "train_accuracy: 100%" not in s1:
+            failures.append("result fact buried below the model-slice cap")
+        if "training_images: 40" in s1 or "label_count" in s1:
+            failures.append("prefix-named model received another model's facts")
+        s2 = content_mod._model_slice({"name": "Model 2", "type": "classification"},
+                                      tricky_facts, {}, [])
+        if "training_images: 40" not in s2 or "label_count: 11" not in s2:
+            failures.append("exact-name scoping dropped the model's own facts")
 
         # ---- retry ladder: bad then good resolves; bad twice raises ----
         real = content_mod.resolve_call

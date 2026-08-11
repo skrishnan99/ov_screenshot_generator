@@ -1,0 +1,8 @@
+# Content-hole descriptions for aligner_setup.pptx.
+image_slots:
+  - name: template_screen
+    expects: >
+      The Template Image / Alignment screen: the golden template capture used
+      to align each inspected part (or the alignment configuration screen when
+      alignment is skipped for fixtured parts). Shows the reference part
+      image, possibly with template/search regions drawn on it.

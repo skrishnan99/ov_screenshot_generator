@@ -71,7 +71,8 @@ which layout(s), what goes together, how it reads best.
 Available layouts and their text fields:
 - figure: one image + caption. For one strong image.
 - split: one image + card_title/para/bullets. Image left, explanation right.
-- two_up: exactly two images + captions. For before/after or pairs.
+- two_up: exactly two images + caption and/or left_caption/right_caption
+  (those exact field names). For before/after or pairs.
 - rows: no image; entries as "label | detail" lines (max 5) + intro.
 - statement: no image; intro + card_title + bullets.
 
@@ -92,7 +93,8 @@ class ArrangeError(RuntimeError):
     pass
 
 
-def arrange_call(title: str, image_paths: list[str], text: dict[str, str], feedback: str = ""):
+def arrange_call(title: str, image_paths: list[str], text: dict[str, str],
+                 feedback: str = "", hint: str = ""):
     from core import llm
 
     prompt = ARRANGE_PROMPT.format(
@@ -100,6 +102,11 @@ def arrange_call(title: str, image_paths: list[str], text: dict[str, str], feedb
         images="\n".join(f"- {p}" for p in image_paths) or "(none)",
         text="\n".join(f"[{k}]\n{v}" for k, v in text.items()) or "(none)",
     )
+    if hint:
+        prompt += (
+            "\n\nDEFAULT ARRANGEMENT — follow this unless the content's shape "
+            "makes it impossible, and deviate as little as needed: " + hint
+        )
     if feedback:
         prompt += f"\n\nYour previous arrangement was rejected: {feedback}. Fix exactly that."
     return llm.complete(prompt, schema=ARRANGE_SCHEMA, max_tokens=2500)["slides"]
@@ -156,12 +163,14 @@ def fallback_arrangement(title: str, image_paths: list[str], text: dict[str, str
     return slides
 
 
-def arrange(title: str, image_paths: list[str], text: dict[str, str], log=print) -> list[dict]:
-    plan = arrange_call(title, image_paths, text)
+def arrange(title: str, image_paths: list[str], text: dict[str, str],
+            hint: str = "", log=print) -> list[dict]:
+    plan = arrange_call(title, image_paths, text, hint=hint)
     problems = validate_arrangement(plan, image_paths)
     if problems:
         log(f"  arrange: retrying ({'; '.join(problems[:3])})")
-        plan = arrange_call(title, image_paths, text, feedback="; ".join(problems[:5]))
+        plan = arrange_call(title, image_paths, text,
+                            feedback="; ".join(problems[:5]), hint=hint)
         problems = validate_arrangement(plan, image_paths)
     if problems:
         log(f"  arrange: fallback layout ({'; '.join(problems[:3])})")

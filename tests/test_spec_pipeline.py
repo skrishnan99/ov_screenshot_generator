@@ -41,8 +41,15 @@ def main() -> int:
         calls["resolve"] += 1
         return canned_resolver(reqs, material)
 
-    def stub_arrange(title, image_paths, text, feedback=""):
+    def stub_arrange(title, image_paths, text, feedback="", hint=""):
         calls["arrange"] += 1
+        if len(image_paths) == 2:
+            # per-side captions must survive into the deck (a real build
+            # dropped them: the emitter passed only `caption`)
+            return [{"layout": "two_up", "title": title, "images": list(image_paths),
+                     "text": {"caption": text.get("text", "")[:80],
+                              "left_caption": "LC-CARRIED",
+                              "right_caption": "RC-CARRIED"}}]
         slides = []
         for p in image_paths:
             slides.append({"layout": "figure", "title": title, "images": [p],
@@ -73,11 +80,18 @@ def main() -> int:
                 from pptx import Presentation
 
                 pr = Presentation(str(deck_path))
-                # 2 models: title, problem, seen_whole, imaging, aligner,
-                # rois x2, setup x2, evidence x2 (arranged: >=1 slide each),
-                # logic, library skeleton, closing x5  => >= 18
-                if len(pr.slides) < 18:
+                # 2 trained models (Edge Check excluded): title,
+                # results_overview, imaging (1), rois (2 holes -> one two_up),
+                # training x2 (2 imgs -> one two_up each), results skeleton
+                # x2, logic, closing x5  => 14 with this arranger
+                if len(pr.slides) < 14:
                     failures.append(f"only {len(pr.slides)} slides in the deck")
+                all_text = "\n".join(
+                    sh.text_frame.text for sl in pr.slides for sh in sl.shapes
+                    if sh.has_text_frame)
+                for marker in ("LC-CARRIED", "RC-CARRIED"):
+                    if marker not in all_text:
+                        failures.append(f"two_up per-side caption {marker} lost")
                 kw = pr.core_properties.keywords or ""
                 if "ovdeck:template-slides=" not in kw:
                     failures.append("carried-slide stamp missing (audit exemption broken)")
@@ -100,15 +114,49 @@ def main() -> int:
                 failures.append("unresolved {step} placeholder reached the plan")
 
             # ---- matching audit present, optional absence silent ----
-            ev = [r for r in plan["slides"] if r["origin"] == "model_evidence"]
-            if not ev:
-                failures.append("tier-3 evidence slides missing from plan")
+            ev = [r for r in plan["slides"] if r["origin"] == "model_block.training"]
+            if len(ev) != 2:
+                failures.append(f"per-model training slides in plan: {len(ev)}, want 2")
             for rec in ev:
                 for img in rec["images"]:
                     if img["optional"] and img["path"] is None:
                         pass  # silently absent — exactly right
             if "matching" not in plan or not plan["matching"]:
                 failures.append("matching report missing from plan")
+
+            # ---- the new-flow guarantees, end to end ----
+            ids = [r["id"] for r in plan["slides"]]
+            # a model's results skeleton sits right after its training slide
+            for a, b in (("training_model-s", "results_seg_model-s"),
+                         ("training_horn-quality", "results_cls_horn-quality")):
+                if b not in ids or a not in ids or ids.index(b) != ids.index(a) + 1:
+                    failures.append(f"{b} not adjacent after {a}: {ids}")
+            if any("edge-check" in i for i in ids):
+                failures.append("never-trained model reached the deck")
+            # combined-ROI slide matched both trained models' region screens
+            rois = next((r for r in plan["slides"] if r["id"] == "rois"), None)
+            if rois is None:
+                failures.append("rois slide missing from plan")
+            else:
+                paths = [i["path"] for i in rois["images"]]
+                if sorted(p for p in paths if p) != [
+                        "deliverables/screenshots/04_roi_horn-quality.png",
+                        "deliverables/screenshots/04_roi_model-s.png"]:
+                    failures.append(f"rois holes matched {paths}")
+            # results_overview got the native raw + overlay pair
+            ov = next((r for r in plan["slides"] if r["id"] == "results_overview"), None)
+            if ov is None:
+                failures.append("results_overview missing from plan")
+            else:
+                paths = [i["path"] for i in ov["images"]]
+                if paths != ["deliverables/images/12_library_raw.jpg",
+                             "deliverables/images/12_library_composite.png"]:
+                    failures.append(f"results_overview matched {paths}")
+            # skeleton tokens resolved (raw values, em dash allowed)
+            seg = next((r for r in plan["slides"] if r["id"] == "results_seg_model-s"), None)
+            if seg is None or set(seg.get("tokens", {})) != {"mean_iou", "train_imgs",
+                                                            "deployment_time"}:
+                failures.append(f"segmenter skeleton tokens wrong: {seg and seg.get('tokens')}")
 
             # ---- a required hole that can't match skips the slide, recorded ----
             spec = ds.load_spec()

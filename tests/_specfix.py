@@ -17,6 +17,9 @@ for p in (str(REPO), str(SCRIPTS)):
 MODELS = [
     {"name": "Model S", "type": "segmentation", "slug": "model-s"},
     {"name": "Horn Quality", "type": "classification", "slug": "horn-quality"},
+    # Never trained: ROIs exist, but the trained filter must exclude it from
+    # the combined-ROI slide and the per-model blocks.
+    {"name": "Edge Check", "type": "segmentation", "slug": "edge-check"},
 ]
 
 SCREENSHOTS = {
@@ -28,6 +31,8 @@ SCREENSHOTS = {
                           "interest drawn across the part surface.",
     "04_roi_horn-quality.png": "The Inspection Setup screen with Horn Quality selected; regions "
                                "over the horn end of the part.",
+    "04_roi_edge-check.png": "The Inspection Setup screen with Edge Check selected; two regions "
+                             "along the edge of the part.",
     "05_segmentation.png": "The Segmentation block page showing Model S with a capture loaded.",
     "07_classification.png": "The Classification block page showing Horn Quality with a capture.",
     "06_view_model-s.png": "Model S's labelled-regions view: a grid of labelled ROI crops with "
@@ -47,6 +52,10 @@ FACTS = [
     {"subject": "recipe", "property": "trigger_mode", "value": "Manual HMI Trigger", "source": "02"},
     {"subject": "recipe", "property": "resolution", "value": "3840x2160", "source": "02"},
     {"subject": "model: Model S", "property": "class_count", "value": "3", "source": "05"},
+    # The Train screen's per-model trained signal: a date, or "Never trained".
+    {"subject": "model: Model S", "property": "last_trained", "value": "8/3/2026 12:32:22 PM", "source": "05"},
+    {"subject": "model: Horn Quality", "property": "last_trained", "value": "7/28/2026 9:14:03 AM", "source": "07"},
+    {"subject": "model: Edge Check", "property": "last_trained", "value": "Never trained", "source": "05"},
 ]
 
 
