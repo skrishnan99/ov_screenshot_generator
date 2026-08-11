@@ -924,11 +924,13 @@ class Deck:
         for i in issues:
             print(i)
         if errors and self.strict:
-            raise LayoutError(
+            err = LayoutError(
                 f"{len(errors)} layout/brand error(s); deck not written. "
                 "Fix the content or pick a layout with more room — never nudge "
                 "coordinates by hand."
             )
+            err.issues = errors  # the emit retry feeds these to the arranger
+            raise err
         idx = getattr(self, "_template_indices", [])
         if idx:
             # Self-describing: the audit reads this instead of guessing which

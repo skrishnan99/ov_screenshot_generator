@@ -164,8 +164,11 @@ def fallback_arrangement(title: str, image_paths: list[str], text: dict[str, str
 
 
 def arrange(title: str, image_paths: list[str], text: dict[str, str],
-            hint: str = "", log=print) -> list[dict]:
-    plan = arrange_call(title, image_paths, text, hint=hint)
+            hint: str = "", feedback: str = "", log=print) -> list[dict]:
+    """`feedback` carries build-level pressure into the FIRST call — e.g.
+    the save gate's overflow issues from a rejected emit, so the retry
+    build picks roomier arrangements instead of redrawing blind."""
+    plan = arrange_call(title, image_paths, text, feedback=feedback, hint=hint)
     problems = validate_arrangement(plan, image_paths)
     if problems:
         log(f"  arrange: retrying ({'; '.join(problems[:3])})")

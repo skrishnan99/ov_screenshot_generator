@@ -226,7 +226,7 @@ def compile_deck(
     # only the tier-3/4 layouts redraw.
     from ovdeck import Deck, LayoutError
 
-    def _emit_once():
+    def _emit_once(gate_feedback: str = ""):
         d = Deck(str(out_path))
         records: list[dict] = []
         emit_skips: list[dict] = []
@@ -272,7 +272,8 @@ def compile_deck(
                     })
                     continue
                 planned = arrange_mod.arrange(job.title or job.id, rel_images, text,
-                                              hint=job.hint, log=log)
+                                              hint=job.hint, feedback=gate_feedback,
+                                              log=log)
                 rec["arranged"] = planned
                 _emit_arranged(d, planned, run_dir)
             records.append(rec)
@@ -281,10 +282,20 @@ def compile_deck(
     try:
         records, emit_skips, saved = _emit_once()
     except LayoutError as e:
-        log(f"  emit: layout gate rejected the build ({e}); "
-            f"re-emitting once with fresh arrangements")
-        plan["emit_retried"] = str(e)
-        records, emit_skips, saved = _emit_once()
+        # Tell the retry WHAT failed: a deterministic overflow (fixed
+        # content too tall for the chosen layout) redraws identically when
+        # the arranger is blind, but with the gate's issues in hand it can
+        # pick a roomier layout or split across slides.
+        issues = "; ".join(str(i) for i in getattr(e, "issues", [])) or str(e)
+        log(f"  emit: layout gate rejected the build ({issues}); "
+            f"re-emitting with the issues fed to the arranger")
+        plan["emit_retried"] = issues
+        records, emit_skips, saved = _emit_once(
+            "the previously built deck FAILED the overflow gate on: "
+            + issues[:500]
+            + ". Prefer arrangements with more text room — statement or rows "
+              "layouts, or the content split across two slides."
+        )
 
     plan["slides"].extend(records)
     plan["skipped"].extend(emit_skips)

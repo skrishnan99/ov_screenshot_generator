@@ -12,10 +12,9 @@
 #
 # Skeleton fill notes:
 # - recipe_title_* keep their standing hero photo (no image passed).
-# - concise results skeletons are chosen by TOKEN CONTENT: classification ->
-#   concise_results_classifier (train_acc), segmentation ->
-#   concise_results_segmenter (mean_iou). On a stat card an em dash is the
-#   designed no-data mark, so their tokens resolve "—" when unstated.
+# - ONE concise results card per deck (concise_results_classifier), after
+#   all model training slides. On a stat card an em dash is the designed
+#   no-data mark, so unstated values resolve "—".
 
 spec_version: 1
 
@@ -122,90 +121,63 @@ slides:
           covers and how the regions divide the work. 2-3 sentences.
         max_chars: 300
 
-  # -- 6. per trained model: training slide, then its concise results card.
-  - id: model_block
+  # -- 6. one training slide per trained model.
+  - id: training
     repeat: models
     where: {trained: true}
-    slides:
-      - id: training
-        tier: 3
-        step: true
-        title: "Step {step}: Training — {model.name} ({model.type_title})"
-        hint: >
-          One split slide, like the house setup templates: the block page
-          on the left at about 55% width, the right-hand column carrying
-          the setup/training summary with the why-this-approach rationale
-          beneath it.
-        images:
-          # The TYPE'S BLOCK PAGE, not the Train screen's dialogs: it shows
-          # an example annotated training image on the part with the model's
-          # classes beside it — the screen a customer can actually read.
-          - expects: >
-              The {model.type} Block page with {model.name} shown — an
-              example annotated training image of the part in the viewer,
-              with the model's classes listed beside it. Not the Train
-              Models screen, not a settings dialog, not an ROI gallery.
-        tokens:
-          text:
-            llm: >
-              How {model.name} was set up and trained, in plain language:
-              what it decides (classes / defect classes), and the training
-              choices visible in the material. 2-4 short lines.
-            shape: lines
-            max_chars: 280
-          # The WHY, not just the what: the reader is deciding whether this
-          # approach would work on their line.
-          rationale:
-            llm: >
-              Why this approach makes sense for this inspection, in 1-2
-              plain sentences: what about the part, its defect modes or the
-              decision needed makes a {model.type} model the right tool for
-              what {model.name} checks. Ground every claim in the material —
-              the regions it covers, the classes it separates, the kind of
-              judgment the line needs — never generic sales language.
-            max_chars: 260
+    tier: 3
+    step: true
+    title: "Step {step}: Training — {model.name} ({model.type_title})"
+    hint: >
+      One split slide, like the house setup templates: the block page
+      on the left at about 55% width, the right-hand column carrying
+      the setup/training summary with the why-this-approach rationale
+      beneath it.
+    images:
+      # The TYPE'S BLOCK PAGE, not the Train screen's dialogs: it shows
+      # an example annotated training image on the part with the model's
+      # classes beside it — the screen a customer can actually read.
+      - expects: >
+          The {model.type} Block page with {model.name} shown — an
+          example annotated training image of the part in the viewer,
+          with the model's classes listed beside it. Not the Train
+          Models screen, not a settings dialog, not an ROI gallery.
+    tokens:
+      text:
+        llm: >
+          How {model.name} was set up and trained, in plain language:
+          what it decides (classes / defect classes), and the training
+          choices visible in the material. 2-4 short lines.
+        shape: lines
+        max_chars: 280
+      # The WHY, not just the what: the reader is deciding whether this
+      # approach would work on their line.
+      rationale:
+        llm: >
+          Why this approach makes sense for this inspection, in 1-2
+          plain sentences: what about the part, its defect modes or the
+          decision needed makes a {model.type} model the right tool for
+          what {model.name} checks. Ground every claim in the material —
+          the regions it covers, the classes it separates, the kind of
+          judgment the line needs — never generic sales language.
+        max_chars: 220
 
-      - id: results_cls
-        when_model: {type: classification}
-        skeleton: concise_results_classifier
-        tokens:
-          train_acc:
-            llm: >
-              {model.name}'s training accuracy as a short value, e.g.
-              "100%". "—" if not stated.
-            max_chars: 20
-          train_imgs:
-            llm: >
-              Number of training images used by {model.name}, as a short
-              value like "83". "—" if not stated.
-            max_chars: 20
-          deployment_time:
-            llm: >
-              Deployment/setup time ONLY if the engineer's notes explicitly
-              state it, formatted like "3 days". Otherwise exactly "—".
-            max_chars: 20
+  # -- 7. ONE concise results card for the whole recipe, after every
+  # model's training slide. train_acc is pinned to "100%" by design;
+  # train_imgs is the LARGEST training-image count any model used,
+  # derived deterministically in build_context (em dash when unstated).
+  - id: results
+    skeleton: concise_results_classifier
+    tokens:
+      train_acc: "100%"
+      train_imgs: "{models.max_train_images}"
+      deployment_time:
+        llm: >
+          Deployment/setup time ONLY if the engineer's notes explicitly
+          state it, formatted like "3 days". Otherwise exactly "—".
+        max_chars: 20
 
-      - id: results_seg
-        when_model: {type: segmentation}
-        skeleton: concise_results_segmenter
-        tokens:
-          mean_iou:
-            llm: >
-              {model.name}'s mean IoU if stated; otherwise its final
-              training loss as e.g. "0.028 loss". "—" if neither is stated.
-            max_chars: 24
-          train_imgs:
-            llm: >
-              Number of training images used by {model.name}, as a short
-              value like "83". "—" if not stated.
-            max_chars: 20
-          deployment_time:
-            llm: >
-              Deployment/setup time ONLY if the engineer's notes explicitly
-              state it, formatted like "3 days". Otherwise exactly "—".
-            max_chars: 20
-
-  # -- 7. IO logic as a diagram. The diagram is THIS flow's actual decision
+  # -- 8. IO logic as a diagram. The diagram is THIS flow's actual decision
   # path, not a generic pipeline; the caption says what the setup achieves
   # and why it is built that way.
   - id: logic
@@ -237,7 +209,7 @@ slides:
           notes actually state it. 2-3 plain sentences.
         max_chars: 300
 
-  # -- 8. the library: on-camera storage of training + production data,
+  # -- 9. the library: on-camera storage of training + production data,
   # v1's fixed-layout skeleton with this run's Library screen in its hole.
   - id: library
     skeleton: library
@@ -247,5 +219,5 @@ slides:
           of stored captures (thumbnails or a selected capture) with
           filters and capture metadata.
 
-  # -- 9. the standing closing run, verbatim, template order.
+  # -- 10. the standing closing run, verbatim, template order.
   - closing: default

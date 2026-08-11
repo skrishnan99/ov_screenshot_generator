@@ -114,7 +114,7 @@ def main() -> int:
                 failures.append("unresolved {step} placeholder reached the plan")
 
             # ---- matching audit present, optional absence silent ----
-            ev = [r for r in plan["slides"] if r["origin"] == "model_block.training"]
+            ev = [r for r in plan["slides"] if r["origin"] == "training"]
             if len(ev) != 2:
                 failures.append(f"per-model training slides in plan: {len(ev)}, want 2")
             for rec in ev:
@@ -126,11 +126,16 @@ def main() -> int:
 
             # ---- the new-flow guarantees, end to end ----
             ids = [r["id"] for r in plan["slides"]]
-            # a model's results skeleton sits right after its training slide
-            for a, b in (("training_model-s", "results_seg_model-s"),
-                         ("training_horn-quality", "results_cls_horn-quality")):
-                if b not in ids or a not in ids or ids.index(b) != ids.index(a) + 1:
-                    failures.append(f"{b} not adjacent after {a}: {ids}")
+            # ONE results card, after every training slide, before logic
+            if ids.count("results") != 1:
+                failures.append(f"expected exactly one results card: {ids}")
+            else:
+                ri = ids.index("results")
+                for t in ("training_model-s", "training_horn-quality"):
+                    if t not in ids or ids.index(t) > ri:
+                        failures.append(f"{t} not before the results card: {ids}")
+                if ids.index("logic") < ri:
+                    failures.append(f"results card after logic: {ids}")
             if any("edge-check" in i for i in ids):
                 failures.append("never-trained model reached the deck")
             # combined-ROI slide matched both trained models' region screens
@@ -152,11 +157,14 @@ def main() -> int:
                 if paths != ["deliverables/images/12_library_raw.jpg",
                              "deliverables/images/12_library_composite.png"]:
                     failures.append(f"results_overview matched {paths}")
-            # skeleton tokens resolved (raw values, em dash allowed)
-            seg = next((r for r in plan["slides"] if r["id"] == "results_seg_model-s"), None)
-            if seg is None or set(seg.get("tokens", {})) != {"mean_iou", "train_imgs",
-                                                            "deployment_time"}:
-                failures.append(f"segmenter skeleton tokens wrong: {seg and seg.get('tokens')}")
+            # results card: literal tokens survive to the plan verbatim
+            res = next((r for r in plan["slides"] if r["id"] == "results"), None)
+            if res is None:
+                failures.append("results card missing from plan")
+            else:
+                toks = res.get("tokens", {})
+                if toks.get("train_acc") != "100%" or toks.get("train_imgs") != "83":
+                    failures.append(f"results card tokens wrong: {toks}")
             # the library section sits between logic and the closing run
             lib = next((r for r in plan["slides"] if r["id"] == "library"), None)
             if lib is None:

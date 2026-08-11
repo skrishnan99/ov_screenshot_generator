@@ -40,6 +40,7 @@ def main() -> int:
             ("models.count", 3),
             ("models.segmentation", 2),
             ("models.classification", 1),
+            ("models.max_train_images", "83"),
             ("recipe.name", "Widget Inspection"),
         ]:
             got, ok = ctx.get(key)
@@ -59,7 +60,8 @@ def main() -> int:
         meta_p = run / "data" / "meta.json"
         original_meta = meta_p.read_text()
         meta = _json.loads(original_meta)
-        meta["facts"] = [f for f in meta["facts"] if f["property"] != "last_trained"]
+        meta["facts"] = [f for f in meta["facts"]
+                         if f["property"] not in ("last_trained", "training_images")]
         meta_p.write_text(_json.dumps(meta))
         ctx_ns = ds.build_context(run)
         if not all(m["trained"] for m in ctx_ns.values["models"]):
@@ -171,8 +173,8 @@ def main() -> int:
         # type-matched results skeleton adjacent, logic, closing run
         want_order = [
             "title_ov80i", "results_overview", "imaging", "rois",
-            "training_model-s", "results_seg_model-s",
-            "training_horn-quality", "results_cls_horn-quality",
+            "training_model-s", "training_horn-quality",
+            "results",
             "logic", "library",
             "closing_capabilities", "closing_defect_generator",
             "closing_integration", "closing_team", "closing_thank_you",
@@ -193,16 +195,14 @@ def main() -> int:
             failures.append(f"rois foreach fan-out wrong: {rois_expects}")
         if not all(i.get("optional") for i in rois.images):
             failures.append("rois foreach holes must be optional")
-        # results skeletons picked by model type, tokens complete
-        seg = next(j for j in jobs if j.id == "results_seg_model-s")
-        if seg.skeleton != "concise_results_segmenter" or \
-                set(seg.tokens) != {"mean_iou", "train_imgs", "deployment_time"}:
-            failures.append(f"segmentation results skeleton wrong: {seg.skeleton} {set(seg.tokens)}")
-        cls = next(j for j in jobs if j.id == "results_cls_horn-quality")
-        if cls.skeleton != "concise_results_classifier" or "train_acc" not in cls.tokens:
-            failures.append(f"classification results skeleton wrong: {cls.skeleton}")
-        if "Horn Quality" not in cls.tokens["train_acc"]["llm"]:
-            failures.append("model name not interpolated into results brief")
+        # ONE recipe-level results card: accuracy pinned, images = the max
+        res = next(j for j in jobs if j.id == "results")
+        if res.skeleton != "concise_results_classifier":
+            failures.append(f"results card skeleton wrong: {res.skeleton}")
+        if res.tokens.get("train_acc") != "100%":
+            failures.append(f"train_acc not pinned to 100%: {res.tokens.get('train_acc')!r}")
+        if res.tokens.get("train_imgs") != "83":
+            failures.append(f"train_imgs is not the roster max: {res.tokens.get('train_imgs')!r}")
         # training titles carry the model's name AND its type
         tr = next(j for j in jobs if j.id == "training_model-s")
         if tr.title != "Step {step}: Training — Model S (Segmentation)":

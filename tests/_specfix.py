@@ -56,6 +56,9 @@ FACTS = [
     {"subject": "model: Model S", "property": "last_trained", "value": "8/3/2026 12:32:22 PM", "source": "05"},
     {"subject": "model: Horn Quality", "property": "last_trained", "value": "7/28/2026 9:14:03 AM", "source": "07"},
     {"subject": "model: Edge Check", "property": "last_trained", "value": "Never trained", "source": "05"},
+    # the recipe-level results card takes the MAX of these
+    {"subject": "model: Model S", "property": "training_images", "value": "83", "source": "05"},
+    {"subject": "model: Horn Quality", "property": "training_images", "value": "40", "source": "07"},
 ]
 
 

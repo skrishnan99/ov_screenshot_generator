@@ -70,6 +70,7 @@ CONTEXT_KEYS = {
     "camera.variant", "camera.model", "camera.title", "camera.ui_version",
     "recipe.name", "date",
     "models.count", "models.classification", "models.segmentation",
+    "models.max_train_images",
     "aligner.skipped", "trigger.manual",
 }
 
@@ -256,6 +257,19 @@ def build_context(run_dir: Path) -> Context:
     v["models"] = models  # for repeat expansion, not for `when`
     v["models.trained_signal"] = any_signal or not models
     v["models.count"] = len(models)
+    # The recipe-level results card shows ONE training-image count: the
+    # largest any model used. Derived deterministically from the
+    # (roster-canonicalized) training_images facts; "—" when no model
+    # states one — always set, so the spec's interpolation never fails.
+    max_imgs = None
+    for m in models:
+        subj = f"model: {m.get('name', '')}".lower()
+        for (sj, pr), val in facts.items():
+            if sj.lower() == subj and "training_image" in pr.lower():
+                for tok in re.findall(r"\d+", val.replace(",", "")):
+                    n = int(tok)
+                    max_imgs = n if max_imgs is None else max(max_imgs, n)
+    v["models.max_train_images"] = str(max_imgs) if max_imgs is not None else "—"
     for t in ("classification", "segmentation"):
         v[f"models.{t}"] = sum(1 for m in models if m.get("type") == t)
 
