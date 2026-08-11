@@ -130,7 +130,7 @@ slides:
       - id: training
         tier: 3
         step: true
-        title: "Step {step}: Training — {model.name}"
+        title: "Step {step}: Training — {model.name} ({model.type_title})"
         hint: >
           One split slide, like the house setup templates: the block page
           on the left at about 55% width, the setup/training summary in

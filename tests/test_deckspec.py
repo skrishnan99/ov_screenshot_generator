@@ -157,6 +157,10 @@ def main() -> int:
             failures.append(f"classification results skeleton wrong: {cls.skeleton}")
         if "Horn Quality" not in cls.tokens["train_acc"]["llm"]:
             failures.append("model name not interpolated into results brief")
+        # training titles carry the model's name AND its type
+        tr = next(j for j in jobs if j.id == "training_model-s")
+        if tr.title != "Step {step}: Training — Model S (Segmentation)":
+            failures.append(f"training title wrong: {tr.title!r}")
 
         # determinism: identical expansions
         jobs2, _ = ds.expand(spec, ctx)
