@@ -69,6 +69,52 @@ def main() -> int:
         meta_p.write_text(original_meta)  # restore for the tests below
         ctx = ds.build_context(run)
 
+        # ---- toggle eval: fast path for clear tokens, Haiku for the rest ----
+        real_eval = ds.eval_toggle_call
+        calls = []
+
+        def no_call(setting, obs):
+            raise AssertionError("clear token must not reach the model")
+
+        ds.eval_toggle_call = no_call
+        try:
+            got, ok = ds.build_context(run).get("aligner.skipped")
+            if not ok or got is not True:
+                failures.append("fast-path 'on' did not resolve aligner.skipped")
+        finally:
+            ds.eval_toggle_call = real_eval
+        # the Traton phrasing: verbatim value needs the eval, verdict is used
+        meta = _json.loads(original_meta)
+        for f in meta["facts"]:
+            if f["property"] == "skip_aligner":
+                f["value"] = "enabled (toggle ON)"
+        meta["facts"].append({"subject": "recipe", "property": "skip_aligner_banner",
+                              "value": "Skip Aligner is Enabled", "source": "05"})
+        meta_p.write_text(_json.dumps(meta))
+        ds.eval_toggle_call = lambda s, o: (calls.append((s, list(o))), "on")[1]
+        try:
+            got, ok = ds.build_context(run).get("aligner.skipped")
+            if not ok or got is not True:
+                failures.append(f"eval verdict not used: {got!r} (resolved={ok})")
+            if not calls or "Skip Aligner" not in calls[0][0] \
+                    or not any("enabled (toggle ON)" in x for x in calls[0][1]):
+                failures.append(f"eval not fed the observations: {calls}")
+            # unknown -> the key stays unresolved, so conditions record it
+            ds.eval_toggle_call = lambda s, o: "unknown"
+            ctx_u = ds.build_context(run)
+            if "aligner.skipped" in ctx_u.values or "aligner.skipped" not in ctx_u.unresolved:
+                failures.append("unknown toggle state was not left unresolved")
+            # an eval crash degrades to unknown, never to a guess
+            def boom(s, o):
+                raise RuntimeError("api down")
+            ds.eval_toggle_call = boom
+            if "aligner.skipped" in ds.build_context(run).values:
+                failures.append("eval failure produced a guessed toggle state")
+        finally:
+            ds.eval_toggle_call = real_eval
+            meta_p.write_text(original_meta)
+        ctx = ds.build_context(run)
+
         # ---- schema rejections, each a load-time error ----
         bad_specs = [
             ("unknown layout", [{"id": "x", "layout": "hero"}]),

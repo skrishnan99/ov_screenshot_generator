@@ -10,8 +10,14 @@ order drift, sections silently collapsed). Here structure is DATA:
     build_context()  -> Context        (normalized run facts for conditions)
     expand()         -> [SlideJob]     (repeats, conditions, steps, interp)
 
-Everything in this module is pure and deterministic — no model calls. The
-model only ever touches a deck through content.py (token text), matching.py
+Everything in this module is pure and deterministic, with ONE deliberate
+exception: build_context may make a single small Haiku call to read a
+toggle's state out of messy verbatim UI values (eval_toggle_call — a Traton
+run recorded skip_aligner as "enabled (toggle ON)" and exact-token parsing
+shipped an alignment slide for a skipped aligner). Unambiguous single-token
+values never reach the model, and an unreadable state resolves to
+"unknown" -> the context key stays unresolved and is RECORDED. Otherwise
+the model only touches a deck through content.py (token text), matching.py
 (image assignment) and arrange.py (tier-3/4 layout), each behind its own
 validation.
 
@@ -93,6 +99,70 @@ class Context:
         if path in self.values:
             return self.values[path], True
         return None, False
+
+
+# Single-token toggle values that need no model to read. Anything outside
+# this table ("enabled (toggle ON)", "Skip Aligner is Enabled") goes to the
+# Haiku eval below — the extractor records UI values VERBATIM by design, so
+# their phrasing is open-ended.
+_TOGGLE_CLEAR = {
+    "on": True, "enabled": True, "checked": True, "true": True, "yes": True,
+    "off": False, "disabled": False, "unchecked": False, "false": False, "no": False,
+}
+
+TOGGLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "state": {"type": "string", "enum": ["on", "off", "unknown"]},
+        "reason": {"type": "string"},
+    },
+    "required": ["state", "reason"],
+    "additionalProperties": False,
+}
+
+TOGGLE_PROMPT = """Below are observations recorded VERBATIM from an industrial camera's web UI, \
+all concerning the setting "{setting}". They may mix the toggle's own value, banner text, and \
+help/description text that merely explains what the setting does.
+
+Decide whether the setting is currently turned ON or OFF for this recipe.
+- Judge the actual state only; ignore text that explains the setting without stating its state.
+- If the observations genuinely do not reveal the state, answer "unknown". Never guess.
+
+Observations:
+{observations}"""
+
+
+def eval_toggle_call(setting: str, observations: list[str]) -> str:
+    """'on' | 'off' | 'unknown' from verbatim UI observations — one small
+    text-only Haiku call. Isolated so tests stub it."""
+    from core import llm
+
+    out = llm.complete(
+        TOGGLE_PROMPT.format(
+            setting=setting,
+            observations="\n".join(f"- {o}" for o in observations),
+        ),
+        schema=TOGGLE_SCHEMA,
+        max_tokens=300,
+        model=llm.HAIKU,
+    )
+    return out.get("state", "unknown")
+
+
+def _toggle_state(setting: str, primary: str | None, observations: list[str]) -> bool | None:
+    """Resolve a toggle: the primary fact's bare token when unambiguous,
+    otherwise the Haiku eval over every observation. None means unknown —
+    the caller leaves the context key unresolved (recorded, never guessed)."""
+    token = (primary or "").strip().lower()
+    if token in _TOGGLE_CLEAR:
+        return _TOGGLE_CLEAR[token]
+    if not observations:
+        return None
+    try:
+        state = eval_toggle_call(setting, observations)
+    except Exception:
+        return None
+    return {"on": True, "off": False}.get(state)
 
 
 def _camera_model(variant: str) -> str:
@@ -189,9 +259,11 @@ def build_context(run_dir: Path) -> Context:
     for t in ("classification", "segmentation"):
         v[f"models.{t}"] = sum(1 for m in models if m.get("type") == t)
 
-    skip = fact("recipe", "skip_aligner")
-    if skip is not None:
-        v["aligner.skipped"] = skip.strip().lower() in ("on", "true", "yes", "checked", "enabled")
+    skip_obs = [f"{pr} = {val}" for (sj, pr), val in facts.items()
+                if "skip_aligner" in pr.lower()]
+    skipped = _toggle_state("Skip Aligner", fact("recipe", "skip_aligner"), skip_obs)
+    if skipped is not None:
+        v["aligner.skipped"] = skipped
     trig = fact("recipe", "trigger_mode")
     if trig is not None:
         v["trigger.manual"] = "manual" in trig.lower()
