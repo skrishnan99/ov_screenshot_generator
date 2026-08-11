@@ -132,15 +132,18 @@ slides:
         step: true
         title: "Step {step}: Training — {model.name}"
         hint: >
-          Prefer a single split or figure: the model's training screen with
-          the setup/training summary beside or beneath it.
+          One split slide, like the house setup templates: the block page
+          on the left at about 55% width, the setup/training summary in
+          the right-hand column.
         images:
+          # The TYPE'S BLOCK PAGE, not the Train screen's dialogs: it shows
+          # an example annotated training image on the part with the model's
+          # classes beside it — the screen a customer can actually read.
           - expects: >
-              {model.name}'s labelled-regions view — the grid of labelled
-              ROI crops with class labels.
-            optional: true
-          - expects: "{model.name}'s training settings dialog."
-            optional: true
+              The {model.type} Block page with {model.name} shown — an
+              example annotated training image of the part in the viewer,
+              with the model's classes listed beside it. Not the Train
+              Models screen, not a settings dialog, not an ROI gallery.
         tokens:
           text:
             llm: >

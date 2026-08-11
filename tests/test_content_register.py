@@ -91,8 +91,8 @@ def main() -> int:
                 failures.append("model slide scope lacks its model")
             if "Horn Quality" in cap.scope:
                 failures.append("Model S scope leaked Horn Quality material")
-            if "labelled-regions view" not in cap.scope:
-                failures.append("scope lacks the MATCHED image's description")
+            if "Segmentation block page" not in cap.scope:
+                failures.append("scope lacks the MATCHED block page's description")
         # the combined-ROI slide is model-neutral: its text sees BOTH trained
         # models' matched region screens, and not the untrained model's
         rois = by_id.get("rois.text")
