@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Tier 3/4: adaptive layout as validated DATA, never generated code.
+
+Tier 3 fixes WHAT (the spec's content: matched images + resolved text) and
+adapts HOW: one image with text reads differently from six images with text,
+and choosing the arrangement is genuinely a judgment call. Tier 4 also
+generates the content, from a brief.
+
+v1's main reliability leak was the model writing Python build scripts. Here
+the arranger returns a small JSON plan — a list of slides, each naming an
+ovdeck layout and its args — which code validates structurally and code
+executes. The model never positions anything; ovdeck still owns geometry,
+and its save() gates plus brandcheck remain the backstop.
+
+Failure ladder (the v1 fallback pattern, kept because it works): validate ->
+one retry with the validator's feedback -> deterministic fallback arrangement
+that is plain but correct. A boring slide ships; a broken one never does.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+SKILL = Path(__file__).resolve().parent.parent
+PLUGIN_ROOT = SKILL.parent.parent
+if str(PLUGIN_ROOT) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_ROOT))
+
+# What an arrangement may use, and the structural limits code enforces.
+# (Real overflow is measured by ovdeck; these catch shape errors early.)
+ARRANGEABLE = {
+    "figure": {"images": 1, "text": {"caption"}},
+    "split": {"images": 1, "text": {"card_title", "para", "bullets"}},
+    "two_up": {"images": 2, "text": {"caption", "left_caption", "right_caption"}},
+    "rows": {"images": 0, "text": {"entries", "intro"}},
+    "statement": {"images": 0, "text": {"intro", "card_title", "bullets"}},
+}
+
+ARRANGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "slides": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "layout": {"type": "string", "enum": sorted(ARRANGEABLE)},
+                    "title": {"type": "string"},
+                    "images": {"type": "array", "items": {"type": "string"}},
+                    "text": {"type": "object", "additionalProperties": {"type": "string"}},
+                },
+                "required": ["layout", "title", "images", "text"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["slides"],
+    "additionalProperties": False,
+}
+
+ARRANGE_PROMPT = """Arrange fixed content onto 1-3 slides of a branded report deck.
+
+The content is FIXED — every image listed must appear exactly once across
+the slides, and the text must be carried (split across slides is fine, but
+nothing dropped, nothing added). Your only decision is the arrangement:
+which layout(s), what goes together, how it reads best.
+
+Available layouts and their text fields:
+- figure: one image + caption. For one strong image.
+- split: one image + card_title/para/bullets. Image left, explanation right.
+- two_up: exactly two images + captions. For before/after or pairs.
+- rows: no image; entries as "label | detail" lines (max 5) + intro.
+- statement: no image; intro + card_title + bullets.
+
+Slide title base: "{title}" — reuse or extend it; a second slide may append
+"(continued)".
+
+IMAGES (use each exactly once, refer by path):
+{images}
+
+TEXT (carry all of it):
+{text}
+
+Return JSON per the schema. Bullets/entries fields take newline-separated
+lines; entries lines are "label | detail"."""
+
+
+class ArrangeError(RuntimeError):
+    pass
+
+
+def arrange_call(title: str, image_paths: list[str], text: dict[str, str], feedback: str = ""):
+    from core import llm
+
+    prompt = ARRANGE_PROMPT.format(
+        title=title,
+        images="\n".join(f"- {p}" for p in image_paths) or "(none)",
+        text="\n".join(f"[{k}]\n{v}" for k, v in text.items()) or "(none)",
+    )
+    if feedback:
+        prompt += f"\n\nYour previous arrangement was rejected: {feedback}. Fix exactly that."
+    return llm.complete(prompt, schema=ARRANGE_SCHEMA, max_tokens=2500)["slides"]
+
+
+def validate_arrangement(slides: list[dict], image_paths: list[str]) -> list[str]:
+    problems = []
+    used: list[str] = []
+    for i, s in enumerate(slides):
+        spec = ARRANGEABLE.get(s.get("layout"))
+        if spec is None:
+            problems.append(f"slide {i}: unknown layout {s.get('layout')!r}")
+            continue
+        if len(s.get("images", [])) != spec["images"]:
+            problems.append(
+                f"slide {i}: {s['layout']} takes {spec['images']} image(s), got {len(s.get('images', []))}"
+            )
+        for p in s.get("images", []):
+            if p not in image_paths:
+                problems.append(f"slide {i}: image {p!r} is not part of this content")
+            used.append(p)
+        for k in s.get("text", {}):
+            if k not in spec["text"]:
+                problems.append(f"slide {i}: {s['layout']} has no text field {k!r}")
+        if s.get("layout") == "rows":
+            entries = [ln for ln in s["text"].get("entries", "").splitlines() if ln.strip()]
+            if not entries or len(entries) > 5 or any("|" not in ln for ln in entries):
+                problems.append(f"slide {i}: rows entries must be 1-5 'label | detail' lines")
+    if sorted(used) != sorted(image_paths):
+        problems.append(f"images used {sorted(used)} != content images {sorted(image_paths)}")
+    return problems
+
+
+def fallback_arrangement(title: str, image_paths: list[str], text: dict[str, str]) -> list[dict]:
+    """Plain but correct: pair images into two_ups, then figures; text rides
+    the first slide as a caption or becomes a statement when there is no
+    image. Deterministic — the same content always falls back the same way."""
+    slides: list[dict] = []
+    body = "\n\n".join(v for v in text.values() if v and v != "—")
+    caption = " ".join(body.split())[:200]
+    imgs = list(image_paths)
+    while len(imgs) >= 2:
+        a, b = imgs[:2]
+        imgs = imgs[2:]
+        slides.append({"layout": "two_up", "title": title, "images": [a, b],
+                       "text": {"caption": caption if not slides else ""}})
+    if imgs:
+        slides.append({"layout": "figure", "title": title, "images": [imgs[0]],
+                       "text": {"caption": caption if not slides else ""}})
+    if not slides:
+        slides.append({"layout": "statement", "title": title, "images": [],
+                       "text": {"intro": caption or "—", "card_title": "Summary",
+                                "bullets": body or "—"}})
+    return slides
+
+
+def arrange(title: str, image_paths: list[str], text: dict[str, str], log=print) -> list[dict]:
+    plan = arrange_call(title, image_paths, text)
+    problems = validate_arrangement(plan, image_paths)
+    if problems:
+        log(f"  arrange: retrying ({'; '.join(problems[:3])})")
+        plan = arrange_call(title, image_paths, text, feedback="; ".join(problems[:5]))
+        problems = validate_arrangement(plan, image_paths)
+    if problems:
+        log(f"  arrange: fallback layout ({'; '.join(problems[:3])})")
+        plan = fallback_arrangement(title, image_paths, text)
+    return plan

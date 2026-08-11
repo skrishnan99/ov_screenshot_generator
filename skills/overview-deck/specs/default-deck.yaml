@@ -1,0 +1,231 @@
+# The default OV camera test report — THE base spec.
+#
+# This file IS the default deck: it compiles verbatim, and it mutates only
+# when the user's request explicitly asks, only in the way the request asks
+# (adapt.py governs that; every change must be justified by a quoted request
+# sentence or the whole adaptation is rejected).
+#
+# Content holes are DESCRIPTIONS, not file paths — matching is semantic
+# (matching.py), so extractor renames and camera variants cannot break this
+# file, and an engineer's photo can win a hole on merit.
+#
+# Slides with `step: true` are numbered contiguously over the slides that
+# SURVIVE conditions/repeats, so "Step {step}:" never skips a number.
+#
+# Structure mirrors references/default-deck.md (the prose commentary);
+# where they disagree, THIS FILE wins.
+
+spec_version: 1
+
+slides:
+  # -- intro: three-part identity. Camera MODEL only — never serial,
+  #    hostname or firmware (content-rules §1b).
+  - id: title
+    layout: title_slide
+    tokens:
+      title: "{camera.title}"
+      subtitle:
+        llm: >
+          The application, in the customer's words — what this recipe
+          inspects, as a short noun phrase ("Surface Defect Segmentation").
+        max_chars: 60
+      meta:
+        - "Recipe: {recipe.name}"
+        - "Date: {date}"
+
+  # -- 1. problem, then solution. Text only; the claim the deck evidences.
+  - id: problem_solution
+    layout: statement
+    tokens:
+      title:
+        llm: "A short title naming the inspection ('Surface Defect Detection')."
+        max_chars: 45
+      intro:
+        llm: >
+          The problem: the part or product being inspected, which defects or
+          conditions are checked, and the production context. 3-4 crisp
+          sentences.
+        max_chars: 250
+      card_title: "How the system solves it"
+      bullets:
+        llm: >
+          How the vision system solves it: the key stages and what each
+          decides, and how it worked out. 4-6 short bullet lines.
+        shape: lines
+        max_chars: 420
+
+  # -- 2. the inspection, seen whole: raw beside overlay.
+  - id: seen_whole
+    layout: two_up
+    title: "What the Camera Sees"
+    images:
+      - expects: >
+          The library capture as imaged — the part photograph at native
+          resolution with NO inspection overlay drawn.
+      - expects: >
+          The same library capture WITH the inspection overlay drawn —
+          regions and marks as the UI shows them.
+    tokens:
+      left_caption: "Captured frame, as imaged"
+      right_caption: "With inspection regions"
+      caption:
+        llm: >
+          One or two lines: what the reader is looking at — the part as
+          captured, and the same capture with the recipe's inspection
+          drawn on it.
+        max_chars: 200
+
+  # -- 3. imaging setup. Notable deliberate settings (HDR, photometric,
+  #    trigger, lens) are the interesting part; no config minutiae.
+  - id: imaging
+    layout: split
+    step: true
+    title: "Step {step}: Image Settings"
+    images:
+      - expects: >
+          The Imaging Setup screen: camera settings panel (exposure, white
+          balance, trigger mode) beside the viewer.
+    tokens:
+      card_title: "Capture conditions"
+      para:
+        llm: >
+          What the capture setup achieves, in plain language — resolution
+          class, trigger mode, and why the conditions give comparable frames.
+          1-2 sentences.
+        max_chars: 170
+      bullets:
+        llm: >
+          The capture settings as short plain-value lines (resolution,
+          trigger, exposure/gain, white balance), plus any notable deliberate
+          choice (HDR, photometric). 3-5 lines.
+        shape: lines
+        max_chars: 200
+
+  # -- 4. alignment. NEVER skipped: when Skip Aligner is on, the slide says
+  #    so and why — the truthful state of the recipe, not a gap.
+  - id: aligner
+    layout: split
+    step: true
+    title: "Step {step}: Alignment"
+    images:
+      - expects: >
+          The Template Image and Alignment screen — template viewer and
+          Skip Aligner / search area controls.
+    tokens:
+      card_title:
+        llm: >
+          "Alignment" if a template is configured, "Alignment skipped" when
+          the aligner is disabled. Two or three words.
+        max_chars: 30
+      para:
+        llm: >
+          How alignment is set up for this part — what it orients against;
+          or, if skipped, that the part presents consistently so no
+          alignment is needed. 1-2 sentences.
+        max_chars: 170
+      bullets:
+        llm: "2-3 short lines on the alignment configuration as it stands."
+        shape: lines
+        max_chars: 160
+
+  # -- 5. inspection regions: ONE ROI SCREENSHOT PER MODEL, never combined.
+  - id: rois
+    repeat: models
+    layout: figure
+    step: true
+    title: "Step {step}: Inspection Regions — {model.name}"
+    images:
+      - expects: >
+          The Inspection Setup screen with {model.name} selected and its
+          regions of interest drawn on the part — where THIS model looks.
+    tokens:
+      caption:
+        llm: >
+          Which regions {model.name} checks and what they cover on the part.
+          1-2 sentences.
+        max_chars: 220
+
+  # -- 6a. per model: what it is and decides.
+  - id: model_setup
+    repeat: models
+    layout: split
+    step: true
+    title: "Step {step}: {model.name}"
+    images:
+      - expects: >
+          The {model.type} block page showing {model.name} — the model's
+          setup screen with a capture in the viewer.
+    tokens:
+      card_title: "{model.name} — {model.type}"
+      para:
+        llm: >
+          What {model.name} decides: for a classifier, what it classifies
+          and its class names; for a segmenter, its defect classes and its
+          pixel-level role. 1-2 sentences.
+        max_chars: 170
+      bullets:
+        llm: >
+          3-4 short lines: classes/regions counts and what the model marks
+          or separates. Plain values from the material only.
+        shape: lines
+        max_chars: 180
+
+  # -- 6b. per model, adaptive: the evidence. Content fixed, layout adapts
+  #    to how many of these artifacts this model actually has (a segmenter
+  #    often has no training report — absent means silently absent).
+  - id: model_evidence
+    repeat: models
+    tier: 3
+    step: true
+    title: "Step {step}: Training — {model.name}"
+    images:
+      - expects: >
+          {model.name}'s labelled-regions view — the grid of labelled ROI
+          crops with class labels.
+        optional: true
+      - expects: "{model.name}'s training report — metrics after training."
+        optional: true
+      - expects: "{model.name}'s training settings dialog."
+        optional: true
+    tokens:
+      text:
+        llm: >
+          {model.name}'s training, as plain-value lines: accuracy or
+          loss/IoU, image counts, per-class counts with class names —
+          exactly the metrics the material shows, nothing else. 3-5 lines.
+        shape: lines
+        max_chars: 320
+
+  # -- 7. IO logic as a diagram. Decision path in plain language;
+  #    thresholds welcome, node/variable names banned.
+  - id: logic
+    layout: flow
+    step: true
+    title: "Step {step}: Inspection Logic"
+    tokens:
+      nodes:
+        llm: >
+          The decision path as 3 stages, each "label | sub" — from
+          inspection result, through the decision rule, to the pass/fail
+          output. Plain language.
+        shape: pairs
+      rule:
+        llm: "The crux of the pass/fail rule as 2-3 short lines."
+        shape: lines
+        max_chars: 180
+      caption:
+        llm: >
+          How a verdict reaches the plant's systems, in plain language.
+          2-3 sentences.
+        max_chars: 240
+
+  # -- 8. library: the skeleton's own slide, this run's screen in its hole.
+  - id: library
+    skeleton: library
+    images:
+      - expects: >
+          The camera's Library page — the capture browser with thumbnails
+          of stored captures and a selected capture's details.
+
+  # -- 9. the standing closing run, verbatim, template order.
+  - closing: default

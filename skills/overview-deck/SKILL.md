@@ -163,7 +163,40 @@ Also read `data/manifest.json` for warnings and substitutions, and
 
 ---
 
-## 3. Plan the deck, then check the plan against the assets
+## 3. Build the deck: compile the spec (v2 path)
+
+**The deck is compiled from a YAML spec — you do not write a build script.**
+The shipped base spec IS the default deck:
+
+```bash
+uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/deckgen.py" \
+  --run runs/<ts> --out out/report.pptx [--notes notes.md] [--photos dir/]
+```
+
+It expands the spec against the run (conditions, one slide per model),
+matches every content hole to an image semantically, resolves all slide copy
+in one register-governed call, arranges tier-3/4 slides, and emits through
+ovdeck's gates. Beside the deck it writes `deck-plan.json` (every slide,
+match and skip, with reasons) and `deck-spec.resolved.yaml` — read the plan
+and relay anything skipped.
+
+**Only when the user's request explicitly deviates from the default deck**,
+pass their literal words: `--request "skip the node-red slide"`. The spec
+then mutates exactly as asked — every change must be justified by a quoted
+request sentence or the whole adaptation is rejected and the default
+compiles — and `spec-diff.json` records what changed. Never pass --request
+for an ordinary "build me a report".
+
+`specs/default-deck.yaml` is the canonical structure;
+`references/default-deck.md` is its commentary. Where they disagree, the
+YAML wins. Then render and LOOK (step 6) — that step survives v2 unchanged.
+
+## 3b. Legacy path: plan by hand (v1)
+
+If deckgen cannot express something the user needs, the v1 path below still
+works — but prefer extending the spec over hand-writing a build script.
+
+## Plan the deck, then check the plan against the assets (v1)
 
 Pick a style first — read `references/example-decks.md`, which describes the two
 bundled reference decks and what each is for:

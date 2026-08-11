@@ -1,4 +1,8 @@
-# The default deck — build this unless told otherwise
+# The default deck — commentary on the canonical spec
+
+> **The canonical structure is `specs/default-deck.yaml`**, compiled by
+> `scripts/deckgen.py`. This document explains the reasoning slide by slide;
+> where prose and YAML disagree, the YAML wins.
 
 **This is the required structure for an OV camera test report.** Follow it
 slide for slide. The only thing that overrides it is an explicit instruction
