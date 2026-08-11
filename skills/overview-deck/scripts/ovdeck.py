@@ -698,8 +698,12 @@ class Deck:
         self._header(sl, st, title, subtitle)
         y = self._top()
         if caption:
+            # 1.0in = four body lines: the spec's what-AND-why caption runs
+            # to ~300 chars, and 0.8in rejected a 0.91in caption twice (the
+            # emit retry can't fix a deterministic overflow). The node stack
+            # re-centres in the remaining region, which still clears it.
             y = self._para(sl, st, self.ML, y, self.CW, caption, size=SZ["body"],
-                           color=TEXT_BODY, spacing=1.22, max_h=0.8,
+                           color=TEXT_BODY, spacing=1.22, max_h=1.0,
                            label="caption") + 0.22
         card_top = 4.72 if cards else BODY_BOTTOM
         region_h = card_top - 0.28 - y

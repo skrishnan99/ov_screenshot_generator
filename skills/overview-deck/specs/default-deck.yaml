@@ -205,7 +205,9 @@ slides:
               state it, formatted like "3 days". Otherwise exactly "—".
             max_chars: 20
 
-  # -- 7. IO logic as a diagram — unchanged from the current deck.
+  # -- 7. IO logic as a diagram. The diagram is THIS flow's actual decision
+  # path, not a generic pipeline; the caption says what the setup achieves
+  # and why it is built that way.
   - id: logic
     layout: flow
     step: true
@@ -213,9 +215,15 @@ slides:
     tokens:
       nodes:
         llm: >
-          The decision path as 3 stages, each "label | sub" — from
-          inspection result, through the decision rule, to the pass/fail
-          output. Plain language.
+          THIS recipe's actual decision path as exactly 3 stages, each
+          "label | sub". Stage 1: what enters the logic — name the real
+          inputs (which models' results, per which regions). Stage 2: the
+          actual computation applied — the real rule, thresholds, weights
+          or grouping from the flow, not a placeholder like "decision
+          rule". Stage 3: what is produced and where it goes — the
+          camera's verdict and what is written to the plant's systems.
+          Labels 2-4 words; subs are the concrete specifics, under ~60
+          characters each.
         shape: pairs
       rule:
         llm: "The crux of the pass/fail rule as 2-3 short lines."
@@ -223,9 +231,11 @@ slides:
         max_chars: 180
       caption:
         llm: >
-          How a verdict reaches the plant's systems, in plain language.
-          2-3 sentences.
-        max_chars: 240
+          What this IO setup achieves AND why it is built this way: why
+          the logic is grouped, weighted or thresholded as it is, and what
+          that buys the inspection — only as far as the flow analysis and
+          notes actually state it. 2-3 plain sentences.
+        max_chars: 300
 
   # -- 8. the library: on-camera storage of training + production data,
   # v1's fixed-layout skeleton with this run's Library screen in its hole.
