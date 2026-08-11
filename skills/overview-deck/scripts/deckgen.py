@@ -219,57 +219,75 @@ def compile_deck(
     material = content_mod.build_material(run_dir, notes=notes)
     resolved = content_mod.resolve(survivors, material, m.assignments, log=log)
 
-    # ---- emit
-    from ovdeck import Deck
+    # ---- emit. The save() gates hard-fail rather than ship a broken slide;
+    # when they reject a build the defect is almost always one stochastic
+    # arrangement, so ONE full re-emit with fresh arrangements is retried
+    # before giving up. Matching and resolved content are fixed by then —
+    # only the tier-3/4 layouts redraw.
+    from ovdeck import Deck, LayoutError
 
-    d = Deck(str(out_path))
-    for job in survivors:
-        rec = _job_record(job, m, resolved)
-        images = [str(run_dir / m.assignments[f"{job.id}#{i}"])
-                  for i in range(len(job.images))
-                  if m.assignments.get(f"{job.id}#{i}")]
-        if job.kind == "skeleton":
-            # Skeleton {{tokens}} take the resolver's RAW value: on a stat
-            # card an em dash IS the designed no-data mark (v1's
-            # deployment_time brief says 'otherwise exactly —'), unlike layout
-            # copy where absence means omitting the line.
-            skel_tokens = {}
-            for name, raw in job.tokens.items():
-                if isinstance(raw, (str, list)):
-                    skel_tokens[name] = raw if isinstance(raw, str) else "\n".join(raw)
-                else:
-                    skel_tokens[name] = resolved.get(f"{job.id}.{name}", "—")
-            d.skeleton_slide(job.skeleton, images=images or None,
-                             tokens=skel_tokens or None)
-        elif job.kind == "layout":
-            _emit_layout(d, job, images, resolved)
-        else:  # tier3 / tier4: fixed content, arranged
-            text = {}
-            for name in job.tokens:
-                v = token_value(job, name, resolved)
-                if isinstance(v, list):
-                    v = "\n".join(v)
-                if v:
-                    text[name] = v
-            rel_images = [m.assignments[f"{job.id}#{i}"]
-                          for i in range(len(job.images))
-                          if m.assignments.get(f"{job.id}#{i}")]
-            if not rel_images and not any(v.strip() for v in text.values()):
-                # Nothing matched, nothing resolved: a title-only slide is
-                # worse than no slide (a real build shipped one). Skip + record.
-                plan["skipped"].append({
-                    "id": job.id,
-                    "skipped": "tier-3/4 slide with no matched images and no "
-                               "resolved text",
-                })
-                continue
-            planned = arrange_mod.arrange(job.title or job.id, rel_images, text,
-                                          hint=job.hint, log=log)
-            rec["arranged"] = planned
-            _emit_arranged(d, planned, run_dir)
-        plan["slides"].append(rec)
+    def _emit_once():
+        d = Deck(str(out_path))
+        records: list[dict] = []
+        emit_skips: list[dict] = []
+        for job in survivors:
+            rec = _job_record(job, m, resolved)
+            images = [str(run_dir / m.assignments[f"{job.id}#{i}"])
+                      for i in range(len(job.images))
+                      if m.assignments.get(f"{job.id}#{i}")]
+            if job.kind == "skeleton":
+                # Skeleton {{tokens}} take the resolver's RAW value: on a stat
+                # card an em dash IS the designed no-data mark (v1's
+                # deployment_time brief says 'otherwise exactly —'), unlike
+                # layout copy where absence means omitting the line.
+                skel_tokens = {}
+                for name, raw in job.tokens.items():
+                    if isinstance(raw, (str, list)):
+                        skel_tokens[name] = raw if isinstance(raw, str) else "\n".join(raw)
+                    else:
+                        skel_tokens[name] = resolved.get(f"{job.id}.{name}", "—")
+                d.skeleton_slide(job.skeleton, images=images or None,
+                                 tokens=skel_tokens or None)
+            elif job.kind == "layout":
+                _emit_layout(d, job, images, resolved)
+            else:  # tier3 / tier4: fixed content, arranged
+                text = {}
+                for name in job.tokens:
+                    v = token_value(job, name, resolved)
+                    if isinstance(v, list):
+                        v = "\n".join(v)
+                    if v:
+                        text[name] = v
+                rel_images = [m.assignments[f"{job.id}#{i}"]
+                              for i in range(len(job.images))
+                              if m.assignments.get(f"{job.id}#{i}")]
+                if not rel_images and not any(v.strip() for v in text.values()):
+                    # Nothing matched, nothing resolved: a title-only slide is
+                    # worse than no slide (a real build shipped one). Skip +
+                    # record.
+                    emit_skips.append({
+                        "id": job.id,
+                        "skipped": "tier-3/4 slide with no matched images and "
+                                   "no resolved text",
+                    })
+                    continue
+                planned = arrange_mod.arrange(job.title or job.id, rel_images, text,
+                                              hint=job.hint, log=log)
+                rec["arranged"] = planned
+                _emit_arranged(d, planned, run_dir)
+            records.append(rec)
+        return records, emit_skips, d.save()
 
-    saved = d.save()
+    try:
+        records, emit_skips, saved = _emit_once()
+    except LayoutError as e:
+        log(f"  emit: layout gate rejected the build ({e}); "
+            f"re-emitting once with fresh arrangements")
+        plan["emit_retried"] = str(e)
+        records, emit_skips, saved = _emit_once()
+
+    plan["slides"].extend(records)
+    plan["skipped"].extend(emit_skips)
     plan["deck"] = str(saved)
     return plan
 

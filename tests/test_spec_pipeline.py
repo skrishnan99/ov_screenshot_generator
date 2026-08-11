@@ -176,6 +176,32 @@ def main() -> int:
                 failures.append(f"required-unmatched slide not skipped+recorded: {skipped}")
             if any(r["id"] == "impossible" for r in plan2["slides"]):
                 failures.append("unmatched slide still compiled")
+
+            # ---- a save-gate rejection triggers ONE re-emit, then succeeds ----
+            import ovdeck
+
+            real_save = ovdeck.Deck.save
+            state = {"failed": False}
+
+            def flaky_save(self, path=None):
+                if not state["failed"]:
+                    state["failed"] = True
+                    raise ovdeck.LayoutError("synthetic: caption overflow")
+                return real_save(self, path)
+
+            ovdeck.Deck.save = flaky_save
+            try:
+                plan3 = deckgen.compile_deck(run, Path(td) / "out3" / "r.pptx",
+                                             log=lambda *a: None)
+                if "emit_retried" not in plan3:
+                    failures.append("layout-gate retry not recorded in the plan")
+                if not Path(plan3.get("deck", "")).exists():
+                    failures.append("retry did not produce a deck")
+                ids3 = [r["id"] for r in plan3["slides"]]
+                if len(ids3) != len(set(ids3)):
+                    failures.append("retry duplicated slide records in the plan")
+            finally:
+                ovdeck.Deck.save = real_save
     finally:
         matching_mod.assign_call = saved["assign"]
         matching_mod.verify_call = saved["verify"]
