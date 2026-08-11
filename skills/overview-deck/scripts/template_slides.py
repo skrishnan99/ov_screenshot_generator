@@ -50,7 +50,6 @@ if str(PLUGIN_ROOT) not in sys.path:
 # the slides read in PowerPoint). Used by --extract only; at build time the
 # skeleton files are the source of truth.
 TEMPLATE_SLIDES = {
-    "library": 10,           # on-device storage -> retraining; takes the screenshot
     "capabilities": 11,      # "5 factors make us unique"
     "defect_generator": 12,  # "Can't wait for the rare defect? Generate it."
     "integration": 13,       # "Integration built for everyone."
@@ -71,6 +70,10 @@ CONTENT_SKELETONS = {
     "results_image": "results_image.pptx",
     "concise_results_classifier": "concise_results_classifier.pptx",
     "concise_results_segmenter": "concise_results_segmenter.pptx",
+    # v1's library slide (one screenshot placeholder, no tokens). Replaces
+    # the company template's slide 10 as the deck's library section; the
+    # _fix_library_subtitle fixup still applies — same subtitle box.
+    "library": "library.pptx",
 }
 REFERENCE_DIR = SKILL / "assets" / "reference"
 

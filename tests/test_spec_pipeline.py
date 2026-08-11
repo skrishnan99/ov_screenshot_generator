@@ -157,6 +157,17 @@ def main() -> int:
             if seg is None or set(seg.get("tokens", {})) != {"mean_iou", "train_imgs",
                                                             "deployment_time"}:
                 failures.append(f"segmenter skeleton tokens wrong: {seg and seg.get('tokens')}")
+            # the library section sits between logic and the closing run
+            lib = next((r for r in plan["slides"] if r["id"] == "library"), None)
+            if lib is None:
+                failures.append("library slide missing from plan")
+            else:
+                paths = [i["path"] for i in lib["images"]]
+                if paths != ["deliverables/screenshots/12_library.png"]:
+                    failures.append(f"library hole matched {paths}")
+                if not (ids.index("logic") < ids.index("library")
+                        < ids.index("closing_capabilities")):
+                    failures.append(f"library out of place: {ids}")
 
             # ---- a required hole that can't match skips the slide, recorded ----
             spec = ds.load_spec()

@@ -215,5 +215,15 @@ slides:
           2-3 sentences.
         max_chars: 240
 
-  # -- 8. the standing closing run, verbatim, template order.
+  # -- 8. the library: on-camera storage of training + production data,
+  # v1's fixed-layout skeleton with this run's Library screen in its hole.
+  - id: library
+    skeleton: library
+    images:
+      - expects: >
+          The camera's Library page — the on-device image store: a browser
+          of stored captures (thumbnails or a selected capture) with
+          filters and capture metadata.
+
+  # -- 9. the standing closing run, verbatim, template order.
   - closing: default

@@ -173,7 +173,7 @@ def main() -> int:
             "title_ov80i", "results_overview", "imaging", "rois",
             "training_model-s", "results_seg_model-s",
             "training_horn-quality", "results_cls_horn-quality",
-            "logic",
+            "logic", "library",
             "closing_capabilities", "closing_defect_generator",
             "closing_integration", "closing_team", "closing_thank_you",
         ]
