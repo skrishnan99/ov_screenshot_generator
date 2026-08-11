@@ -233,3 +233,65 @@ def resolve_recipe(requested: str, snapshot: str) -> dict:
         )
     except LLMRefusal:
         return {"status": "not_found", "name": "", "reason": "model refused"}
+
+
+# ---------------------------------------------------------------------------
+# fact-subject canonicalization
+# ---------------------------------------------------------------------------
+
+def canonicalize_fact_subject(subject: str, roster: list[str]) -> tuple[str, str | None]:
+    """Map a vision-extracted fact subject onto the authoritative model roster
+    (meta["models"] names, read from the Inspection Setup page's DOM).
+
+    The describer transcribes whatever name a screen displays, and screens
+    disagree with the roster in two ways seen on real cameras: a truncated or
+    shorthand form of a roster name ("Model" for "Model C"), and content from
+    OTHER recipes entirely on shared screens (a sanmina run carried
+    "class: Traton Bushing Wear/Center"). Facts filed under a non-roster name
+    are invisible to every roster-keyed consumer — the deck's model slices
+    scope by exact subject — so the 98% accuracy of the only model in a run
+    rendered as an em dash.
+
+    Rules, applied to "model: <name>" and "class: <name>/<class>" subjects
+    only (every other subject passes through untouched):
+      - case-insensitive exact match -> the roster's spelling;
+      - a name that is a boundary-clean prefix or extension of EXACTLY ONE
+        roster name is rewritten to it ("Model" -> "Model C",
+        "Model C - Classification" -> "Model C"; "Mode" -> "Model" is NOT a
+        match: the continuation is alphanumeric);
+      - anything else is quarantined under "unattributed: <original>" — kept
+        for audit, matched by nothing.
+
+    Returns (subject, action) with action in (None, "rewritten",
+    "quarantined").
+    """
+    s = subject.strip()
+    for prefix in ("model: ", "class: "):
+        if s.lower().startswith(prefix):
+            rest = s[len(prefix):]
+            name, sep, tail = rest.partition("/") if prefix == "class: " else (rest, "", "")
+            name = name.strip()
+            canon = _match_roster_name(name, roster)
+            if canon is None:
+                return f"unattributed: {s}", "quarantined"
+            rebuilt = f"{prefix}{canon}{sep}{tail}"
+            return rebuilt, (None if rebuilt == s else "rewritten")
+    return s, None
+
+
+def _match_roster_name(name: str, roster: list[str]) -> str | None:
+    low = name.lower()
+    for r in roster:
+        if r.strip().lower() == low:
+            return r
+    candidates = []
+    for r in roster:
+        rl = r.strip().lower()
+        # boundary-clean containment: the longer string continues with a
+        # non-alphanumeric character right after the shorter one ends
+        for shorter, longer in ((low, rl), (rl, low)):
+            if longer.startswith(shorter) and len(longer) > len(shorter) \
+                    and not longer[len(shorter)].isalnum():
+                candidates.append(r)
+                break
+    return candidates[0] if len(candidates) == 1 else None

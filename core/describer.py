@@ -43,7 +43,7 @@ Context for this screenshot:
 - Recipe: {recipe}
 - Screen / step: {step}
 - What the capture flow was doing: {intent}
-{item_line}
+{item_line}{models_block}
 Write a thorough plain-text description covering:
 1. Which screen/page of the camera UI this is and its role in the product's inspection \
 workflow.
@@ -331,15 +331,34 @@ def describe_node_red(flow_json: str, context: dict) -> dict:
 
 
 def describe_screenshot(png_bytes: bytes, context: dict) -> dict:
-    """Returns {"description": prose, "facts": [{subject, property, value}]}."""
+    """Returns {"description": prose, "facts": [{subject, property, value}]}.
+
+    context["models"] (the meta["models"] roster) steers fact subjects onto
+    the recipe's authoritative model names; cli.py canonicalizes in code as
+    the backstop. Callers without a roster (engineer photos) omit it."""
     item = context.get("item")
     item_line = f"- Specific item captured: {item}\n" if item else ""
+    roster = context.get("models") or []
+    models_block = ""
+    if roster:
+        names = "; ".join(
+            f"{m.get('name', '')} ({m.get('type', '?')})" for m in roster
+        )
+        models_block = (
+            f"- This recipe's models, with their AUTHORITATIVE names: {names}. "
+            f"Record `model:`/`class:` fact subjects under these exact names, even "
+            f"when the screen shows a truncated or shorthand form of one of them. "
+            f"Screens can also show models, classes or recipes that are NOT in this "
+            f"list (other recipes share these screens) — describe them in prose if "
+            f"relevant, but never record facts for them.\n"
+        )
     prompt = PROMPT.format(
         variant=context.get("variant", "unknown variant"),
         recipe=context.get("recipe", "unknown"),
         step=context.get("step", "unknown"),
         intent=" ".join((context.get("intent") or "").split()) or "n/a",
         item_line=item_line,
+        models_block=models_block,
     )
     try:
         return complete(prompt, schema=DESCRIBE_SCHEMA, images=[png_bytes], max_tokens=4000)

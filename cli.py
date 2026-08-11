@@ -35,6 +35,7 @@ from core.describer import (
 from core.navigator import run_step_auto as run_step
 from core.output import RunOutput
 from core.resolver import (
+    canonicalize_fact_subject,
     list_model_settings,
     list_models,
     list_training_reports,
@@ -1114,13 +1115,26 @@ def main(argv: list[str] | None = None) -> int:
                     f"({DESCRIBE_WORKERS} in parallel)..."
                 )
 
+                # The roster is final by now (capture is done); it steers fact
+                # subjects in the prompt, and canonicalization below enforces
+                # it in code. Both exist because screens display truncated
+                # model names and other recipes' content (see
+                # canonicalize_fact_subject).
+                roster_names = [
+                    m.get("name", "") for m in meta.get("models", []) if m.get("name")
+                ]
+
                 def _describe(item):
                     shot_path, ctx = item
-                    return describe_screenshot(shot_path.read_bytes(), ctx)
+                    return describe_screenshot(
+                        shot_path.read_bytes(),
+                        {**ctx, "models": meta.get("models", [])},
+                    )
 
                 # Results are merged in queue order so the output files stay
                 # deterministic regardless of completion order.
                 descriptions = {}
+                canon_notes: dict[str, int] = {}
                 with ThreadPoolExecutor(max_workers=DESCRIBE_WORKERS) as pool:
                     futures = [pool.submit(_describe, item) for item in desc_queue]
                     for (shot_path, _ctx), fut in zip(desc_queue, futures):
@@ -1128,8 +1142,13 @@ def main(argv: list[str] | None = None) -> int:
                             result = fut.result()
                             descriptions[shot_path.name] = result["description"]
                             for fact in result.get("facts", []):
+                                subj, action = canonicalize_fact_subject(
+                                    str(fact.get("subject", "")), roster_names
+                                )
+                                if action:
+                                    canon_notes[action] = canon_notes.get(action, 0) + 1
                                 meta.setdefault("facts", []).append(
-                                    {**fact, "source": shot_path.name}
+                                    {**fact, "subject": subj, "source": shot_path.name}
                                 )
                             print(
                                 f"  described {shot_path.name} "
@@ -1141,6 +1160,11 @@ def main(argv: list[str] | None = None) -> int:
                                 f"  FAILED to describe {shot_path.name}: {e}",
                                 file=sys.stderr,
                             )
+                if canon_notes:
+                    print(
+                        "  fact subjects canonicalized against the roster: "
+                        + ", ".join(f"{n} {k}" for k, n in sorted(canon_notes.items()))
+                    )
                 out.save(
                     "descriptions.json", json.dumps(descriptions, indent=2),
                     kind="report", role="deliverable",
@@ -1160,8 +1184,13 @@ def main(argv: list[str] | None = None) -> int:
                         kind="report", role="deliverable",
                     )
                     for fact in nr.get("facts", []):
+                        subj, _ = canonicalize_fact_subject(
+                            str(fact.get("subject", "")),
+                            [m.get("name", "") for m in meta.get("models", [])
+                             if m.get("name")],
+                        )
                         meta.setdefault("facts", []).append(
-                            {**fact, "source": "node_red_flow.json"}
+                            {**fact, "subject": subj, "source": "node_red_flow.json"}
                         )
                     manifest["node_red_description"] = (
                         "deliverables/report/node_red_description.md"
