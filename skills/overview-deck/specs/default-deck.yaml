@@ -133,8 +133,9 @@ slides:
         title: "Step {step}: Training — {model.name} ({model.type_title})"
         hint: >
           One split slide, like the house setup templates: the block page
-          on the left at about 55% width, the setup/training summary in
-          the right-hand column.
+          on the left at about 55% width, the right-hand column carrying
+          the setup/training summary with the why-this-approach rationale
+          beneath it.
         images:
           # The TYPE'S BLOCK PAGE, not the Train screen's dialogs: it shows
           # an example annotated training image on the part with the model's
@@ -152,6 +153,17 @@ slides:
               choices visible in the material. 2-4 short lines.
             shape: lines
             max_chars: 280
+          # The WHY, not just the what: the reader is deciding whether this
+          # approach would work on their line.
+          rationale:
+            llm: >
+              Why this approach makes sense for this inspection, in 1-2
+              plain sentences: what about the part, its defect modes or the
+              decision needed makes a {model.type} model the right tool for
+              what {model.name} checks. Ground every claim in the material —
+              the regions it covers, the classes it separates, the kind of
+              judgment the line needs — never generic sales language.
+            max_chars: 260
 
       - id: results_cls
         when_model: {type: classification}
