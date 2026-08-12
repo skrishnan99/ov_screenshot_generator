@@ -406,24 +406,64 @@ class AgentSdkBackend:
     """Routes calls through the Claude Agent SDK — the same Claude Code
     subscription auth as ClaudeCodeBackend, but the SDK manages the Claude
     Code process (no per-call spawn) and supports NATIVE structured output
-    (output_format -> ResultMessage.structured_output), so no schema-in-
-    prompt retries are needed. Images use the same workdir + Read approach."""
+    (output_format -> ResultMessage.structured_output). Native output is
+    still validated locally and retried with the validation error fed back
+    (ATTEMPTS, like ClaudeCodeBackend): the original assumption that native
+    output needs no retries failed in the field — a library-page description
+    came back invalid once, had no second chance, and cost a deck slide.
+    Images use the same workdir + Read approach."""
 
     name = "agent-sdk"
+    ATTEMPTS = 3
 
     def __init__(self, query_fn=None):
         self._query = query_fn  # test seam; resolved lazily from the SDK
         self.workdir = Path(tempfile.mkdtemp(prefix="sg-llm-"))
 
     def complete(self, prompt, schema=None, images=None, max_tokens=4000, model=DEFAULT_MODEL):
+        img_files = _write_image_files(images, self.workdir)
+        full = (_image_note(img_files) + "\n\n" + prompt) if img_files else prompt
+        try:
+            errors: list[str] = []
+            for _ in range(self.ATTEMPTS):
+                ask = full if not errors else (
+                    f"{full}\n\nYour previous reply was invalid ({errors[-1]}). "
+                    f"Respond again with output matching the required schema exactly."
+                )
+                # Availability failures, refusals and transport errors raise
+                # straight through — only structured-output validation retries.
+                result = self._invoke_once(ask, schema, img_files, model)
+                if result.stop_reason == "refusal":
+                    raise LLMRefusal("model refused the request")
+                if result.is_error:
+                    raise LLMError(f"agent-sdk backend error: {str(result.result)[:500]}")
+                if not schema:
+                    return result.result or ""
+                try:
+                    data = result.structured_output
+                    if data is None:
+                        data = _extract_json(result.result or "")
+                    jsonschema.validate(data, schema)
+                    return data
+                except (ValueError, json.JSONDecodeError, jsonschema.ValidationError) as e:
+                    errors.append(str(e)[:300])
+            raise LLMError(
+                f"agent-sdk backend: no valid structured output after "
+                f"{self.ATTEMPTS} attempts: {errors[-1]}"
+            )
+        finally:
+            for p in img_files:
+                p.unlink(missing_ok=True)
+
+    def _invoke_once(self, full, schema, img_files, model):
+        """One SDK session; returns the ResultMessage. Raises LLMError on
+        rate-limit rejection or a missing result. Overridable test seam."""
         from claude_agent_sdk import ClaudeAgentOptions, RateLimitEvent, ResultMessage
 
         query = self._query
         if query is None:
             from claude_agent_sdk import query
 
-        img_files = _write_image_files(images, self.workdir)
-        full = (_image_note(img_files) + "\n\n" + prompt) if img_files else prompt
         options = ClaudeAgentOptions(
             model=model,
             cwd=str(self.workdir),
@@ -458,24 +498,11 @@ class AgentSdkBackend:
             if limited:
                 raise LLMError(limited[0]) from None
             raise
-        finally:
-            for p in img_files:
-                p.unlink(missing_ok=True)
         if limited:
             raise LLMError(limited[0])
         if result is None:
             raise LLMError("agent-sdk backend: no result message from Claude Code")
-        if result.stop_reason == "refusal":
-            raise LLMRefusal("model refused the request")
-        if result.is_error:
-            raise LLMError(f"agent-sdk backend error: {str(result.result)[:500]}")
-        if schema:
-            data = result.structured_output
-            if data is None:
-                data = _extract_json(result.result or "")
-            jsonschema.validate(data, schema)
-            return data
-        return result.result or ""
+        return result
 
 
 _backend = None
