@@ -15,11 +15,22 @@ for p in (str(REPO), str(SCRIPTS)):
         sys.path.insert(0, p)
 
 MODELS = [
-    {"name": "Model S", "type": "segmentation", "slug": "model-s"},
-    {"name": "Horn Quality", "type": "classification", "slug": "horn-quality"},
+    {"name": "Model S", "type": "segmentation", "slug": "model-s",
+     "view_rois_screenshot": "deliverables/screenshots/06_view_model-s.png"},
+    {"name": "Horn Quality", "type": "classification", "slug": "horn-quality",
+     "view_rois_screenshot": "deliverables/screenshots/hq_view.png"},
     # Never trained: ROIs exist, but the trained filter must exclude it from
     # the combined-ROI slide and the per-model blocks.
     {"name": "Edge Check", "type": "segmentation", "slug": "edge-check"},
+]
+
+# Real runs identify the per-TYPE block screenshot through the assets index
+# (models envelopes carry no block_screenshot); the fixture mirrors that.
+MANIFEST_ASSETS = [
+    {"path": "deliverables/screenshots/05_segmentation.png",
+     "kind": "screenshot", "role": "deliverable", "step": "segmentation_block"},
+    {"path": "deliverables/screenshots/07_classification.png",
+     "kind": "screenshot", "role": "deliverable", "step": "classification_block"},
 ]
 
 SCREENSHOTS = {
@@ -105,6 +116,7 @@ def make_run(tmp: Path) -> Path:
     (run / "data" / "manifest.json").write_text(json.dumps({
         "variant": "ov80i", "ui_version": "v1-test", "recipe_input": "Widget Inspection",
         "steps": [],
+        "assets": MANIFEST_ASSETS,
     }))
     (run / "data" / "meta.json").write_text(json.dumps({
         "models": MODELS,

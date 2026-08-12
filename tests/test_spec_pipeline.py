@@ -28,6 +28,7 @@ def main() -> int:
     saved = {
         "assign": matching_mod.assign_call,
         "verify": matching_mod.verify_call,
+        "quality": matching_mod.block_quality_call,
         "resolve": content_mod.resolve_call,
         "arrange": arrange_mod.arrange_call,
     }
@@ -61,6 +62,11 @@ def main() -> int:
 
     matching_mod.assign_call = stub_assign
     matching_mod.verify_call = lambda *a, **k: {"match": True, "reason": "stub"}
+    # the training-image ladder judges good -> block page pinned, which is
+    # this suite's historical assignment; the ladder itself is pinned by
+    # tests/test_training_image_ladder.py
+    matching_mod.block_quality_call = lambda d: {
+        "product_image": True, "annotated": True, "reason": "stub"}
     content_mod.resolve_call = stub_resolve
     arrange_mod.arrange_call = stub_arrange
 
@@ -126,7 +132,8 @@ def main() -> int:
 
             # ---- the new-flow guarantees, end to end ----
             ids = [r["id"] for r in plan["slides"]]
-            # ONE results card, after every training slide, before logic
+            # ONE results card, after every training slide AND after logic:
+            # the whole pipeline first, then its outcome
             if ids.count("results") != 1:
                 failures.append(f"expected exactly one results card: {ids}")
             else:
@@ -134,8 +141,8 @@ def main() -> int:
                 for t in ("training_model-s", "training_horn-quality"):
                     if t not in ids or ids.index(t) > ri:
                         failures.append(f"{t} not before the results card: {ids}")
-                if ids.index("logic") < ri:
-                    failures.append(f"results card after logic: {ids}")
+                if ids.index("logic") > ri:
+                    failures.append(f"logic not before the results card: {ids}")
             if any("edge-check" in i for i in ids):
                 failures.append("never-trained model reached the deck")
             # combined-ROI slide matched both trained models' region screens
@@ -165,17 +172,20 @@ def main() -> int:
                 toks = res.get("tokens", {})
                 if toks.get("train_acc") != "100%" or toks.get("train_imgs") != "6":
                     failures.append(f"results card tokens wrong: {toks}")
-            # the library section sits between logic and the closing run
-            lib = next((r for r in plan["slides"] if r["id"] == "library"), None)
+            # the library section sits between logic and the closing run;
+            # the ov80i fixture gets the variant's own skeleton slide
+            lib = next((r for r in plan["slides"] if r["id"] == "library_ov80i"), None)
             if lib is None:
-                failures.append("library slide missing from plan")
+                failures.append("library_ov80i slide missing from plan")
             else:
                 paths = [i["path"] for i in lib["images"]]
                 if paths != ["deliverables/screenshots/12_library.png"]:
                     failures.append(f"library hole matched {paths}")
-                if not (ids.index("logic") < ids.index("library")
+                if not (ids.index("logic") < ids.index("library_ov80i")
                         < ids.index("closing_capabilities")):
                     failures.append(f"library out of place: {ids}")
+            if any(r["id"] == "library_ov20i" for r in plan["slides"]):
+                failures.append("ov20i library slide leaked into an ov80i deck")
 
             # ---- a required hole that can't match skips the slide, recorded ----
             spec = ds.load_spec()
@@ -224,6 +234,7 @@ def main() -> int:
     finally:
         matching_mod.assign_call = saved["assign"]
         matching_mod.verify_call = saved["verify"]
+        matching_mod.block_quality_call = saved["quality"]
         content_mod.resolve_call = saved["resolve"]
         arrange_mod.arrange_call = saved["arrange"]
 

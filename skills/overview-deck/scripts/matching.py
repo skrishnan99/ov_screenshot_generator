@@ -229,6 +229,171 @@ def verify_call(run_dir: Path, hole: Hole, rel_path: str) -> dict:
     )
 
 
+# -------------------------------------------------- training-image ladder
+#
+# The training slide wants the model's block page — but only when that
+# screenshot actually teaches something: a real product photograph with
+# annotations on it. A black viewer with empty label outlines (a real
+# occurrence) ruins the slide. The ladder, judged BEFORE the global
+# assignment so the outcome is deterministic and recorded:
+#
+#   1. block page, when its viewer shows an annotated product image
+#   2. else the model's View All ROIs gallery
+#   3. else the block page anyway — flawed beats empty
+#
+# Paths come from the sanctioned contracts (meta["models"] envelope first,
+# manifest["assets"] join as fallback), never from filename guessing. The
+# quality judgment reads the screenshot's existing vision description via a
+# small Haiku eval (the toggle-state precedent); no description or a failed
+# call keeps the block page — the rule fires only on positive evidence.
+
+BLOCK_QUALITY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "product_image": {"type": "boolean"},
+        "annotated": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["product_image", "annotated", "reason"],
+    "additionalProperties": False,
+}
+
+BLOCK_QUALITY_PROMPT = """A screenshot of an AI model's training Block page was described as:
+
+{description}
+
+Judge the VIEWER IMAGE (the main capture area), not the surrounding UI:
+1. product_image — does the viewer show an actual photograph of a part
+   (true), or is it blank, black, grey, a placeholder, or missing (false)?
+   Empty annotation outlines over a blank canvas are NOT a product image.
+2. annotated — are annotations visible ON that image: drawn regions,
+   segmentation masks, class labels or marks? A dark but real photograph
+   with visible label overlays counts as annotated.
+
+Answer strictly from the description. When it does not mention the viewer's
+content at all, answer product_image=true and annotated=true — absence of
+complaint is not evidence of a problem."""
+
+
+def block_quality_call(description: str) -> dict:
+    from core import llm
+
+    # The whole description, not a prefix: extractor descriptions run
+    # ~2.5-3k chars and the viewer-content sentence tends to sit near the
+    # END (UI chrome is described first). A 2000-char clip once hid the
+    # "canvas is essentially black" sentence and the judge passed a black
+    # block page it should have rejected.
+    return llm.complete(
+        BLOCK_QUALITY_PROMPT.format(description=" ".join(str(description).split())[:8000]),
+        schema=BLOCK_QUALITY_SCHEMA, max_tokens=500, model=llm.HAIKU,
+    )
+
+
+def _existing(run_dir: Path, rel: str | None) -> str | None:
+    return rel if rel and (Path(run_dir) / rel).exists() else None
+
+
+def _model_block_path(run_dir: Path, model: dict, manifest: dict) -> str | None:
+    p = _existing(run_dir, model.get("block_screenshot"))
+    if p:
+        return p
+    step = f"{model.get('type', '')}_block"
+    for a in manifest.get("assets", []):
+        if a.get("kind") == "screenshot" and a.get("step") == step:
+            p = _existing(run_dir, a.get("path"))
+            if p:
+                return p
+    return None
+
+
+def _model_rois_path(run_dir: Path, model: dict, manifest: dict) -> str | None:
+    p = _existing(run_dir, model.get("view_rois_screenshot"))
+    if p:
+        return p
+    step = f"view_all_rois_{model.get('type', '')}"
+    ident = (model.get("slug") or model.get("name") or "").lower()
+    for a in manifest.get("assets", []):
+        if a.get("kind") == "screenshot" and a.get("step") == step and ident \
+                and ident in str(a.get("item", "") or a.get("path", "")).lower():
+            p = _existing(run_dir, a.get("path"))
+            if p:
+                return p
+    return None
+
+
+def _block_ok(rel: str, descriptions: dict, log) -> tuple[bool, str]:
+    desc = descriptions.get(Path(rel).name)
+    if not desc or str(desc).startswith("[description failed"):
+        return True, "no description available; block page kept (status quo)"
+    try:
+        v = block_quality_call(str(desc))
+    except Exception as e:
+        log(f"  matching: block quality judgement unavailable ({e}); block page kept")
+        return True, f"quality judgement unavailable; block page kept"
+    if v.get("product_image") and v.get("annotated"):
+        return True, "block page shows an annotated product image"
+    flaws = []
+    if not v.get("product_image"):
+        flaws.append("no actual product image")
+    if not v.get("annotated"):
+        flaws.append("no annotations on the image")
+    return False, "; ".join(flaws) + f" — {v.get('reason', '')[:120]}"
+
+
+def ladder_pins(run_dir: Path, jobs, log=print) -> dict[str, tuple[str | None, dict]]:
+    """{hole id: (rel path, report entry)} for every `ladder: annotated_block`
+    hole. Purely additive: unflagged holes and holes the ladder cannot
+    resolve (no block, no gallery) fall through to semantic matching."""
+    run_dir = Path(run_dir)
+
+    def _load(rel):
+        p = run_dir / rel
+        try:
+            return json.loads(p.read_text()) if p.exists() else {}
+        except Exception:
+            return {}
+
+    meta = _load("data/meta.json")
+    manifest = _load("data/manifest.json")
+    descriptions = _load("deliverables/report/descriptions.json")
+
+    pins: dict[str, tuple[str | None, dict]] = {}
+    claimed: dict[str, str] = {}  # path -> first hole, to record sharing
+    for job in jobs:
+        for i, img in enumerate(job.images):
+            if img.get("ladder") != "annotated_block":
+                continue
+            hid = f"{job.id}#{i}"
+            model = job.model or {}
+            if not model:
+                log(f"  matching: {hid} has ladder without a model; semantic match instead")
+                continue
+            block = _model_block_path(run_dir, model, manifest)
+            rois = _model_rois_path(run_dir, model, manifest)
+            if block is None and rois is None:
+                continue  # nothing deterministic to pin; semantic match decides
+            if block is None:
+                chosen, why = rois, "no block page capture; View All ROIs gallery used"
+            else:
+                ok, why = _block_ok(block, descriptions, log)
+                if ok:
+                    chosen = block
+                elif rois is not None:
+                    chosen = rois
+                    why = f"block page rejected ({why}); View All ROIs gallery used"
+                else:
+                    chosen = block
+                    why = f"block page kept despite issues ({why}); no gallery to fall back to"
+            entry = {"hole": hid, "path": chosen, "stage": "ladder", "reason": why}
+            if chosen in claimed:
+                entry["shared_with"] = claimed[chosen]
+            else:
+                claimed[chosen] = hid
+            pins[hid] = (chosen, entry)
+            log(f"  matching: {hid} <- {chosen} (ladder: {why[:80]})")
+    return pins
+
+
 # ------------------------------------------------------------ orchestration
 
 
@@ -240,7 +405,21 @@ def match(run_dir: Path, jobs, extra_images=None, log=print) -> MatchResult:
     result = MatchResult()
     if not holes:
         return result
+
+    # Deterministic ladder pins land first: their identity is known by
+    # construction (envelope/manifest join), so they skip assignment AND
+    # vision verification, and their paths are withheld from the free pool.
+    pins = ladder_pins(run_dir, jobs, log=log)
+    for hid, (path, entry) in pins.items():
+        result.assignments[hid] = path
+        result.report.append(entry)
+    holes = [h for h in holes if h.id not in result.assignments]
+    pinned_paths = {p for p, _ in pins.values() if p}
+
     catalog = build_catalog(run_dir, extra_images)
+    catalog = [c for c in catalog if c["path"] not in pinned_paths]
+    if not holes:
+        return result
     if not catalog:
         for h in holes:
             result.assignments[h.id] = None

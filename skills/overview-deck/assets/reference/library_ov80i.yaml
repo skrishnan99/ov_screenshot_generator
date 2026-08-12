@@ -1,0 +1,8 @@
+# Content-hole descriptions for library_ov80i.pptx (the OV80i variant of
+# the library slide; ov20i/ov10i keep library.pptx).
+image_slots:
+  - name: library_screen
+    expects: >
+      The Library screen of the camera UI: the on-device image store showing
+      a grid of captured/production images with filters or capture metadata.
+      Demonstrates on-camera storage of training and production data.

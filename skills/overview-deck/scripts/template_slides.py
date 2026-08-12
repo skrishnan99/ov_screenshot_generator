@@ -73,7 +73,11 @@ CONTENT_SKELETONS = {
     # v1's library slide (one screenshot placeholder, no tokens). Replaces
     # the company template's slide 10 as the deck's library section; the
     # _fix_library_subtitle fixup still applies — same subtitle box.
+    # ov20i/ov10i keep this one; ov80i gets its own variant below.
     "library": "library.pptx",
+    # the OV80i library slide (updated copy, same one-placeholder shape);
+    # selected by the spec's `when: {camera.variant: ov80i}`.
+    "library_ov80i": "library_ov80i.pptx",
 }
 REFERENCE_DIR = SKILL / "assets" / "reference"
 
@@ -339,6 +343,8 @@ def _strip_integration_page_number(slide) -> None:
 FIXUPS: dict[str, tuple] = {
     "*": (_strip_page_numbers,),
     "library": (_fix_library_subtitle,),
+    # same "Easier root cause..." subtitle box, same wrap hazard
+    "library_ov80i": (_fix_library_subtitle,),
     "integration": (_strip_integration_page_number,),
 }
 

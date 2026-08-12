@@ -151,11 +151,19 @@ slides:
       # The TYPE'S BLOCK PAGE, not the Train screen's dialogs: it shows
       # an example annotated training image on the part with the model's
       # classes beside it — the screen a customer can actually read.
+      #
+      # ladder: judged deterministically before matching. When the block
+      # page's viewer shows no actual product photograph, or the image
+      # carries no annotations, the model's View All ROIs gallery stands
+      # in on this slide; when that gallery is missing too, the block
+      # page ships despite its issues — flawed beats empty. A good block
+      # page never yields to the gallery.
       - expects: >
           The {model.type} Block page with {model.name} shown — an
           example annotated training image of the part in the viewer,
           with the model's classes listed beside it. Not the Train
           Models screen, not a settings dialog, not an ROI gallery.
+        ladder: annotated_block
     tokens:
       # WHAT the model's inspection is trying to do — never how well it
       # did. Training-image counts, accuracy/IoU/loss, iterations and
@@ -184,26 +192,11 @@ slides:
           judgment the line needs — never generic sales language.
         max_chars: 220
 
-  # -- 7. ONE concise results card for the whole recipe, after every
-  # model's training slide. train_acc is pinned to "100%" by design —
-  # an accuracy figure visible on a model or training report is NOT a
-  # reason to change it; only an explicit user request (via --request)
-  # is. train_imgs is the LARGEST training-image count any model used,
-  # derived deterministically in build_context (em dash when unstated).
-  - id: results
-    skeleton: concise_results_classifier
-    tokens:
-      train_acc: "100%"
-      train_imgs: "{models.max_train_images}"
-      deployment_time:
-        llm: >
-          Deployment/setup time ONLY if the engineer's notes explicitly
-          state it, formatted like "3 days". Otherwise exactly "—".
-        max_chars: 20
-
-  # -- 8. IO logic: the Node-RED editor screenshot beside what the flow
+  # -- 7. IO logic: the Node-RED editor screenshot beside what the flow
   # does and why it is built that way — same split shape as the other
-  # setup slides.
+  # setup slides. BEFORE the results card: the reader sees the whole
+  # pipeline (imaging -> regions -> training -> logic) and then its
+  # outcome.
   - id: logic
     tier: 3
     step: true
@@ -239,10 +232,43 @@ slides:
           actually state it.
         max_chars: 220
 
+  # -- 8. ONE concise results card for the whole recipe, after the
+  # training slides and the IO logic. train_acc is pinned to "100%" by
+  # design — an accuracy figure visible on a model or training report is
+  # NOT a reason to change it; only an explicit user request (via
+  # --request) is. train_imgs is the LARGEST training-image count any
+  # model used, derived deterministically in build_context (em dash when
+  # unstated).
+  - id: results
+    skeleton: concise_results_classifier
+    tokens:
+      train_acc: "100%"
+      train_imgs: "{models.max_train_images}"
+      deployment_time:
+        llm: >
+          Deployment/setup time ONLY if the engineer's notes explicitly
+          state it, formatted like "3 days". Otherwise exactly "—".
+        max_chars: 20
+
   # -- 9. the library: on-camera storage of training + production data,
-  # v1's fixed-layout skeleton with this run's Library screen in its hole.
-  - id: library
+  # a fixed-layout skeleton with this run's Library screen in its hole.
+  # Variant-resolved like the title slides: the OV80i gets its own
+  # skeleton; ov20i/ov10i keep v1's library.pptx.
+  - id: library_ov80i
+    skeleton: library_ov80i
+    when: {camera.variant: ov80i}
+    images:
+      - expects: >
+          The camera's Library page — the on-device image store: a browser
+          of stored captures (thumbnails or a selected capture) with
+          filters and capture metadata.
+
+  - id: library_ov20i
     skeleton: library
+    when:
+      any:
+        - {camera.variant: ov20i}
+        - {camera.variant: ov10i}
     images:
       - expects: >
           The camera's Library page — the on-device image store: a browser

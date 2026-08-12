@@ -187,13 +187,15 @@ def main() -> int:
         jobs, skipped = ds.expand(spec, ctx)
         ids = [j.id for j in jobs]
         # the 8-part flow: variant title, results overview, imaging,
-        # (aligner skipped here), combined ROIs, per-model blocks with the
-        # type-matched results skeleton adjacent, logic, closing run
+        # (aligner skipped here), combined ROIs, per-model blocks, IO
+        # logic, THEN the results card — the whole pipeline before its
+        # outcome — library, closing run
         want_order = [
             "title_ov80i", "results_overview", "imaging", "rois",
             "training_model-s", "training_horn-quality",
+            "logic",
             "results",
-            "logic", "library",
+            "library_ov80i",
             "closing_capabilities", "closing_defect_generator",
             "closing_integration", "closing_team", "closing_thank_you",
         ]
@@ -202,7 +204,7 @@ def main() -> int:
         if any("edge-check" in i for i in ids):
             failures.append("never-trained model leaked into the deck")
         skipped_ids = {s.get("id") for s in skipped if isinstance(s, dict)}
-        for sid in ("title_ov20i", "aligner"):
+        for sid in ("title_ov20i", "aligner", "library_ov20i"):
             if sid not in skipped_ids:
                 failures.append(f"{sid} should be skipped+recorded (skip_aligner=on, ov80i)")
         # the combined-ROI slide fans one hole per TRAINED model, interpolated

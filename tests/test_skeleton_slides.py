@@ -118,12 +118,22 @@ def main() -> int:
                     f"capabilities: {w_in:.2f}in frame with {im.width}px raster"
                 )
 
-    # the fix that started all this: subtitle wrap headroom on the library
-    lib = Presentation(str(ts.skeleton_path("library"))).slides[0]
-    sub = [Emu(sh.height).inches for sh in lib.shapes
-           if sh.has_text_frame and sh.text_frame.text.startswith("Easier root cause")]
-    if not sub or sub[0] < 0.55:
-        failures.append(f"library subtitle headroom fix missing (H={sub})")
+    # the fix that started all this: subtitle wrap headroom on the library —
+    # both variants carry the same subtitle box, so both need the headroom
+    for lib_name in ("library", "library_ov80i"):
+        lib = Presentation(str(ts.skeleton_path(lib_name))).slides[0]
+        sub = [Emu(sh.height).inches for sh in lib.shapes
+               if sh.has_text_frame and sh.text_frame.text.startswith("Easier root cause")]
+        if not sub or sub[0] < 0.55:
+            failures.append(f"{lib_name} subtitle headroom fix missing (H={sub})")
+
+    # the ov80i library variant: on the deck canvas, one placeholder hole,
+    # sidecar in agreement (drift warns), selected by the spec per variant
+    prof80 = ts.profile("library_ov80i")
+    if [s["name"] for s in prof80["slots"]] != ["library_screen"]:
+        failures.append(f"library_ov80i profile slots: {[s['name'] for s in prof80['slots']]}")
+    if prof80.get("warnings"):
+        failures.append(f"library_ov80i sidecar drift: {prof80['warnings']}")
 
     # ---- the type scale stays inside the skeleton-grounded ranges ----
     # Authored slides must read at the same size as the standing template
