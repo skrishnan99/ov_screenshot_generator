@@ -186,9 +186,11 @@ slides:
     title: "Step {step}: Inspection Logic"
     hint: >
       One split slide, like the house setup templates: the Node-RED flow
-      screen on the left at about 55% width, the right-hand column
-      carrying the decision-path summary with the why-this-way rationale
-      beneath it.
+      screen on the left at about 55% width. In the right-hand column the
+      WHAT comes first and the WHY after: the decision-path summary
+      ([text]) as the bullets, and the why-this-way rationale
+      ([rationale]) as the footnote beneath them — never as the para
+      above.
     images:
       - expects: >
           The IO Logic screen — the embedded Node-RED flow editor showing

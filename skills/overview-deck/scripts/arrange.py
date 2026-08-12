@@ -31,7 +31,7 @@ if str(PLUGIN_ROOT) not in sys.path:
 # (Real overflow is measured by ovdeck; these catch shape errors early.)
 ARRANGEABLE = {
     "figure": {"images": 1, "text": {"caption"}},
-    "split": {"images": 1, "text": {"card_title", "para", "bullets"}},
+    "split": {"images": 1, "text": {"card_title", "para", "bullets", "footnote"}},
     "two_up": {"images": 2, "text": {"caption", "left_caption", "right_caption"}},
     "rows": {"images": 0, "text": {"entries", "intro"}},
     "statement": {"images": 0, "text": {"intro", "card_title", "bullets"}},
@@ -70,7 +70,9 @@ which layout(s), what goes together, how it reads best.
 
 Available layouts and their text fields:
 - figure: one image + caption. For one strong image.
-- split: one image + card_title/para/bullets. Image left, explanation right.
+- split: one image + card_title/para/bullets/footnote. Image left, explanation
+  right, rendered top-to-bottom in that field order — prose that should READ
+  AFTER the bullets (a rationale, a why) goes in footnote, never para.
 - two_up: exactly two images + caption and/or left_caption/right_caption
   (those exact field names). For before/after or pairs.
 - rows: no image; entries as "label | detail" lines (max 5) + intro.

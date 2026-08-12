@@ -639,8 +639,12 @@ class Deck:
 
     def split(self, title: str, image: str, *, card_title: str, para: str = "",
               bullets: Sequence[str] = (), chips: Sequence[str] = (),
-              subtitle: str = ""):
-        """Screenshot left, explanatory card right. The workhorse layout."""
+              footnote: str = "", subtitle: str = ""):
+        """Screenshot left, explanatory card right. The workhorse layout.
+
+        `footnote` is prose that belongs AFTER the bullets — a rationale or
+        aside subordinate to them — where `para` always renders above.
+        """
         sl, st = self._new()
         self._header(sl, st, title, subtitle)
         top = self._top()
@@ -664,8 +668,12 @@ class Deck:
             y = self._chips(sl, st, cx + 0.42, y + 0.26, chips,
                             size=SZ["chip"] - 0.5, width=inner)
         if bullets:
-            self._bullets(sl, st, cx + 0.42, y + 0.30, inner, bullets,
-                          size=SZ["caption"], gap=7)
+            y = self._bullets(sl, st, cx + 0.42, y + 0.30, inner, bullets,
+                              size=SZ["caption"], gap=7)
+        if footnote:
+            self._para(sl, st, cx + 0.42, y + 0.30, inner, footnote,
+                       size=SZ["body"] - 0.5, color=TEXT_BODY, spacing=1.22,
+                       max_h=1.9, label="split-footnote")
 
     def two_up(self, title: str, left: str, right: str, *, caption: str = "",
                left_caption: str = "", right_caption: str = "", subtitle: str = ""):

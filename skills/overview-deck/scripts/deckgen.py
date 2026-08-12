@@ -96,7 +96,7 @@ def _emit_layout(d, job: SlideJob, images: list[str], resolved: dict[str, str]) 
     elif job.layout == "split":
         d.split(title, images[0], card_title=t("card_title"), para=t("para"),
                 bullets=_as_list(t("bullets", [])), chips=_as_list(t("chips", [])),
-                subtitle=t("subtitle"))
+                footnote=t("footnote"), subtitle=t("subtitle"))
     elif job.layout == "two_up":
         d.two_up(title, images[0], images[1], caption=t("caption"),
                  left_caption=t("left_caption"), right_caption=t("right_caption"),
@@ -122,7 +122,8 @@ def _emit_arranged(d, planned: list[dict], run_dir: Path) -> None:
             d.figure(s["title"], imgs[0], caption=text.get("caption", ""))
         elif s["layout"] == "split":
             d.split(s["title"], imgs[0], card_title=text.get("card_title", ""),
-                    para=text.get("para", ""), bullets=_as_list(text.get("bullets", "")))
+                    para=text.get("para", ""), bullets=_as_list(text.get("bullets", "")),
+                    footnote=text.get("footnote", ""))
         elif s["layout"] == "two_up":
             d.two_up(s["title"], imgs[0], imgs[1], caption=text.get("caption", ""),
                      left_caption=text.get("left_caption", ""),
