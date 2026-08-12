@@ -195,6 +195,14 @@ COMPOSITE_JS = """
 """
 
 
+# Native-resolution viewer images run to several MB, and camera links
+# (Tailscale/VPN) can be slow. The browser context's 10s default timeout
+# ALSO governs page.request — a context-bound API request context inherits
+# it — and a 6 MB template image timed out under it in the field. The
+# fetch gets its own explicit budget instead.
+IMAGE_FETCH_TIMEOUT_MS = 120_000
+
+
 def _fetch_layer(browser, layer: dict) -> dict:
     """Fetch one viewer layer's bytes (img source fetch or canvas bitmap
     export). Returns {content, ext, method, source_url?} or {error}."""
@@ -211,7 +219,10 @@ def _fetch_layer(browser, layer: dict) -> dict:
                 out["content"] = b64.standard_b64decode(data)
                 out["ext"] = ".png" if "png" in header else ".jpg"
             else:
-                resp = browser.page.request.get(urljoin(browser.page.url, src))
+                resp = browser.page.request.get(
+                    urljoin(browser.page.url, src),
+                    timeout=IMAGE_FETCH_TIMEOUT_MS,
+                )
                 if not resp.ok:
                     out["error"] = f"fetch of img src returned {resp.status}"
                     return out
