@@ -137,8 +137,73 @@ class Browser:
         text = self.page.inner_text("body")
         return text[:limit] + ("\n...[truncated]" if len(text) > limit else "")
 
+    # innerText already includes content scrolled out of view inside a
+    # scrollable panel — these two exist for VIRTUALIZED lists, which only
+    # mount rows near the current scroll position. Scrolling such a panel
+    # changes what page_text() returns; scrolling a static one does not,
+    # which is how callers know when to stop re-reading.
+    _SCROLL_PANELS_JS = """
+    (down) => {
+      let moved = false;
+      const scrollables = [];
+      for (const el of document.querySelectorAll('*')) {
+        const cs = getComputedStyle(el);
+        if (!/(auto|scroll)/.test(cs.overflowY)) continue;
+        if (el.scrollHeight - el.clientHeight < 40) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 80 || r.height < 80) continue;  // ignore tiny widgets
+        scrollables.push(el);
+      }
+      const de = document.scrollingElement;
+      if (de && de.scrollHeight - de.clientHeight > 40) scrollables.push(de);
+      for (const el of scrollables) {
+        const before = el.scrollTop;
+        el.scrollTop = down
+          ? Math.min(before + el.clientHeight * 0.8, el.scrollHeight)
+          : 0;
+        if (Math.abs(el.scrollTop - before) > 1) moved = true;
+      }
+      return moved;
+    }
+    """
+
+    def scroll_panels(self) -> bool:
+        """Scroll every scrollable container on the page down by ~one page.
+        Returns True if anything actually moved."""
+        moved = bool(self.page.evaluate(self._SCROLL_PANELS_JS, True))
+        if moved:
+            self.page.wait_for_timeout(SETTLE_MS)
+        return moved
+
+    def reset_panel_scroll(self) -> None:
+        """Scroll every scrollable container back to the top."""
+        if self.page.evaluate(self._SCROLL_PANELS_JS, False):
+            self.page.wait_for_timeout(SETTLE_MS)
+
     def screenshot_bytes(self, full_page: bool = False) -> bytes:
         return self.page.screenshot(full_page=full_page)
+
+    def iframe_screenshot_bytes(self, min_viewport_frac: float = 0.15) -> bytes | None:
+        """Screenshot of the LARGEST visible <iframe> element alone — e.g. an
+        embedded Node-RED editor — cropped to its bounding box, chrome
+        excluded. Returns None when no iframe covers at least
+        min_viewport_frac of the viewport, so hidden/utility iframes can
+        never win; callers fall back to a full-page capture."""
+        best, best_area = None, 0.0
+        for handle in self.page.query_selector_all("iframe"):
+            try:
+                box = handle.bounding_box()
+            except Exception:
+                continue
+            if not box:
+                continue
+            area = box["width"] * box["height"]
+            if area > best_area:
+                best, best_area = handle, area
+        vp = self.page.viewport_size or {"width": 1600, "height": 1000}
+        if best is None or best_area < vp["width"] * vp["height"] * min_viewport_frac:
+            return None
+        return best.screenshot()
 
     def click(self, ref: int) -> str:
         item = self.last_items.get(ref)

@@ -40,12 +40,30 @@ def main() -> int:
             ("models.count", 3),
             ("models.segmentation", 2),
             ("models.classification", 1),
-            ("models.max_train_images", "83"),
+            ("models.max_train_images", "6"),
             ("recipe.name", "Widget Inspection"),
         ]:
             got, ok = ctx.get(key)
             if not ok or got != want:
                 failures.append(f"context[{key}] = {got!r} (resolved={ok}), want {want!r}")
+
+        # ---- final_train_images ladder: harvest first, stated fallback ----
+        # min(total, max bar) per model, max across models: min(6,18)=6 and
+        # min(16,6)=6 -> "6"; Edge Check's zero bars contribute nothing.
+        # Without the harvest, the Train screen's stated numbers: max 83.
+        meta_p0 = run / "data" / "meta.json"
+        original0 = meta_p0.read_text()
+        import json as _json0
+        meta0 = _json0.loads(original0)
+        del meta0["model_stats"]
+        meta0["facts"] = [f for f in meta0["facts"]
+                          if f["property"] != "total_captures"
+                          and not f["property"].startswith("labelled_images")]
+        meta_p0.write_text(_json0.dumps(meta0))
+        got, _ = ds.build_context(run).get("models.max_train_images")
+        if got != "83":
+            failures.append(f"stated-images fallback gave {got!r}, want '83'")
+        meta_p0.write_text(original0)
 
         # ---- trained derivation: last_trained is the primary signal ----
         trained = {m["name"]: m["trained"] for m in ctx.values["models"]}
@@ -201,7 +219,7 @@ def main() -> int:
             failures.append(f"results card skeleton wrong: {res.skeleton}")
         if res.tokens.get("train_acc") != "100%":
             failures.append(f"train_acc not pinned to 100%: {res.tokens.get('train_acc')!r}")
-        if res.tokens.get("train_imgs") != "83":
+        if res.tokens.get("train_imgs") != "6":
             failures.append(f"train_imgs is not the roster max: {res.tokens.get('train_imgs')!r}")
         # training titles carry the model's name AND its type
         tr = next(j for j in jobs if j.id == "training_model-s")

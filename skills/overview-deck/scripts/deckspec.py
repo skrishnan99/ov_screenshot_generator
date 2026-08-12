@@ -257,19 +257,46 @@ def build_context(run_dir: Path) -> Context:
     v["models"] = models  # for repeat expansion, not for `when`
     v["models.trained_signal"] = any_signal or not models
     v["models.count"] = len(models)
-    # The recipe-level results card shows ONE training-image count: the
-    # largest any model used. Derived deterministically from the
-    # (roster-canonicalized) training_images facts; "—" when no model
-    # states one — always set, so the spec's interpolation never fails.
-    max_imgs = None
-    for m in models:
+    # The recipe-level results card shows ONE training-image count:
+    # per model, final = min(total captures on its block page, the LARGEST
+    # single class bar) — a class's labels cannot come from more distinct
+    # images than its bar shows, and no model trains on more images than
+    # exist; the card takes the max final across models. Sources: the
+    # extractor's meta["model_stats"] harvest, its mirrored facts as the
+    # fallback, then the Train screen's stated training_images for runs
+    # predating the harvest. Always set ("—" when nothing states anything),
+    # so the spec's interpolation never fails.
+    stats = meta.get("model_stats") or {}
+
+    def _final_train_images(m: dict) -> int | None:
         subj = f"model: {m.get('name', '')}".lower()
-        for (sj, pr), val in facts.items():
-            if sj.lower() == subj and "training_image" in pr.lower():
-                for tok in re.findall(r"\d+", val.replace(",", "")):
-                    n = int(tok)
-                    max_imgs = n if max_imgs is None else max(max_imgs, n)
-    v["models.max_train_images"] = str(max_imgs) if max_imgs is not None else "—"
+        entry = stats.get(m.get("name", "")) or {}
+
+        total = entry.get("total_captures")
+        if not isinstance(total, int) or total < 0:
+            raw = next((val for (sj, pr), val in facts.items()
+                        if sj.lower() == subj and pr.lower() == "total_captures"), None)
+            total = int(raw) if raw and raw.strip().isdigit() else None
+
+        bars = [c.get("labelled_images") for c in entry.get("classes") or []
+                if isinstance(c.get("labelled_images"), int) and c["labelled_images"] >= 0]
+        if not bars:
+            bars = [int(val) for (sj, pr), val in facts.items()
+                    if sj.lower() == subj and pr.lower().startswith("labelled_images")
+                    and val.strip().isdigit()]
+        max_bar = max(bars) if bars else None
+
+        if total is not None and max_bar is not None:
+            return min(total, max_bar)
+        if total is not None or max_bar is not None:
+            return total if total is not None else max_bar
+        stated = [int(tok) for (sj, pr), val in facts.items()
+                  if sj.lower() == subj and "training_image" in pr.lower()
+                  for tok in re.findall(r"\d+", val.replace(",", ""))]
+        return max(stated) if stated else None
+
+    finals = [f for m in models if (f := _final_train_images(m)) is not None and f > 0]
+    v["models.max_train_images"] = str(max(finals)) if finals else "—"
     for t in ("classification", "segmentation"):
         v[f"models.{t}"] = sum(1 for m in models if m.get("type") == t)
 

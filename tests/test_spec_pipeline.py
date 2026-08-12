@@ -163,7 +163,7 @@ def main() -> int:
                 failures.append("results card missing from plan")
             else:
                 toks = res.get("tokens", {})
-                if toks.get("train_acc") != "100%" or toks.get("train_imgs") != "83":
+                if toks.get("train_acc") != "100%" or toks.get("train_imgs") != "6":
                     failures.append(f"results card tokens wrong: {toks}")
             # the library section sits between logic and the closing run
             lib = next((r for r in plan["slides"] if r["id"] == "library"), None)

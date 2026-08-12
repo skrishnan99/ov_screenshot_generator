@@ -95,8 +95,13 @@ steps:
     foreach_models: true
     screenshot: "04_roi"
 
-  - id: segmentation_block
-    # No path: continues from the Inspection Setup page opened by the previous step.
+  - id: segmentation_block_stats
+    # No path: continues from the Inspection Setup page opened by the previous
+    # step. The block page's INITIAL view — before any "Previous" click — is
+    # the one whose class panel shows the per-class labelled-image bars for
+    # ALL of this block's models; clicking Previous swaps the panel to the
+    # annotation state and the bars disappear. So the stats harvest runs
+    # here, and the screenshot step (which clicks Previous) runs after.
     goal: |
       You are on the Inspection Setup page of a recipe. First go back to the Recipe
       Editor overview page for this same recipe (for example via the recipe-name
@@ -104,9 +109,39 @@ steps:
 
       On the Recipe Editor overview, look at the "AI Blocks" section:
       - If a Segmentation model is present (for example "Segmentation (1 Model)"),
-        click on it to open the segmentation model page. Once you are on that page,
-        call wait_for_button_enabled with text "Previous" — capture data can take a
-        while to load, and the tool waits adaptively:
+        click on it to open the segmentation model page, then use wait_seconds
+        (3-5s) and a fresh snapshot to make sure the page has fully loaded.
+        Do ONLY the navigation: do NOT click "Previous" or "Next", do not open
+        any modal, and do not change any setting — this step only brings up
+        the page's initial view.
+      - If the AI Blocks section shows no Segmentation model (0 Models), stay on
+        the Recipe Editor overview and finish there.
+
+      If any confirmation dialogs or modals appear along the way, read them and
+      choose the option that proceeds; do not cancel or abandon the flow.
+    postcondition: |
+      Either the Segmentation Block page is open in its initial view (no modal
+      open, Previous not clicked), or — when the recipe has no segmentation
+      model — the Recipe Editor overview is displayed.
+    always_agent: true
+    collect_block_stats: segmentation
+
+  - id: segmentation_block
+    # No path: continues from the Segmentation Block page opened by the stats
+    # step above. This step clicks "Previous" to load a real capture into the
+    # viewer for the screenshot — which is exactly why the stats harvest ran
+    # BEFORE it.
+    goal: |
+      You should be on the Segmentation Block page of a recipe, opened by the
+      previous step. If you are not, go to the Recipe Editor overview page for
+      this same recipe (for example via the recipe-name breadcrumb at the top)
+      and, in the "AI Blocks" section, click the Segmentation model to open it;
+      if the recipe has no Segmentation model (0 Models), stay on the Recipe
+      Editor overview and finish there.
+
+      On the Segmentation Block page, call wait_for_button_enabled with text
+      "Previous" — capture data can take a while to load, and the tool waits
+      adaptively:
         - If it reports Previous enabled, click Previous, then call
           wait_for_image_load to wait until the capture image has fully rendered (it
           polls a vision model). When it reports the image loaded, finish. If it
@@ -116,8 +151,6 @@ steps:
           at all), finish on the page as it is.
         - If it reports the ceiling was hit with the page still changing, take a fresh
           snapshot to judge the state yourself, then proceed accordingly.
-      - If the AI Blocks section shows no Segmentation model (0 Models), stay on the
-        Recipe Editor overview and finish there.
 
       If any confirmation dialogs or modals appear along the way, read them and choose
       the option that proceeds; do not cancel or abandon the flow. Wait until the page
@@ -129,6 +162,10 @@ steps:
     # The flow branches on live data (segmentation model present? Previous button
     # clickable?), which a recorded trace cannot re-evaluate — always use the agent.
     always_agent: true
+    # The "Source Capture: n of N" readout only renders once Previous has
+    # loaded a capture — so the total-captures count is read here, and the
+    # class bars on the pre-Previous view by the stats step above.
+    collect_block_total: segmentation
     screenshot: "05_segmentation"
 
   - id: view_all_rois_segmentation
@@ -162,9 +199,12 @@ steps:
     always_agent: true
     screenshot: "06_view_all_rois_segmentation"
 
-  - id: classification_block
-    # No path: continues from wherever the previous step ended (possibly with the
-    # View All ROIs modal still open).
+  - id: classification_block_stats
+    # No path: continues from wherever the previous step ended (possibly with
+    # the View All ROIs modal still open). Same pre-"Previous" harvest as
+    # segmentation_block_stats: the initial view's class panel carries the
+    # per-class labelled-image bars ("Inspection Types"), which the
+    # screenshot step's Previous click swaps away.
     goal: |
       You may be on the Segmentation page of a recipe, possibly with a "View All ROIs"
       modal open. If a modal is open, close it first (Ok / Close / X).
@@ -174,9 +214,38 @@ steps:
 
       On the Recipe Editor overview, look at the "AI Blocks" section:
       - If a Classification model is present (for example "Classification (1 Model)"),
-        click on it to open the classification model page. Once you are on that page,
-        call wait_for_button_enabled with text "Previous" — capture data can take a
-        while to load, and the tool waits adaptively:
+        click on it to open the classification model page, then use wait_seconds
+        (3-5s) and a fresh snapshot to make sure the page has fully loaded.
+        Do ONLY the navigation: do NOT click "Previous" or "Next", do not open
+        any modal, and do not change any setting — this step only brings up
+        the page's initial view.
+      - If the AI Blocks section shows no Classification model (0 Models), stay on
+        the Recipe Editor overview and finish there.
+
+      If any confirmation dialogs or modals appear along the way, read them and
+      choose the option that proceeds; do not cancel or abandon the flow.
+    postcondition: |
+      Either the Classification Block page is open in its initial view (no modal
+      open, Previous not clicked), or — when the recipe has no classification
+      model — the Recipe Editor overview is displayed.
+    always_agent: true
+    collect_block_stats: classification
+
+  - id: classification_block
+    # No path: continues from the Classification Block page opened by the stats
+    # step above. Clicks "Previous" to load a real capture for the screenshot —
+    # which is exactly why the stats harvest ran BEFORE it.
+    goal: |
+      You should be on the Classification Block page of a recipe, opened by the
+      previous step. If you are not, go to the Recipe Editor overview page for
+      this same recipe (for example via the recipe-name breadcrumb at the top)
+      and, in the "AI Blocks" section, click the Classification model to open it;
+      if the recipe has no Classification model (0 Models), stay on the Recipe
+      Editor overview and finish there.
+
+      On the Classification Block page, call wait_for_button_enabled with text
+      "Previous" — capture data can take a while to load, and the tool waits
+      adaptively:
         - If it reports Previous enabled, click Previous, then call
           wait_for_image_load to wait until the capture image has fully rendered (it
           polls a vision model). When it reports the image loaded, finish. If it
@@ -186,8 +255,6 @@ steps:
           at all), finish on the page as it is.
         - If it reports the ceiling was hit with the page still changing, take a fresh
           snapshot to judge the state yourself, then proceed accordingly.
-      - If the AI Blocks section shows no Classification model (0 Models), stay on the
-        Recipe Editor overview and finish there.
 
       If any confirmation dialogs or modals appear along the way, read them and choose
       the option that proceeds; do not cancel or abandon the flow.
@@ -197,6 +264,8 @@ steps:
       when the recipe has no classification model — the Recipe Editor overview is
       displayed.
     always_agent: true
+    # Same as segmentation: the capture total only shows post-Previous.
+    collect_block_total: classification
     screenshot: "07_classification"
 
   - id: view_all_rois_classification
@@ -289,17 +358,64 @@ steps:
     foreach_settings: true
     screenshot: "11_model_settings"
 
-  - id: io_node_red
+  - id: io_node_red_view
     # No path: continues from the Train Models page (a settings dialog may still
-    # be open from the previous step). Produces a downloaded Node-RED flow JSON,
-    # not a screenshot.
+    # be open from the previous step). Brings up the IO / Node-RED flow view and
+    # captures it as a deliverable BEFORE the export step opens any dialog over
+    # it — the screenshot must show the loaded flow, not the Export dialog.
     goal: |
       If any modal or settings dialog is open, close it first (Close / Ok / X / Cancel).
 
       Go back to the Recipe Editor overview page for this same recipe (for example via
       the recipe-name breadcrumb at the top). On the editor overview, click
       "Configure IO" (in the "Set Pass/Fail & IO Logic" panel), and wait for the IO
-      page to fully load (use wait_seconds, 5-10s — it can take a while).
+      page to fully load (use wait_seconds, 5-10s — it can take a while). The
+      Node-RED flow editor canvas may be marked [iframe] in snapshots — on this
+      page it usually is, without any further navigation.
+
+      The IO page and the Node-RED editor load slowly and re-render: after opening
+      it, use wait_seconds (5-10s) BEFORE taking the snapshot you act on. If a
+      click times out with "element may be covered or gone", the page changed under
+      you — do not retry the same ref; wait a few seconds, take a fresh snapshot,
+      and re-locate the control. Prefer controls whose text or row context clearly
+      matches what you need over blind clicks on empty-text icon buttons.
+
+      Do ONLY the navigation: do not click any node, do not open any export or
+      settings dialog, and NEVER click "Deploy" (it pushes pending flow changes
+      live on a production camera). Finish once the flow canvas is visible and
+      has finished loading, with no dialog covering it.
+    postcondition: |
+      The IO page is open with the Node-RED flow editor canvas fully loaded and
+      visible, and no dialog is covering it.
+    check_recipe: false
+    # Numbered 12 alongside 12_library: library's filename is a published
+    # contract for existing runs, so it keeps its number; "io" sorts before
+    # "library", preserving step order in the folder listing.
+    screenshot: "12_io_node_red"
+    # The deliverable is the flow itself: capture only the embedded Node-RED
+    # iframe, not the surrounding camera-UI chrome. Falls back to a full-page
+    # capture (with a warning) if no dominant iframe is present.
+    screenshot_iframe: true
+    # Node-RED's own palette (left, all nodes) and sidebar (right, info) can
+    # cover parts of the flow: close each one right before the capture, only
+    # if it is actually open (their shortcuts are toggles).
+    close_node_red_panels: true
+    # The slow-loading Node-RED iframe can eat turns on stale refs.
+    max_model_calls: 25
+    always_agent: true
+
+  - id: io_node_red
+    # No path: continues from the loaded IO / Node-RED view left by the
+    # previous step. Produces the downloaded Node-RED flow JSON; the
+    # deliverable screenshot was already captured by io_node_red_view, so the
+    # Export dialog this step opens can never appear in it.
+    goal: |
+      The IO page with the Node-RED flow editor canvas should already be open and
+      loaded from the previous step. If it is not (or a modal/settings dialog is
+      open), close any dialog, go to the Recipe Editor overview page for this same
+      recipe (for example via the recipe-name breadcrumb at the top), click
+      "Configure IO" (in the "Set Pass/Fail & IO Logic" panel), and wait for the
+      IO page to fully load (use wait_seconds, 5-10s — it can take a while).
 
       PREFERRED PATH — the Node-RED export keyboard shortcut: as soon as a Node-RED
       flow editor canvas is visible (its content may be marked [iframe] in
@@ -335,7 +451,7 @@ steps:
     # Icon-only buttons don't replay reliably (two flaky-replay incidents);
     # the agent handles this flow consistently. The slow-loading Node-RED
     # iframe can eat many turns on stale refs, hence the raised budget.
-    max_model_calls: 45
+    max_model_calls: 35
     always_agent: true
 
   - id: library

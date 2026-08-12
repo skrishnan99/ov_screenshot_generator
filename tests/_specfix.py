@@ -56,10 +56,37 @@ FACTS = [
     {"subject": "model: Model S", "property": "last_trained", "value": "8/3/2026 12:32:22 PM", "source": "05"},
     {"subject": "model: Horn Quality", "property": "last_trained", "value": "7/28/2026 9:14:03 AM", "source": "07"},
     {"subject": "model: Edge Check", "property": "last_trained", "value": "Never trained", "source": "05"},
-    # the recipe-level results card takes the MAX of these
+    # legacy Train-screen numbers: the results-card fallback when no
+    # model_stats harvest exists (runs predating it)
     {"subject": "model: Model S", "property": "training_images", "value": "83", "source": "05"},
     {"subject": "model: Horn Quality", "property": "training_images", "value": "40", "source": "07"},
 ]
+
+# The block-page labelling harvest: per model, the capture-navigator total
+# and every class bar. final_train_images = min(total, max bar);
+# Model S -> min(6, 18) = 6, Horn Quality -> min(16, 6) = 6, Edge Check's
+# all-zero bars contribute nothing. Recipe card = max = 6.
+MODEL_STATS = {
+    "Model S": {
+        "type": "segmentation", "total_captures": 6, "source": "seg block",
+        "classes": [
+            {"roi": "", "label": "Defect", "class_token": "", "labelled_images": 18},
+        ],
+    },
+    "Horn Quality": {
+        "type": "classification", "total_captures": 16, "source": "cls block",
+        "classes": [
+            {"roi": "Horn", "label": "Pass", "class_token": "pass_horn", "labelled_images": 6},
+            {"roi": "Horn", "label": "Fail", "class_token": "fail_horn", "labelled_images": 4},
+        ],
+    },
+    "Edge Check": {
+        "type": "segmentation", "total_captures": 6, "source": "seg block",
+        "classes": [
+            {"roi": "", "label": "Chip", "class_token": "", "labelled_images": 0},
+        ],
+    },
+}
 
 
 def _png(path: Path, size=(64, 40), colour=(60, 60, 90)):
@@ -80,6 +107,7 @@ def make_run(tmp: Path) -> Path:
     (run / "data" / "meta.json").write_text(json.dumps({
         "models": MODELS,
         "facts": FACTS,
+        "model_stats": MODEL_STATS,
         "library_main_image": {
             "file": "deliverables/images/12_library_raw.jpg",
             "composite": {"file": "deliverables/images/12_library_composite.png"},

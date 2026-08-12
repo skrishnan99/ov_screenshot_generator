@@ -36,6 +36,7 @@ from core.navigator import run_step_auto as run_step
 from core.output import RunOutput
 from core.resolver import (
     canonicalize_fact_subject,
+    extract_model_stats,
     list_model_settings,
     list_models,
     list_training_reports,
@@ -450,6 +451,226 @@ def _envelope_entry(meta: dict, name: str, model_type: str) -> dict | None:
             return e
     hits = [e for e in entries if e.get("slug") and (e["slug"] in slug or slug in e["slug"])]
     return hits[0] if len(hits) == 1 else None
+
+
+# A block page's class panel only needs re-reading while scrolling actually
+# changes its text (virtualized lists); each pass costs one structured call.
+MAX_STATS_SCROLLS = 6
+
+
+def _merge_stats(agg: dict, parsed: dict) -> None:
+    """Fold one extraction pass into the accumulator. Classes key on
+    (roi, token-or-label) so overlapping scroll windows dedupe; a key seen
+    twice keeps the larger count, since a partially mounted row can only
+    under-read. Entries without a usable identity or count are dropped."""
+    total = parsed.get("total_captures")
+    if isinstance(total, int) and total >= 0:
+        if agg["total_captures"] is None or total > agg["total_captures"]:
+            agg["total_captures"] = total
+    for c in parsed.get("classes", []) or []:
+        try:
+            n = int(c.get("labelled_images"))
+        except (TypeError, ValueError):
+            continue
+        if n < 0:
+            continue
+        roi = str(c.get("roi", "")).strip()
+        label = str(c.get("label", "")).strip()
+        token = str(c.get("class_token", "")).strip()
+        if not (label or token):
+            continue
+        key = (roi.lower(), (token or label).lower())
+        prev = agg["classes"].get(key)
+        if prev is None or n > prev["labelled_images"]:
+            agg["classes"][key] = {
+                "roi": roi,
+                "label": label,
+                "class_token": token,
+                "labelled_images": n,
+            }
+
+
+def harvest_model_stats(browser, model: dict, meta: dict, source: str) -> None:
+    """Read the block page's labelling stats for ONE model: the total capture
+    count ("Source Capture: n of TOTAL") and every class bar's labelled-image
+    count from the class panel. The panel's initial view (BEFORE any
+    "Previous" click swaps it to the annotation state) lists groups for all
+    of the block's models, attributed by heading — extraction filters to
+    this model.
+
+    DOM text first: innerText includes rows scrolled out of view inside a
+    scrollable panel, so the common case is one read and no scrolling. The
+    scroll loop exists for virtualized lists, and only pays for another
+    extraction when scrolling actually changed the text.
+
+    Results land in meta["model_stats"][<model name>] and are mirrored into
+    meta["facts"] under the roster subject, so the numbers are available to
+    deck grounding with no further wiring. Enrichment only: any failure warns
+    and returns — it never fails the step.
+    """
+    name, mtype = model.get("name", ""), model.get("type", "")
+    try:
+        browser.reset_panel_scroll()
+        agg: dict = {"total_captures": None, "classes": {}}
+        seen_texts = set()
+        text = browser.page_text(20000)
+        seen_texts.add(text)
+        _merge_stats(agg, extract_model_stats(text, name, mtype))
+        for _ in range(MAX_STATS_SCROLLS):
+            if not browser.scroll_panels():
+                break
+            text = browser.page_text(20000)
+            if text in seen_texts:
+                break
+            seen_texts.add(text)
+            _merge_stats(agg, extract_model_stats(text, name, mtype))
+        browser.reset_panel_scroll()
+
+        classes = sorted(
+            agg["classes"].values(),
+            key=lambda c: (c["roi"], c["label"], c["class_token"]),
+        )
+        entry = {
+            "type": mtype,
+            "total_captures": agg["total_captures"],
+            "classes": classes,
+            "source": source,
+        }
+        if not classes:
+            entry["note"] = "no class bars found on the block page"
+        meta.setdefault("model_stats", {})[name] = entry
+
+        facts = meta.setdefault("facts", [])
+        if agg["total_captures"] is not None:
+            facts.append({
+                "subject": f"model: {name}",
+                "property": "total_captures",
+                "value": str(agg["total_captures"]),
+                "source": source,
+            })
+        for c in classes:
+            ident = c["class_token"] or " ".join(
+                x for x in (c["roi"], c["label"]) if x
+            )
+            facts.append({
+                "subject": f"model: {name}",
+                "property": f"labelled_images {ident}",
+                "value": str(c["labelled_images"]),
+                "source": source,
+            })
+        total_str = (
+            str(agg["total_captures"]) if agg["total_captures"] is not None else "?"
+        )
+        print(
+            f"  stats for \"{name}\": {total_str} captures, "
+            f"{len(classes)} class bar(s), {len(seen_texts)} read(s)"
+        )
+    except Exception as e:
+        print(f"  warning: stats for \"{name}\" not captured: {e}")
+
+
+def _node_red_frame(browser):
+    """The iframe hosting the Node-RED editor, identified by its workspace
+    element; None when no frame carries one."""
+    for frame in browser.page.frames:
+        if frame is browser.page.main_frame:
+            continue
+        try:
+            if frame.query_selector("#red-ui-workspace") or frame.query_selector(
+                "#workspace"
+            ):
+                return frame
+        except Exception:
+            continue
+    return None
+
+
+# Node-RED's panels cover parts of the flow in a capture. Each entry:
+# (label, selectors old+new Node-RED, editor action, keyboard fallback).
+# Both controls are TOGGLES — the visibility check before firing is what
+# guarantees a closed panel is never accidentally opened.
+NODE_RED_PANELS = (
+    ("palette", ("#red-ui-palette", "#palette"),
+     "core:toggle-palette", "ControlOrMeta+p"),
+    ("sidebar", ("#red-ui-sidebar", "#sidebar"),
+     "core:toggle-sidebar", "ControlOrMeta+Space"),
+)
+
+
+def close_node_red_panels(browser) -> None:
+    """Close Node-RED's palette (left) and sidebar (right) inside the flow
+    iframe, so a capture shows the whole flow rather than the editor chrome.
+
+    Each panel is toggled ONLY when currently visible, preferably via the
+    editor's own action API (deterministic, needs no keyboard focus), with
+    the documented keyboard shortcut as fallback. Cosmetic only: any failure
+    warns and the capture proceeds with the page as it is.
+    """
+    frame = _node_red_frame(browser)
+    if frame is None:
+        print("  warning: node-red frame not found; capturing panels as-is")
+        return
+    for label, selectors, action, combo in NODE_RED_PANELS:
+        try:
+            el = None
+            for sel in selectors:
+                el = frame.query_selector(sel)
+                if el is not None:
+                    break
+            if el is None or not el.is_visible():
+                continue
+            try:
+                frame.evaluate(f"() => RED.actions.invoke('{action}')")
+            except Exception:
+                # Older editor or RED not exposed: fall back to the shortcut.
+                frame.press("body", combo)
+            browser.page.wait_for_timeout(600)
+            if el.is_visible():
+                print(f"  warning: node-red {label} still open after toggle")
+            else:
+                print(f"  node-red {label} closed for capture")
+        except Exception as e:
+            print(f"  warning: node-red {label} check failed: {e}")
+
+
+# "Source Capture: <n> of <TOTAL>" — innerText may put the input value and
+# the "of N" on separate lines, hence the bounded any-character gap.
+_CAPTURE_TOTAL_RE = re.compile(r"source\s+capture:?[\s\S]{0,40}?\bof\s+(\d+)", re.I)
+
+
+def harvest_block_total(browser, want_type: str, meta: dict, source: str) -> None:
+    """Read the block page's total capture count and record it for every
+    model of the block's type. The "Source Capture: n of N" readout only
+    renders once a capture is loaded — i.e. AFTER the screenshot step's
+    "Previous" click — which is why this runs there and not with the
+    class-bar harvest, which needs the pre-"Previous" view. Deterministic
+    (regex over page text); enrichment only — never fails the step."""
+    try:
+        m = _CAPTURE_TOTAL_RE.search(browser.page_text(20000))
+        if not m:
+            print(
+                "  warning: no 'Source Capture: n of N' readout found; "
+                "total captures not recorded"
+            )
+            return
+        total = int(m.group(1))
+        models = [mm for mm in meta.get("models", []) if mm.get("type") == want_type]
+        for mm in models:
+            entry = meta.setdefault("model_stats", {}).setdefault(
+                mm["name"],
+                {"type": want_type, "total_captures": None,
+                 "classes": [], "source": source},
+            )
+            entry["total_captures"] = total
+            meta.setdefault("facts", []).append({
+                "subject": f"model: {mm['name']}",
+                "property": "total_captures",
+                "value": str(total),
+                "source": source,
+            })
+        print(f"  total captures for {want_type}: {total} ({len(models)} model(s))")
+    except Exception as e:
+        print(f"  warning: total captures not recorded: {e}")
 
 
 def capture_block_per_model(
@@ -959,6 +1180,26 @@ def main(argv: list[str] | None = None) -> int:
                 "step": step_id,
                 "intent": step.get("goal", ""),
             }
+            # Stats steps run on a block page's INITIAL view — before the
+            # screenshot step's "Previous" click swaps the class panel to the
+            # annotation state and its bars disappear. One harvest per model
+            # of the block's type, all read from the same shared panel.
+            if step.get("collect_block_stats"):
+                want_type = step["collect_block_stats"]
+                stat_models = [
+                    m for m in meta.get("models", []) if m.get("type") == want_type
+                ]
+                if not stat_models:
+                    print(f"  no {want_type} models; stats skipped")
+                for m in stat_models:
+                    harvest_model_stats(browser, m, meta, f"{step['id']} page")
+            # Totals-only companion to the above: reads the post-"Previous"
+            # capture navigator, so it hangs off the screenshot step whose
+            # agent already clicked Previous and waited for the image.
+            if step.get("collect_block_total"):
+                harvest_block_total(
+                    browser, step["collect_block_total"], meta, f"{step['id']} page"
+                )
             if step.get("expect_download") and browser.downloads:
                 dl_name = step.get(
                     "download_as", browser.downloads[-1].suggested_filename
@@ -1008,8 +1249,22 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"  warning: {step_id} table {msg}")
                 else:
                     browser.page.wait_for_timeout(1500)
+                if step.get("close_node_red_panels"):
+                    close_node_red_panels(browser)
                 name = f"{step['screenshot']}.png"
-                png = browser.screenshot_bytes(full_page=True)
+                # screenshot_iframe: capture only the page's dominant embedded
+                # iframe (e.g. the Node-RED editor), not the surrounding
+                # chrome. A page without one degrades to the normal capture.
+                png = None
+                if step.get("screenshot_iframe"):
+                    png = browser.iframe_screenshot_bytes()
+                    if png is None:
+                        print(
+                            f"  warning: no dominant iframe found for {step_id}; "
+                            f"capturing the full page instead"
+                        )
+                if png is None:
+                    png = browser.screenshot_bytes(full_page=True)
                 shot = out.save(
                     name, png, kind="screenshot",
                     role=step.get("screenshot_role", "deliverable"),

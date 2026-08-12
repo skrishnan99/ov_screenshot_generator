@@ -224,6 +224,88 @@ def list_model_settings(snapshot: str) -> list[dict]:
         return []
 
 
+STATS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "total_captures": {
+            "type": "integer",
+            "description": 'The TOTAL from the "Source Capture: <n> of <total>" readout. -1 when no such readout is present.',
+        },
+        "classes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "roi": {
+                        "type": "string",
+                        "description": "The ROI/group heading the bar sits under, WITHOUT any model suffix. Empty when the bars are not grouped.",
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": 'The class display label on the bar, e.g. "Two".',
+                    },
+                    "class_token": {
+                        "type": "string",
+                        "description": 'The internal class name on the bar, e.g. "two_trumpet_front". Empty when the bar shows none.',
+                    },
+                    "labelled_images": {
+                        "type": "integer",
+                        "description": "The labelled-image count at the end of the bar, verbatim.",
+                    },
+                },
+                "required": ["roi", "label", "class_token", "labelled_images"],
+                "additionalProperties": False,
+            },
+        },
+        "notes": {"type": "string"},
+    },
+    "required": ["total_captures", "classes", "notes"],
+    "additionalProperties": False,
+}
+
+STATS_PROMPT = """Below is the visible text of the {model_type} Block page of an industrial \
+camera's web UI, in its initial view. Its class panel may list ROI groups for SEVERAL \
+models, each group heading attributed to its model (e.g. "Trumpet Front - Model 2").
+
+Extract the labelling statistics for the model "{model}" only:
+
+1. total_captures: the page shows a capture navigator like "Source Capture: <n> of <total>" —
+   report the <total>. Use -1 if no such readout appears in the text.
+
+2. classes: the page has a class panel (often headed "Inspection Types") listing ROI groups
+   (headings like "Trumpet Front - {model}"), each holding one colored bar per class. In the
+   text, a bar appears as a class display label (e.g. "Two"), usually an internal class name
+   (e.g. "two_trumpet_front"), and the count of labelled images for that class. Report every
+   bar present in the text:
+   - "roi": the group heading WITHOUT the model suffix ("Trumpet Front - {model}" -> "Trumpet Front").
+   - Skip any group attributed to a DIFFERENT model than "{model}".
+   - Copy every count verbatim from the text. Never estimate, never invent a class or count.
+
+Return an empty classes list if no class bars appear in the text. Numbers you cannot find are
+absent, not zero.
+
+Page text:
+{page_text}"""
+
+
+def extract_model_stats(page_text: str, model_name: str, model_type: str) -> dict:
+    """Structured read of a block page's labelling stats for the currently
+    selected model. Returns the raw parse; validation/merging is the caller's
+    job. An empty result (no classes, total -1) on refusal."""
+    try:
+        return complete(
+            STATS_PROMPT.format(
+                model=model_name, model_type=model_type, page_text=page_text
+            ),
+            schema=STATS_SCHEMA,
+            max_tokens=4000,
+            # Sonnet: straightforward structured extraction of visible rows.
+            model=llm.SONNET,
+        )
+    except LLMRefusal:
+        return {"total_captures": -1, "classes": [], "notes": "model refused"}
+
+
 def resolve_recipe(requested: str, snapshot: str) -> dict:
     try:
         return complete(
