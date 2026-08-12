@@ -31,6 +31,8 @@ MANIFEST_ASSETS = [
      "kind": "screenshot", "role": "deliverable", "step": "segmentation_block"},
     {"path": "deliverables/screenshots/07_classification.png",
      "kind": "screenshot", "role": "deliverable", "step": "classification_block"},
+    {"path": "deliverables/screenshots/12_library.png",
+     "kind": "screenshot", "role": "deliverable", "step": "library"},
 ]
 
 SCREENSHOTS = {

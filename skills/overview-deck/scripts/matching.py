@@ -68,26 +68,65 @@ class MatchResult:
     report: list[dict] = field(default_factory=list)
 
 
+def _synth_from_asset(asset: dict) -> str:
+    """Deterministic stand-in description for an extractor screenshot whose
+    vision description failed or is missing. The asset index records which
+    extraction step produced the file — identity by construction, the same
+    sanctioned join the training-image ladder uses — so a one-call vision
+    hiccup must not evict an asset whose identity was never in doubt (a
+    failed 12_library.png description once cost the deck its library
+    slide)."""
+    item = str(asset.get("item") or "").strip()
+    return (
+        f"Screenshot of the camera UI from the extraction step "
+        f"'{asset.get('step', 'unknown')}'"
+        + (f" — {item}" if item else "")
+        + ". (Vision description unavailable; identity comes from the "
+          "run's asset index, which records the step that captured it.)"
+    )
+
+
 def build_catalog(run_dir: Path, extra_images: list[Path] | None = None) -> list[dict]:
     """[{path, description}] over everything a slide could show.
 
     Sources: descriptions.json (screenshots, described by the extractor);
-    meta.json main-image entries (native captures + composites, synthesized);
-    engineer photos (described on the spot — the only vision calls at catalog
-    time, and only when photos were supplied).
+    the manifest asset index (deterministic stand-ins for screenshots whose
+    vision description failed or is missing); meta.json main-image entries
+    (native captures + composites, synthesized); engineer photos (described
+    on the spot — the only vision calls at catalog time, and only when
+    photos were supplied).
     """
     run_dir = Path(run_dir)
     catalog: list[dict] = []
     seen: set[str] = set()
 
+    man_path = run_dir / "data" / "manifest.json"
+    try:
+        manifest = json.loads(man_path.read_text()) if man_path.exists() else {}
+    except Exception:
+        manifest = {}
+    shot_assets = {a["path"]: a for a in manifest.get("assets", [])
+                   if a.get("kind") == "screenshot" and a.get("path")}
+
     desc_path = run_dir / "deliverables" / "report" / "descriptions.json"
     descriptions = json.loads(desc_path.read_text()) if desc_path.exists() else {}
     for name, text in descriptions.items():
-        if str(text).startswith("[description failed"):
-            continue
         rel = f"deliverables/screenshots/{name}"
-        if (run_dir / rel).exists():
-            catalog.append({"path": rel, "description": str(text)})
+        if not (run_dir / rel).exists():
+            continue
+        if str(text).startswith("[description failed"):
+            asset = shot_assets.get(rel)
+            if asset:
+                catalog.append({"path": rel, "description": _synth_from_asset(asset)})
+                seen.add(rel)
+            continue
+        catalog.append({"path": rel, "description": str(text)})
+        seen.add(rel)
+
+    # Screenshots the describe phase never produced an entry for at all.
+    for rel, asset in shot_assets.items():
+        if rel not in seen and (run_dir / rel).exists():
+            catalog.append({"path": rel, "description": _synth_from_asset(asset)})
             seen.add(rel)
 
     meta_path = run_dir / "data" / "meta.json"
