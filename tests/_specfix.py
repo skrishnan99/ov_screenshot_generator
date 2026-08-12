@@ -43,6 +43,8 @@ SCREENSHOTS = {
     "hq_settings.png": "Horn Quality's training settings dialog.",
     "12_library.png": "The camera's Library page: capture browser with thumbnails of stored "
                       "captures and a selected capture's details panel.",
+    "10_io_node_red.png": "The IO Logic screen: the embedded Node-RED flow editor with wired "
+                          "nodes from the inspection input to the pass/fail outputs.",
 }
 
 FACTS = [

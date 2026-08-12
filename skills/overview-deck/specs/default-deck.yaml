@@ -177,37 +177,41 @@ slides:
           state it, formatted like "3 days". Otherwise exactly "—".
         max_chars: 20
 
-  # -- 8. IO logic as a diagram. The diagram is THIS flow's actual decision
-  # path, not a generic pipeline; the caption says what the setup achieves
-  # and why it is built that way.
+  # -- 8. IO logic: the Node-RED editor screenshot beside what the flow
+  # does and why it is built that way — same split shape as the other
+  # setup slides.
   - id: logic
-    layout: flow
+    tier: 3
     step: true
     title: "Step {step}: Inspection Logic"
+    hint: >
+      One split slide, like the house setup templates: the Node-RED flow
+      screen on the left at about 55% width, the right-hand column
+      carrying the decision-path summary with the why-this-way rationale
+      beneath it.
+    images:
+      - expects: >
+          The IO Logic screen — the embedded Node-RED flow editor showing
+          this recipe's wired pass/fail logic (nodes and connections from
+          the inspection input to the outputs).
     tokens:
-      nodes:
+      text:
         llm: >
-          THIS recipe's actual decision path as exactly 3 stages, each
-          "label | sub". Stage 1: what enters the logic — name the real
-          inputs (which models' results, per which regions). Stage 2: the
-          actual computation applied — the real rule, thresholds, weights
-          or grouping from the flow, not a placeholder like "decision
-          rule". Stage 3: what is produced and where it goes — the
-          camera's verdict and what is written to the plant's systems.
-          Labels 2-4 words; subs are the concrete specifics, under ~60
-          characters each.
-        shape: pairs
-      rule:
-        llm: "The crux of the pass/fail rule as 2-3 short lines."
+          What this recipe's IO logic actually does, as 3-5 short lines:
+          the real inputs (which models' results, per which regions), the
+          actual rule with its thresholds, weights or grouping from the
+          flow — never a placeholder like "decision rule" — and what is
+          produced and written out (the camera's verdict, what reaches
+          the plant's systems).
         shape: lines
-        max_chars: 180
-      caption:
+        max_chars: 320
+      rationale:
         llm: >
-          What this IO setup achieves AND why it is built this way: why
-          the logic is grouped, weighted or thresholded as it is, and what
-          that buys the inspection — only as far as the flow analysis and
-          notes actually state it. 2-3 plain sentences.
-        max_chars: 300
+          Why the logic is built this way, in 1-2 plain sentences: why it
+          is grouped, weighted or thresholded as it is and what that buys
+          the inspection — only as far as the flow analysis and notes
+          actually state it.
+        max_chars: 220
 
   # -- 9. the library: on-camera storage of training + production data,
   # v1's fixed-layout skeleton with this run's Library screen in its hole.
