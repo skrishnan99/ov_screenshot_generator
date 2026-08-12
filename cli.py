@@ -633,6 +633,64 @@ def close_node_red_panels(browser) -> None:
             print(f"  warning: node-red {label} check failed: {e}")
 
 
+# Feature-promo / walkthrough modals pop over config screens on first visit
+# in a fresh browser session (e.g. "Try out the New Aligner" on Template
+# Image and Alignment). The UI persists nothing on dismissal, and every run
+# starts a fresh browser, so the modal greets EVERY run. Detection keys on
+# the dialog SHAPE ([role=dialog]), not its copy, so the next feature's
+# promo is caught too. Buttons are only ever matched against this
+# dismiss-flavoured vocabulary — the primary CTA ("See What's New") starts
+# the walkthrough and must never be clicked.
+PROMO_DISMISS_RE = re.compile(
+    r"explore on my own|maybe later|not now|no thanks|skip|dismiss|got it",
+    re.I,
+)
+
+
+def _visible_dialog(browser):
+    """The overlaying dialog element if one is visible, else None."""
+    for el in browser.page.query_selector_all("[role=dialog]"):
+        try:
+            if el.is_visible():
+                return el
+        except Exception:
+            continue
+    return None
+
+
+def dismiss_promo_modal(browser) -> None:
+    """Close a feature-promo / walkthrough modal overlaying the page.
+
+    Fired only when a dialog is actually visible. Escape is the primary
+    close — text-independent, and it cannot accidentally start the
+    walkthrough — with a dismiss-flavoured button from the modal itself as
+    fallback. Cosmetic: any failure warns and the capture proceeds with the
+    page as it is; this must never fail a step.
+    """
+    try:
+        modal = _visible_dialog(browser)
+        if modal is None:
+            return
+        browser.page.keyboard.press("Escape")
+        browser.page.wait_for_timeout(600)
+        modal = _visible_dialog(browser)
+        if modal is None:
+            print("  promo modal closed (Escape)")
+            return
+        for btn in modal.query_selector_all("button"):
+            label = (btn.inner_text() or "").strip()
+            if label and PROMO_DISMISS_RE.search(label):
+                btn.click()
+                browser.page.wait_for_timeout(600)
+                if _visible_dialog(browser) is None:
+                    print(f"  promo modal closed ({label!r})")
+                    return
+                break
+        print("  warning: promo modal still visible after dismiss attempts")
+    except Exception as e:
+        print(f"  warning: promo modal dismissal failed: {e}")
+
+
 # "Source Capture: <n> of <TOTAL>" — innerText may put the input value and
 # the "of N" on separate lines, hence the bounded any-character gap.
 _CAPTURE_TOTAL_RE = re.compile(r"source\s+capture:?[\s\S]{0,40}?\bof\s+(\d+)", re.I)
@@ -1209,6 +1267,11 @@ def main(argv: list[str] | None = None) -> int:
                 out.register(dest, kind="data", role="data", step=step_id)
                 step_record["download"] = out.rel(dest)
                 print(f"  saved download -> {out.rel(dest)}")
+            # Before any capture or vision wait: a promo modal overlaying the
+            # page would cover the image viewer and stall poll_image_loaded
+            # for its full budget before ruining the screenshot anyway.
+            if step.get("dismiss_promo_modal"):
+                dismiss_promo_modal(browser)
             if step.get("foreach_models"):
                 capture_per_model(
                     browser, step, out, step_record, desc_queue, base_ctx, meta

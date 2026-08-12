@@ -56,14 +56,22 @@ steps:
       Alignment" page from there (it is listed under Image Alignment & Inspection Setup).
 
       If any confirmation dialogs or modals appear along the way, read them and choose
-      the option that proceeds; do not cancel or abandon the flow. Wait until the page
-      has fully loaded before finishing.
+      the option that proceeds; do not cancel or abandon the flow. EXCEPTION: a
+      promotional or walkthrough modal (e.g. "Try out the New Aligner") is closed, not
+      followed — press Escape or choose the dismissive option ("I'll Explore on my
+      own"); never start the walkthrough or tour. Wait until the page has fully loaded
+      before finishing.
     postcondition: |
       The Template Image and Alignment page is open and loaded (template image /
       alignment configuration is visible), not the editor overview and not Imaging Setup.
     success_text:
       - "Re-Capture Template Image"
       - "Skip Aligner"
+    # A fresh browser session is greeted here by a feature-promo modal
+    # ("Try out the New Aligner"); nothing is persisted on dismissal, so it
+    # appears EVERY run. Closed deterministically before the vision wait —
+    # it covers the image viewer — and before the capture.
+    dismiss_promo_modal: true
     # Poll (vision) until the template image has rendered before capturing.
     wait_image_loaded:
       interval_s: 7
