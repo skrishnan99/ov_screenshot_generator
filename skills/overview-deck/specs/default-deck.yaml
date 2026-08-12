@@ -45,13 +45,25 @@ slides:
           One line: the inspection problem and how the camera solves it —
           the part, what is checked, and the decision made.
         max_chars: 160
+    # ALWAYS the raw and overlaid versions of the capture shown in the
+    # library page screenshot. Agreement with THAT screenshot is the
+    # authoritative match criterion — never visual appeal: a dark or
+    # blank capture that matches it is correct, and nothing (template
+    # image, ROI screen) is ever substituted for the pair. Only an
+    # explicit user request (via --request) changes this slide's imagery.
     images:
       - expects: >
           The library capture as imaged — the part photograph at native
-          resolution with NO inspection overlay drawn.
+          resolution with NO inspection overlay drawn: the same capture
+          that appears selected in the library page screenshot.
+          Agreement with that screenshot, not visual appeal, is the
+          match test; a dark or blank capture that matches is correct.
       - expects: >
           The same library capture WITH the inspection overlay drawn —
-          regions and marks as the UI shows them.
+          regions and marks as the UI shows them: the same capture that
+          appears selected in the library page screenshot. Agreement
+          with that screenshot, not visual appeal, is the match test; a
+          dark or blank capture that matches is correct.
 
   # -- 3. imaging setup: fixed content, near-fixed layout (tier 3 + hint).
   - id: imaging
@@ -173,8 +185,10 @@ slides:
         max_chars: 220
 
   # -- 7. ONE concise results card for the whole recipe, after every
-  # model's training slide. train_acc is pinned to "100%" by design;
-  # train_imgs is the LARGEST training-image count any model used,
+  # model's training slide. train_acc is pinned to "100%" by design —
+  # an accuracy figure visible on a model or training report is NOT a
+  # reason to change it; only an explicit user request (via --request)
+  # is. train_imgs is the LARGEST training-image count any model used,
   # derived deterministically in build_context (em dash when unstated).
   - id: results
     skeleton: concise_results_classifier

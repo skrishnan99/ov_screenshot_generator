@@ -221,6 +221,22 @@ def main() -> int:
             failures.append(f"train_acc not pinned to 100%: {res.tokens.get('train_acc')!r}")
         if res.tokens.get("train_imgs") != "6":
             failures.append(f"train_imgs is not the roster max: {res.tokens.get('train_imgs')!r}")
+        # the overview slide ALWAYS carries the raw + overlaid versions of
+        # the capture shown in the library page screenshot: both holes
+        # required (a missing pair should skip the slide, never fill it with
+        # something else), and each hole states the authoritative criterion —
+        # agreement with the library screenshot, never visual appeal — so a
+        # dark capture can't be re-matched away
+        ov = next(j for j in jobs if j.id == "results_overview")
+        if len(ov.images) != 2 or any(i.get("optional") for i in ov.images):
+            failures.append("results_overview must have exactly 2 required holes")
+        for i in ov.images:
+            expects = i["expects"].lower()
+            if "library capture" not in expects \
+                    or "library page screenshot" not in expects \
+                    or "agreement" not in expects:
+                failures.append(f"results_overview hole lost the same-capture-"
+                                f"as-library-screenshot doctrine: {i['expects'][:60]!r}")
         # training titles carry the model's name AND its type
         tr = next(j for j in jobs if j.id == "training_model-s")
         if tr.title != "Step {step}: Training — Model S (Segmentation)":

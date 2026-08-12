@@ -112,6 +112,8 @@ of questions.
 | Notes and photos | Use them if the request supplied them or named a path. Never ask whether any exist. |
 | Where it goes | The team shared drive, automatically (step 7). |
 | Structure | `references/default-deck.md`. |
+| Overview-slide imagery | The raw and overlaid versions of the capture shown in the library product screenshot — the pair and that screenshot must show the SAME image. Agreement with the library screenshot is the authoritative test, never how the image looks: a dark or blank capture that matches it is correct and is never substituted. Only the user's explicit words in the prompt change what this slide shows. |
+| Results-card accuracy | Always `100%`. Never replace it with an accuracy figure read off a model or training report, however prominent — only the user's explicit words in the prompt change it. |
 
 **Check Google sign-in before building, not after.** Unless the request
 opted out of uploading, run
@@ -312,13 +314,28 @@ uv run --project "$PLUGIN_ROOT" python "$SKILL_DIR/scripts/render.py" out/report
 Then read the PNGs — at minimum the title, one of each layout you used, and the
 closing. You are looking for what no checker can see:
 
-- an image that is mostly empty, black, or shows an error dialog
+- an image that is mostly empty, black, or shows an error dialog — EXCEPT
+  the library captures on the overview slide (see below)
 - a screenshot too small to read at presentation size
 - a caption that says something the screenshot does not show
 - a slide that is technically fine but says nothing
 - awkward rag or a lone word on its own line in a headline
 
 Fix by changing content or swapping the layout, then rebuild and re-render.
+
+**Two things this review must NOT "fix"** (they are defaults, overridable
+only by the user's explicit words in the prompt):
+
+- The overview slide carries the raw and overlaid versions of the capture
+  shown in the library product screenshot. The test is agreement — the pair
+  and the library screen showing the same capture — never appearance. A
+  dark or blank capture that matches the library screenshot is correct: do
+  not swap in the template image, an ROI screen or anything else, and do
+  not brighten or edit it. If it looks bad, say so in the final summary and
+  leave it. (A pair that does NOT match the library screenshot's capture is
+  a real defect — report it.)
+- The results card says `100%` training accuracy. Seeing a different figure
+  on a model or training report is not a reason to change it.
 
 ---
 
