@@ -130,9 +130,11 @@ slides:
     title: "Step {step}: Training — {model.name} ({model.type_title})"
     hint: >
       One split slide, like the house setup templates: the block page
-      on the left at about 55% width, the right-hand column carrying
-      the setup/training summary with the why-this-approach rationale
-      beneath it.
+      on the left at about 55% width. In the right-hand column the WHAT
+      comes first and the WHY after: what this model's inspection does
+      ([text]) as the bullets, and the why-this-approach rationale
+      ([rationale]) as the footnote beneath them — never as the para
+      above.
     images:
       # The TYPE'S BLOCK PAGE, not the Train screen's dialogs: it shows
       # an example annotated training image on the part with the model's
@@ -143,13 +145,21 @@ slides:
           with the model's classes listed beside it. Not the Train
           Models screen, not a settings dialog, not an ROI gallery.
     tokens:
+      # WHAT the model's inspection is trying to do — never how well it
+      # did. Training-image counts, accuracy/IoU/loss, iterations and
+      # every other result metric live on the results card ONLY, so the
+      # deck has exactly one definitive statement of them.
       text:
         llm: >
-          How {model.name} was set up and trained, in plain language:
-          what it decides (classes / defect classes), and the training
-          choices visible in the material. 2-4 short lines.
+          What {model.name}'s inspection is trying to do, in plain
+          language: the decision it makes on the part, the classes or
+          defect classes it separates, and the part areas it judges.
+          2-4 short lines. NEVER training-image counts, accuracy, IoU,
+          loss, iterations or any training/result metric — those appear
+          only on the results card.
         shape: lines
         max_chars: 280
+        ban: metrics
       # The WHY, not just the what: the reader is deciding whether this
       # approach would work on their line.
       rationale:

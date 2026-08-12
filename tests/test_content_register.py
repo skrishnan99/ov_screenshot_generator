@@ -65,6 +65,23 @@ def main() -> int:
         failures.append(f"normalize dropped a data-bearing line: {n!r}")
     if content_mod.normalize(lines_req, "a: —\nb: —") != "—":
         failures.append("all-dash value did not collapse to the bare dash")
+    # ---- ban: metrics — training/result figures live on the results card
+    # ONLY. The flag comes from the spec; without it metrics stay legal
+    # (the results card's own tokens must be able to state them).
+    ban_req = content_mod.TokenReq(id="m", brief="b", shape="lines",
+                                   max_chars=300, scope="", ban="metrics")
+    for bad in ("Training accuracy: 100%", "Trained on 40 training images",
+                "IoU: 0.91", "Loss: 0.028 after 100 iterations"):
+        if not content_mod.lint(ban_req, bad):
+            failures.append(f"ban=metrics accepted {bad!r}")
+    if content_mod.lint(ban_req, "Decides: wear grade per zone\nClasses: 3"):
+        failures.append("ban=metrics rejected metric-free copy")
+    spec_yaml = (Path(content_mod.SKILL) / "specs" / "default-deck.yaml").read_text()
+    training = spec_yaml[spec_yaml.index("id: training"):]
+    training = training[:training.index("- id:")]
+    if "ban: metrics" not in training:
+        failures.append("default spec's training text token lost `ban: metrics`")
+
     pairs_req = content_mod.TokenReq(id="p", brief="b", shape="pairs", max_chars=300, scope="")
     if content_mod.lint(pairs_req, "no separators here\nagain"):
         pass

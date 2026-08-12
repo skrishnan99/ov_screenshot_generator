@@ -48,6 +48,15 @@ BANNED = (
 DEFAULT_MAX_CHARS = {"text": 240, "lines": 320, "pairs": 240}
 LINE_RANGE = (2, 6)
 
+# Tokens carrying `ban: metrics` in the spec may not state training or
+# result figures — the results card is the deck's ONE definitive place
+# for them. Substrings, checked lowercase, like BANNED.
+METRIC_BANNED = (
+    "accuracy", "iou", "loss", "iteration", "epoch",
+    "training image", "labelled image", "labeled image",
+    "f1", "precision", "recall",
+)
+
 SYSTEM_RULES = """You write slide copy for a customer-facing camera inspection test report,
 as the vision sales engineer who ran the test. Readers are the customer's
 quality manager, controls engineer and buyer — none of whom has ever used
@@ -79,8 +88,8 @@ Hard rules, all of them:
 
 Shapes:
 - "text": full sentences, within the length limit.
-- "lines": newline-separated short plain-value lines ("Training accuracy: 100%"),
-  {lo}-{hi} lines. Only lines for data that exists.
+- "lines": newline-separated short plain-value lines ("Decides: wear grade
+  per zone"), {lo}-{hi} lines. Only lines for data that exists.
 - "pairs": newline-separated "label | sub" pairs for a flow diagram, 2-3 of
   them, plain language.
 
@@ -101,6 +110,7 @@ class TokenReq:
     shape: str
     max_chars: int
     scope: str         # rendered context slice
+    ban: str = ""      # "metrics" -> METRIC_BANNED lint applies
 
 
 class ContentError(RuntimeError):
@@ -198,6 +208,7 @@ def collect(jobs, material: dict, assignments: dict[str, str]) -> list[TokenReq]
                         shape=shape,
                         max_chars=int(val.get("max_chars", DEFAULT_MAX_CHARS[shape])),
                         scope=scope,
+                        ban=str(val.get("ban", "")),
                     ))
 
         walk(job.tokens, job.id)
@@ -271,6 +282,12 @@ def lint(req: TokenReq, value: str) -> list[str]:
     for b in BANNED:
         if b in low:
             problems.append(f"{req.id}: banned phrase {b!r} in {v[:60]!r}")
+    if req.ban == "metrics":
+        for b in METRIC_BANNED:
+            if b in low:
+                problems.append(
+                    f"{req.id}: metric {b!r} in {v[:60]!r} — metrics belong "
+                    "on the results card only")
     if len(v) > req.max_chars:
         problems.append(f"{req.id}: {len(v)} chars > {req.max_chars}")
     if req.shape == "lines":
@@ -307,6 +324,7 @@ def resolve(jobs, material: dict, assignments: dict[str, str], log=print) -> dic
         for r in failing:
             retry_reqs.append(TokenReq(
                 id=r.id, shape=r.shape, max_chars=r.max_chars, scope=r.scope,
+                ban=r.ban,
                 brief=r.brief + "  IMPORTANT: previous attempt was rejected ("
                 + "; ".join(p for p in problems_all if p.startswith(r.id))[:300]
                 + "). Fix exactly that.",

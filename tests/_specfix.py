@@ -154,7 +154,9 @@ def keyword_assign(holes, catalog):
 LINT_CLEAN = {
     "text": "The camera checks the part surface for dents and scratches across "
             "26 regions.",
-    "lines": "Training accuracy: 100%\nImages: 83\nClasses: Dent, Discolor, Scratch",
+    # metric-free: this value is served into EVERY lines token, including
+    # training-slide tokens that carry `ban: metrics`
+    "lines": "Decides: dent or scratch per region\nClasses: Dent, Discolor, Scratch",
     "pairs": "Inspection result | from the AI models\nDecision rule | 20-pixel budget",
 }
 
