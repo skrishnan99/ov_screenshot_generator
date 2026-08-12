@@ -691,6 +691,95 @@ def dismiss_promo_modal(browser) -> None:
         print(f"  warning: promo modal dismissal failed: {e}")
 
 
+# The Library grid is global — unfiltered it shows every recipe's captures,
+# newest first, so both the screenshot and the main-image download can land
+# on another recipe's capture entirely. The filter is applied fresh every
+# run: the page does not persist it across visits. Sequence proven against
+# a live camera: the combobox input has a stable id (#recipe) — its
+# placeholder text intercepts nothing and must never be the click target —
+# type the name, click the option whose text matches EXACTLY (cameras carry
+# recipes whose names are prefixes of each other), then Search.
+_LIBRARY_COUNT_RE = re.compile(r"([\d,]+)\s+Total\s+Captures", re.I)
+LIBRARY_FILTER_WAIT_S = 20
+
+
+def _library_count(page) -> str | None:
+    try:
+        m = _LIBRARY_COUNT_RE.search(page.evaluate("document.body.innerText") or "")
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def filter_library_by_recipe(browser, recipe: str) -> None:
+    """Filter the Library page to the run's recipe and search, so the capture
+    grid, the selected capture and the main-image download all belong to the
+    recipe under test.
+
+    Deterministic via the filter's stable #recipe input; the option click is
+    an exact-text match against the resolved recipe name. Zero results is
+    the recipe's true state and is captured, with a note. Best-effort like
+    the other capture hooks: any failure warns and the capture proceeds with
+    the page as it is — never fails the step.
+    """
+    page = browser.page
+    try:
+        recipe = (recipe or "").strip()
+        if not recipe:
+            print("  warning: no recipe name to filter the library by; capturing unfiltered")
+            return
+        box = page.query_selector("#recipe")
+        if box is None or not box.is_visible():
+            print("  warning: library recipe filter (#recipe) not found; capturing unfiltered")
+            return
+        count_before = _library_count(page)
+        box.click()
+        box.fill(recipe)
+        page.wait_for_timeout(1200)
+        option = next(
+            (el for el in page.query_selector_all(".ant-select-item-option")
+             if el.is_visible() and el.inner_text().strip() == recipe),
+            None,
+        )
+        if option is None:
+            # A prefix sibling ("X - pin inspection" vs "X - second pin
+            # inspection") must never be accepted; close the dropdown instead.
+            print(f"  warning: library filter lists no recipe named {recipe!r}; "
+                  f"capturing unfiltered")
+            page.keyboard.press("Escape")
+            return
+        option.click()
+        page.wait_for_timeout(400)
+        search = next(
+            (el for el in page.query_selector_all("button")
+             if el.is_visible() and el.inner_text().strip().lower() == "search"),
+            None,
+        )
+        if search is None:
+            print("  warning: library Search button not found; capturing unfiltered")
+            return
+        search.click()
+        page.wait_for_timeout(2500)  # grid re-render
+        deadline = time.monotonic() + LIBRARY_FILTER_WAIT_S
+        while True:
+            count = _library_count(page)
+            body = page.evaluate("document.body.innerText") or ""
+            if count == "0":
+                print(f"  library filtered to {recipe!r}: 0 captures — "
+                      f"the recipe's true state")
+                return
+            if count is not None and (count != count_before or recipe in body):
+                print(f"  library filtered to {recipe!r}: {count} captures")
+                return
+            if time.monotonic() > deadline:
+                print("  warning: library filter results did not settle; "
+                      "capturing current state")
+                return
+            page.wait_for_timeout(1000)
+    except Exception as e:
+        print(f"  warning: library recipe filter failed: {e}; capturing unfiltered")
+
+
 # "Source Capture: <n> of <TOTAL>" — innerText may put the input value and
 # the "of N" on separate lines, hence the bounded any-character gap.
 _CAPTURE_TOTAL_RE = re.compile(r"source\s+capture:?[\s\S]{0,40}?\bof\s+(\d+)", re.I)
@@ -1272,6 +1361,10 @@ def main(argv: list[str] | None = None) -> int:
             # for its full budget before ruining the screenshot anyway.
             if step.get("dismiss_promo_modal"):
                 dismiss_promo_modal(browser)
+            # Also before the vision wait and the main-image download: both
+            # must see the RECIPE'S captures, not the global newest.
+            if step.get("filter_library_recipe"):
+                filter_library_by_recipe(browser, recipe_name or args.recipe)
             if step.get("foreach_models"):
                 capture_per_model(
                     browser, step, out, step_record, desc_queue, base_ctx, meta

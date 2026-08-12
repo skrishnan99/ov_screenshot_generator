@@ -472,10 +472,21 @@ steps:
       sidebar is not visible, first use any back/close/breadcrumb controls on the page
       to return to the main camera UI. Wait until the page has fully loaded before
       finishing — if content is still loading, use wait_seconds and check again.
+
+      Once the Library page is open, filter it to this recipe: open the
+      "Filter by Recipe" dropdown, choose exactly "{recipe}" (other recipes may have
+      similar names — pick the exact match), click Search, and wait until the capture
+      grid shows the filtered results.
     postcondition: |
-      The Library page is open and fully loaded.
-    # The Library is a global page — the recipe name is not expected on it.
+      The Library page is open and fully loaded, filtered to the recipe's captures.
+    # The Library is a global page — the recipe name is not expected on it
+    # (and with zero matching captures the filtered grid may not show it at all).
     check_recipe: false
+    # Deterministic backstop for the recipe filter: applied fresh every run
+    # (the page never persists it), before the vision wait and the
+    # main-image download so both see the recipe's captures, not the
+    # globally newest capture of whatever recipe ran last.
+    filter_library_recipe: true
     # The viewer image lazy-loads ("Loading capture details..."); a fast
     # replay once downloaded a BLANK base layer, so wait for real imagery
     # before capturing/downloading.
