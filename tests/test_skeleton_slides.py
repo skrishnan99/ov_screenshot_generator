@@ -127,6 +127,39 @@ def main() -> int:
         if not sub or sub[0] < 0.55:
             failures.append(f"{lib_name} subtitle headroom fix missing (H={sub})")
 
+    # the recipe-title info block is ONE paragraph with soft line breaks;
+    # fill_tokens consolidates runs per LINE, so filling must preserve the
+    # breaks (a paragraph-wide join once ran "Site: X" straight into
+    # "Project: Y") and leave no token behind
+    import tempfile as _tf
+
+    from pptx.util import Inches as _In
+
+    from ovdeck import SLIDE_H as _SH, SLIDE_W as _SW
+
+    _title_tokens = {"site": "Traton", "project_name": "Bushing Wear",
+                     "date": "2026.08.13", "se_name": "Jane Doe"}
+    for _name in ("recipe_title_ov80i", "recipe_title_ov20i"):
+        _prs = Presentation()
+        _prs.slide_width, _prs.slide_height = _In(_SW), _In(_SH)
+        ts.append(_prs, _name, tokens=dict(_title_tokens))
+        with _tf.NamedTemporaryFile(suffix=".pptx", delete=False) as _f:
+            _prs.save(_f.name)
+            _back = Presentation(_f.name)
+        _texts = [sh.text_frame.text for sh in _back.slides[0].shapes
+                  if sh.has_text_frame and "Site:" in sh.text_frame.text]
+        if not _texts:
+            failures.append(f"{_name}: filled info block not found")
+            continue
+        _block = _texts[0]
+        if _block.count("\x0b") != 3:
+            failures.append(f"{_name}: soft breaks not preserved: {_block!r}")
+        for _want in _title_tokens.values():
+            if _want not in _block:
+                failures.append(f"{_name}: {_want!r} missing from info block")
+        if "{{" in _block:
+            failures.append(f"{_name}: unfilled token in info block")
+
     # the ov80i library variant: on the deck canvas, one placeholder hole,
     # sidecar in agreement (drift warns), selected by the spec per variant
     prof80 = ts.profile("library_ov80i")

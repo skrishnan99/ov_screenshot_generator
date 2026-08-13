@@ -136,26 +136,41 @@ def find_tokens(slide) -> list[str]:
 
 
 def fill_tokens(slide, values: dict) -> list[str]:
-    """Replace {{ token }} occurrences; formatting of each paragraph's first
-    run is preserved (Google exports often split tokens across runs, so runs
-    are consolidated per paragraph before substitution)."""
+    """Replace {{ token }} occurrences; formatting of each line's first run
+    is preserved. Runs are consolidated per LINE — between <a:br> soft
+    breaks — never across a whole paragraph: Google exports split a token
+    across runs *within* a line, while multi-line info blocks (the recipe
+    title slide's Site/Project/Date/name box) are one paragraph whose soft
+    breaks a paragraph-wide join would silently eat, running every line
+    together. A paragraph without breaks is one segment, so single-line
+    behavior is unchanged."""
+    from pptx.oxml.ns import qn
+
     filled = []
     for shape in iter_shapes(slide):
         if not shape.has_text_frame:
             continue
         for para in shape.text_frame.paragraphs:
-            text = "".join(run.text for run in para.runs)
-            hits = TOKEN_RE.findall(text)
-            if not hits:
-                continue
-            new_text = TOKEN_RE.sub(
-                lambda m: str(values.get(m.group(1), m.group(0))), text
-            )
-            if para.runs:
-                para.runs[0].text = new_text
-                for run in para.runs[1:]:
-                    run.text = ""
-            filled += [h for h in hits if h in values]
+            segments: list[list] = [[]]
+            for child in para._p:
+                if child.tag == qn("a:br"):
+                    segments.append([])
+                elif child.tag == qn("a:r"):
+                    segments[-1].append(child)
+            for seg in segments:
+                ts = [t for r in seg if (t := r.find(qn("a:t"))) is not None]
+                if not ts:
+                    continue
+                text = "".join(t.text or "" for t in ts)
+                hits = TOKEN_RE.findall(text)
+                if not hits:
+                    continue
+                ts[0].text = TOKEN_RE.sub(
+                    lambda m: str(values.get(m.group(1), m.group(0))), text
+                )
+                for t in ts[1:]:
+                    t.text = ""
+                filled += [h for h in hits if h in values]
     return filled
 
 

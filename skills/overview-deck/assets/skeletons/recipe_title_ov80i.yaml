@@ -1,0 +1,13 @@
+# Content-hole descriptions for recipe_title_ov80i.pptx (the OV80i recipe
+# title slide). The recipe name is DECOMPOSED onto this slide — site is the
+# customer, project the inspection — rather than shown verbatim.
+tokens:
+  site: >
+    The customer's name, deduced from the recipe title (recipe titles
+    usually combine customer + inspection name). Em dash when no customer
+    part is apparent.
+  project_name: >
+    The inspection project's name — the recipe title's non-customer part,
+    or the whole title when no customer part is apparent.
+  date: The date the deck was generated (not the extraction date).
+  se_name: The sales engineer's name, from the engineer profile.

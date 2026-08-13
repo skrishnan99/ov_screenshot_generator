@@ -72,6 +72,9 @@ CONTEXT_KEYS = {
     "models.count", "models.classification", "models.segmentation",
     "models.max_train_images",
     "aligner.skipped", "trigger.manual",
+    # the SE profile's name (contact slide + title byline); always set,
+    # with a visible placeholder when no profile exists
+    "engineer.name",
 }
 
 _INTERP_RE = re.compile(r"\{([a-z_.]+)\}")
@@ -308,6 +311,13 @@ def build_context(run_dir: Path) -> Context:
     trig = fact("recipe", "trigger_mode")
     if trig is not None:
         v["trigger.manual"] = "manual" in trig.lower()
+
+    # Set UNCONDITIONALLY — _interp raises on an unresolved key, and a
+    # title slide must never fail over a byline. Falls back to the same
+    # visible placeholder the contact slide uses ("SE Name").
+    from core.engineer import load_profile
+
+    v["engineer.name"] = load_profile()[0]["name"]
 
     unresolved = sorted(k for k in CONTEXT_KEYS if k not in v)
     return Context(values=v, unresolved=unresolved)

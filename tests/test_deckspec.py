@@ -243,6 +243,25 @@ def main() -> int:
         tr = next(j for j in jobs if j.id == "training_model-s")
         if tr.title != "Step {step}: Training — Model S (Segmentation)":
             failures.append(f"training title wrong: {tr.title!r}")
+        # the title slide DECOMPOSES the recipe name: site/project stay
+        # resolver holes, date/se_name interpolate from context — always
+        # resolvable (a title slide must never fail over a byline)
+        import re as _re
+
+        if not _re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", ctx.values.get("date", "")):
+            failures.append(f"context date format: {ctx.values.get('date')!r}")
+        if ctx.values.get("engineer.name") != "SE Name":  # isolated data dir
+            failures.append(f"context engineer.name: {ctx.values.get('engineer.name')!r}")
+        title = next(j for j in jobs if j.id == "title_ov80i")
+        if "recipe_title" in title.tokens:
+            failures.append("title slide still carries the verbatim recipe_title")
+        if title.tokens.get("date") != ctx.values["date"] \
+                or title.tokens.get("se_name") != "SE Name":
+            failures.append(f"title date/se_name not interpolated: {title.tokens}")
+        for tok in ("site", "project_name"):
+            val = title.tokens.get(tok)
+            if not (isinstance(val, dict) and "llm" in val):
+                failures.append(f"title {tok} is not a resolver hole: {val!r}")
 
         # determinism: identical expansions
         jobs2, _ = ds.expand(spec, ctx)

@@ -11,7 +11,9 @@
 # all, every model is included and the gap is recorded in the plan.
 #
 # Skeleton fill notes:
-# - recipe_title_* keep their standing hero photo (no image passed).
+# - recipe_title_* keep their standing hero imagery (no image passed);
+#   their info block decomposes the recipe name (site/project) and adds
+#   the generation date + engineer name from context.
 # - ONE concise results card per deck (concise_results_classifier), after
 #   all model training slides. On a stat card an em dash is the designed
 #   no-data mark, so unstated values resolve "—".
@@ -19,12 +21,36 @@
 spec_version: 1
 
 slides:
-  # -- 1. recipe title: the variant's own v1 skeleton, hero photo standing.
+  # -- 1. recipe title: the variant's own skeleton, hero imagery standing.
+  # The recipe name is DECOMPOSED here, not shown verbatim: site is the
+  # customer, project the inspection — recipe titles usually combine the
+  # two. Deducing the split is a judgment call, so site/project are
+  # resolver holes; date and engineer come from context, never a model.
+  # (the two token blocks are intentionally duplicated, not YAML-anchored:
+  # an anchor would alias one dict object into both slides, coupling them
+  # under any in-place mutation, e.g. by adapt.py)
   - id: title_ov80i
     skeleton: recipe_title_ov80i
     when: {camera.variant: ov80i}
     tokens:
-      recipe_title: "{recipe.name}"
+      site:
+        llm: >
+          The customer's name, deduced from the recipe title — recipe
+          titles usually combine the customer's name with the inspection
+          name (e.g. "Traton Bushing Wear" is customer Traton, project
+          Bushing Wear). Ground it in the actual recipe name; NEVER
+          invent a customer. When no customer part is apparent in the
+          title, exactly "—".
+        max_chars: 60
+      project_name:
+        llm: >
+          The inspection project's name — the recipe title's
+          non-customer part. When no customer part is apparent, the
+          whole recipe title is the project. Grounded in the actual
+          recipe name, verbatim words from it.
+        max_chars: 80
+      date: "{date}"
+      se_name: "{engineer.name}"
 
   - id: title_ov20i
     skeleton: recipe_title_ov20i
@@ -33,7 +59,24 @@ slides:
         - {camera.variant: ov20i}
         - {camera.variant: ov10i}
     tokens:
-      recipe_title: "{recipe.name}"
+      site:
+        llm: >
+          The customer's name, deduced from the recipe title — recipe
+          titles usually combine the customer's name with the inspection
+          name (e.g. "Traton Bushing Wear" is customer Traton, project
+          Bushing Wear). Ground it in the actual recipe name; NEVER
+          invent a customer. When no customer part is apparent in the
+          title, exactly "—".
+        max_chars: 60
+      project_name:
+        llm: >
+          The inspection project's name — the recipe title's
+          non-customer part. When no customer part is apparent, the
+          whole recipe title is the project. Grounded in the actual
+          recipe name, verbatim words from it.
+        max_chars: 80
+      date: "{date}"
+      se_name: "{engineer.name}"
 
   # -- 2. overall results: one-liner + raw|overlay pair, fixed skeleton.
   - id: results_overview
