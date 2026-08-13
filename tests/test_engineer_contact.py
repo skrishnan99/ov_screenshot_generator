@@ -77,6 +77,25 @@ def main() -> int:
     if source != "profile" or contact["name"] != "Jane Doe":
         failures.append(f"full-profile load: {source} {contact}")
 
+    # ---- phone renders in US display format, from any stored shape ----
+    for raw, want in (
+        ("9096156153", "(909) 615-6153"),          # bare digits
+        ("(909) 615-6153", "(909) 615-6153"),      # already formatted: stable
+        ("909-615-6153", "(909) 615-6153"),        # dashed
+        ("1 909 615 6153", "(909) 615-6153"),      # 11 with leading 1
+        ("+44 20 7946 0958", "+44 20 7946 0958"),  # non-US: untouched
+        ("x1234", "x1234"),                        # short/odd: untouched
+    ):
+        got = engineer.format_phone(raw)
+        if got != want:
+            failures.append(f"format_phone({raw!r}) -> {got!r}, want {want!r}")
+    engineer.save_profile("Jane Doe", "jane@overview.ai", "9096156153")
+    contact, _ = engineer.load_profile()
+    if contact["phone"] != "(909) 615-6153":
+        failures.append(f"loaded phone not display-formatted: {contact['phone']!r}")
+    if json.loads((d / "engineer.json").read_text())["phone"] != "9096156153":
+        failures.append("stored phone was rewritten; formatting must be display-time only")
+
     # ---- loader: partial file is field-wise ----
     (d / "engineer.json").write_text(json.dumps({"name": "Jane Doe"}))
     contact, source = engineer.load_profile()

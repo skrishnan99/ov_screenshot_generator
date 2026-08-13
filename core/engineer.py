@@ -37,8 +37,23 @@ def profile_path():
     return data_dir() / "engineer.json"
 
 
+def format_phone(raw: str) -> str:
+    """US display format, applied on the way OUT (stored values stay as
+    typed, so existing profiles need no migration): 10 digits render as
+    (909) 615-6153; 11 digits with a leading 1 drop the 1 first. Anything
+    else — international, short, malformed — passes through exactly as
+    entered rather than being mangled. Idempotent on formatted input."""
+    digits = "".join(c for c in raw if c.isdigit())
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10:
+        return raw
+    return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+
+
 def load_profile() -> tuple[dict, str]:
-    """(contact, source) — contact always carries every field.
+    """(contact, source) — contact always carries every field, phone in US
+    display format (see format_phone).
 
     source: "profile" when every field came from the file/env, "partial"
     when some did, "placeholder" when none. Callers surface non-"profile"
@@ -59,7 +74,7 @@ def load_profile() -> tuple[dict, str]:
     for f in FIELDS:
         val = os.environ.get(_ENV[f], "").strip() or str(stored.get(f, "") or "").strip()
         if val:
-            contact[f] = val
+            contact[f] = format_phone(val) if f == "phone" else val
             real += 1
         else:
             contact[f] = PLACEHOLDERS[f]
