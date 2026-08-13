@@ -115,10 +115,11 @@ slides:
     title: "Step {step}: Imaging Setup"
     hint: >
       One split slide, exactly like the house imaging-setup template: the
-      imaging screen on the left at about 55% width. In the right-hand
-      column the standing [intro] copy comes FIRST as the purple intro
-      section, and the recipe's dynamic configuration line ([text])
-      below it. Title stays as given.
+      imaging screen on the left at about 55% width. The right-hand
+      column reads top to bottom: the standing [intro] copy FIRST as the
+      purple intro section, then [heading] as the card's section heading
+      (card_title), then the recipe's dynamic configuration line
+      ([text]) below it. Title stays as given.
     images:
       - expects: >
           The Imaging Setup screen: camera settings panel (exposure, white
@@ -131,6 +132,9 @@ slides:
         In the image setup page you define the best configuration for
         your application — exposure, gamma and more. It's one of the
         most important steps, as everything else will be defined by this.
+      # Section heading between the intro and the dynamic text — also a
+      # literal, so it too is must-carry.
+      heading: "Capture Configuration"
       text:
         llm: >
           One line on the imaging configuration, leading with any special
@@ -139,7 +143,9 @@ slides:
           (resolution class, trigger mode).
         max_chars: 170
 
-  # -- 4. alignment, ONLY when the aligner is actually configured.
+  # -- 4. alignment, ONLY when the aligner is actually configured — a
+  # skipped aligner drops the slide (today's default), and only the
+  # user's explicit request (via --request) puts it back.
   - id: aligner
     tier: 3
     step: true
@@ -147,12 +153,23 @@ slides:
     title: "Step {step}: Alignment"
     hint: >
       One split slide, exactly like the house aligner-setup template: the
-      alignment screen left at about 55% width, short bold explanation right.
+      alignment screen left at about 55% width. In the right-hand column
+      [heading] is the card's section heading (card_title) with the
+      explanation ([text]) below it.
     images:
       - expects: >
           The Template Image and Alignment screen — template viewer and
           search-area controls.
     tokens:
+      # Dynamic section heading, like the logic slide's: names the
+      # aligner actually in use.
+      heading:
+        llm: >
+          Exactly "Deep Learning Alignment" when the material shows the
+          Deep Learning aligner type is selected, exactly "Classical
+          Alignment" when the Classical type is; if the material does
+          not state the type, exactly "Alignment".
+        max_chars: 30
       text:
         llm: >
           One or two lines on how alignment is set up: what the template

@@ -56,9 +56,10 @@ def main() -> int:
             if text.get("intro"):
                 # literal tokens are must-carry (code-validated): a
                 # compliant arranger puts standing [intro] copy in the
-                # split's purple intro section, verbatim
+                # split's purple intro section and [heading] in the
+                # card_title slot, both verbatim
                 slides.append({"layout": "split", "title": title, "images": [p],
-                               "text": {"card_title": "S",
+                               "text": {"card_title": text.get("heading", "S"),
                                         "intro": text["intro"],
                                         "para": text.get("text", "")[:100]}})
             else:

@@ -51,6 +51,26 @@ def main() -> int:
         failures.append(f"imaging intro literal missing/changed: {intro!r}")
     if "intro" not in imaging.get("hint", "").lower():
         failures.append("imaging hint lost the intro placement instruction")
+    # the section heading between intro and dynamic text: a literal, so it
+    # rides the same must-carry guarantee
+    if imaging.get("tokens", {}).get("heading") != "Capture Configuration":
+        failures.append(f"imaging heading literal: "
+                        f"{imaging.get('tokens', {}).get('heading')!r}")
+    if "[heading]" not in imaging.get("hint", ""):
+        failures.append("imaging hint lost the heading mapping")
+    # the aligner slide's heading is dynamic (like the logic slide's),
+    # naming the aligner in use; the slide itself still drops when the
+    # aligner is skipped
+    aligner = next(s for s in spec["slides"] if s.get("id") == "aligner")
+    ah = aligner.get("tokens", {}).get("heading")
+    if not (isinstance(ah, dict) and "llm" in ah):
+        failures.append(f"aligner heading is not a resolver hole: {ah!r}")
+    else:
+        for phrase in ("Deep Learning Alignment", "Classical Alignment"):
+            if phrase not in ah["llm"]:
+                failures.append(f"aligner heading guidance lost {phrase!r}")
+    if aligner.get("when") != {"aligner.skipped": False}:
+        failures.append(f"aligner skip condition changed: {aligner.get('when')}")
 
     # ---- validation: dropped or paraphrased literal is rejected ----
     ok_plan = [{"layout": "split", "title": "T", "images": ["a.png"],
@@ -148,8 +168,10 @@ def main() -> int:
         if not (intro_sh and card_sh and bullet_sh):
             failures.append(f"split shapes missing: {list(boxes)}")
         else:
-            if not (card_sh.top < intro_sh.top < bullet_sh.top):
-                failures.append("intro is not between the card title and the bullets")
+            # the intro TOPS the card; the card title renders below it as a
+            # section heading over the body (the mockup's order)
+            if not (intro_sh.top < card_sh.top < bullet_sh.top):
+                failures.append("card order is not intro -> heading -> body")
             run = intro_sh.text_frame.paragraphs[0].runs[0]
             if run.font.color.rgb != ACCENT:
                 failures.append(f"intro colour {run.font.color.rgb} != accent {ACCENT}")
