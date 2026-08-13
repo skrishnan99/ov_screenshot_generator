@@ -115,13 +115,22 @@ slides:
     title: "Step {step}: Imaging Setup"
     hint: >
       One split slide, exactly like the house imaging-setup template: the
-      imaging screen on the left at about 55% width, and a short bold
-      explanation in the right-hand column. Title stays as given.
+      imaging screen on the left at about 55% width. In the right-hand
+      column the standing [intro] copy comes FIRST as the purple intro
+      section, and the recipe's dynamic configuration line ([text])
+      below it. Title stays as given.
     images:
       - expects: >
           The Imaging Setup screen: camera settings panel (exposure, white
           balance, trigger mode) beside the main viewer.
     tokens:
+      # Standing framing copy, every deck, verbatim — a literal is
+      # code-enforced to survive arrangement word for word (must-carry),
+      # and renders as the split's own purple intro section.
+      intro: >
+        In the image setup page you define the best configuration for
+        your application — exposure, gamma and more. It's one of the
+        most important steps, as everything else will be defined by this.
       text:
         llm: >
           One line on the imaging configuration, leading with any special

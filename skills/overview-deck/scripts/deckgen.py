@@ -122,7 +122,8 @@ def _emit_arranged(d, planned: list[dict], run_dir: Path) -> None:
             d.figure(s["title"], imgs[0], caption=text.get("caption", ""))
         elif s["layout"] == "split":
             d.split(s["title"], imgs[0], card_title=text.get("card_title", ""),
-                    para=text.get("para", ""), bullets=_as_list(text.get("bullets", "")),
+                    intro=text.get("intro", ""), para=text.get("para", ""),
+                    bullets=_as_list(text.get("bullets", "")),
                     footnote=text.get("footnote", ""))
         elif s["layout"] == "two_up":
             d.two_up(s["title"], imgs[0], imgs[1], caption=text.get("caption", ""),
@@ -284,9 +285,16 @@ def compile_deck(
                                    "no resolved text",
                     })
                     continue
+                # Literal spec tokens are the author's exact words — the
+                # arranger must carry them verbatim (code-enforced).
+                carry = tuple(
+                    "\n".join(v) if isinstance(v, list) else v
+                    for v in (job.tokens.get(n) for n in job.tokens)
+                    if isinstance(v, (str, list)) and str(v).strip()
+                )
                 planned = arrange_mod.arrange(job.title or job.id, rel_images, text,
                                               hint=job.hint, feedback=gate_feedback,
-                                              log=log)
+                                              log=log, must_carry=carry)
                 rec["arranged"] = planned
                 _emit_arranged(d, planned, run_dir)
             records.append(rec)

@@ -638,10 +638,14 @@ class Deck:
                        max_h=0.5, label="note")
 
     def split(self, title: str, image: str, *, card_title: str, para: str = "",
-              bullets: Sequence[str] = (), chips: Sequence[str] = (),
-              footnote: str = "", subtitle: str = ""):
+              intro: str = "", bullets: Sequence[str] = (),
+              chips: Sequence[str] = (), footnote: str = "",
+              subtitle: str = ""):
         """Screenshot left, explanatory card right. The workhorse layout.
 
+        `intro` is a purple framing section of its own, rendered above
+        everything else in the card (directly under the title) — used for
+        standing copy that leads into the slide's dynamic content.
         `footnote` is prose that belongs AFTER the bullets — a rationale or
         aside subordinate to them — where `para` always renders above.
         """
@@ -660,6 +664,10 @@ class Deck:
         y = self._para(sl, st, cx + 0.42, top + 0.43, inner, card_title,
                        size=SZ["card_title"], bold=True, color=ACCENT,
                        spacing=1.08, max_h=1.0, label="split-title")
+        if intro:
+            y = self._para(sl, st, cx + 0.42, y + 0.30, inner, intro,
+                           size=SZ["body"] - 0.5, color=ACCENT, spacing=1.22,
+                           max_h=1.9, label="split-intro")
         if para:
             y = self._para(sl, st, cx + 0.42, y + 0.30, inner, para,
                            size=SZ["body"] - 0.5, color=TEXT_BODY, spacing=1.22,

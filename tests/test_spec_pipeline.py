@@ -53,8 +53,17 @@ def main() -> int:
                               "right_caption": "RC-CARRIED"}}]
         slides = []
         for p in image_paths:
-            slides.append({"layout": "figure", "title": title, "images": [p],
-                           "text": {"caption": text.get("text", "")[:100]}})
+            if text.get("intro"):
+                # literal tokens are must-carry (code-validated): a
+                # compliant arranger puts standing [intro] copy in the
+                # split's purple intro section, verbatim
+                slides.append({"layout": "split", "title": title, "images": [p],
+                               "text": {"card_title": "S",
+                                        "intro": text["intro"],
+                                        "para": text.get("text", "")[:100]}})
+            else:
+                slides.append({"layout": "figure", "title": title, "images": [p],
+                               "text": {"caption": text.get("text", "")[:100]}})
         if not slides:
             slides = [{"layout": "statement", "title": title, "images": [],
                        "text": {"intro": "x", "card_title": "S", "bullets": "a\nb\nc"}}]
