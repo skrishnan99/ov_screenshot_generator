@@ -154,6 +154,18 @@ def compile_deck(
     out_path = Path(out_path)
     plan: dict = {"run": str(run_dir), "slides": [], "skipped": []}
 
+    # Whose contact signs the thank-you slide: the SE profile, or the
+    # visibly generic placeholders. Recorded so a placeholder contact is
+    # surfaced in the summary, never shipped unnoticed.
+    from core.engineer import load_profile
+
+    contact, contact_source = load_profile()
+    plan["contact"] = {"source": contact_source, "name": contact["name"]}
+    if contact_source != "profile":
+        log(f"  contact slide: no engineer profile ({contact_source}) — "
+            f"generic placeholders will show; set it via /ov-test-report "
+            f"or ~/.ov-report-generator/engineer.json")
+
     # Select the LLM backend up front, or complete() falls through to the
     # raw-API default and dies on a missing ANTHROPIC_API_KEY. agent-sdk runs
     # everything on the Claude Code login — same default as the extractor.

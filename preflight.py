@@ -190,6 +190,23 @@ def main() -> int:
         "visual feedback; brew install --cask libreoffice)",
         True,
     )
+    # Informational: the deck's contact slide signs with the SE profile.
+    # Missing profile never blocks a run — the slide shows visibly generic
+    # placeholders instead — but the /ov-test-report command uses this
+    # signal to collect the profile in its single up-front question.
+    try:
+        from core.engineer import load_profile, profile_path
+
+        _, contact_source = load_profile()
+        _check(
+            "engineer contact profile set (signs the report's contact slide)"
+            if contact_source == "profile"
+            else f"engineer contact profile {contact_source} — contact slide "
+            f"will show generic placeholders (set {profile_path()})",
+            True,
+        )
+    except Exception as e:
+        _check(f"engineer profile unavailable ({str(e)[:80]})", True)
     if args.url:
         ok &= check_camera(args.url)
     if args.variant:

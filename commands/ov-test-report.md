@@ -18,7 +18,9 @@ $ARGUMENTS
   and carries the same force it would in a typed prompt.
 
 If the camera URL or the recipe name is genuinely absent, ask for the
-missing piece once, then start. That is the only up-front question permitted.
+missing piece once, then start. That is the only up-front question
+permitted — and the engineer-profile collection below folds into that same
+single question, never a second one.
 
 ## What to do
 
@@ -32,6 +34,22 @@ them, do not improvise around them:
    consent is the only interaction the whole run needs. Never let it surface
    at the publish step, ~25-30 unattended minutes in. If the request said to
    keep the deck local, skip the flag and run plain preflight.
+
+   Preflight also reports whether the **engineer contact profile** is set —
+   it signs the report's contact slide. If it is missing or partial, ask for
+   the engineer's name, email and phone as part of this same up-front
+   moment (fold it into the missing-URL/recipe question if one is needed),
+   then save it for every future run:
+
+   ```bash
+   uv run --project "$PLUGIN_ROOT" python -c \
+     "from core.engineer import save_profile; save_profile('<name>', '<email>', '<phone>')"
+   ```
+
+   If the user skips or gives a partial answer, save what they gave (or
+   nothing) and continue — the contact slide degrades to visibly generic
+   placeholders ("SE Name", "SE Email", "SE Contact Number"), which the
+   final summary must mention. Once the profile exists, never ask again.
 2. Invoke the **`ov-test-reports:extract-recipe-assets`** skill with the URL
    and recipe. State once that the whole job takes ~25-30 minutes and that the
    run will activate the recipe on the camera if it is inactive, then start.

@@ -155,6 +155,21 @@ def append(prs, name: str, image: str | Path | None = None,
 
     if images is None:
         images = [image] if image is not None else []
+    if name == "thank_you":
+        # The contact block is tokenized ({{contact_*}}) and defaults to the
+        # engineer profile — merged HERE, the lowest fill point, so every
+        # caller (the closing run, hand-written v1 build scripts) gets the
+        # right contact without passing anything. Missing profile fields
+        # resolve to visibly generic placeholders, never to a wrong person.
+        from core.engineer import load_profile
+
+        contact, _ = load_profile()
+        tokens = {
+            "contact_name": contact["name"],
+            "contact_email": contact["email"],
+            "contact_phone": contact["phone"],
+            **(tokens or {}),
+        }
     src = Presentation(str(skeleton_path(name)))
     slide = src.slides[0]
 
@@ -326,6 +341,50 @@ def _fix_library_subtitle(slide) -> None:
             sh.height = Inches(0.45)
 
 
+def _tokenize_thank_you_contact(slide) -> None:
+    """Rewrite the contact block's literal runs into {{contact_*}} tokens so
+    the slide carries the SE who actually ran the visit, not whoever was on
+    the template. Run at extraction, where a template change that breaks the
+    pattern should fail loudly at the maintainer, never at build time.
+
+    Targeting is by pattern, not by name: the email run contains "@", the
+    phone run is digits/punctuation, and the one remaining non-"Thank you"
+    run is the name. Only run text changes — formatting stays."""
+    import re as _re
+
+    from deck.assemble import iter_shapes
+
+    phone_re = _re.compile(r"^[\d\s()+\-.]{7,}$")
+    email_run = phone_run = name_run = None
+    leftovers = []
+    for sh in iter_shapes(slide):
+        if not sh.has_text_frame:
+            continue
+        for para in sh.text_frame.paragraphs:
+            for run in para.runs:
+                text = (run.text or "").strip()
+                if not text or "thank" in text.lower():
+                    continue
+                if "@" in text and " " not in text:
+                    email_run = run
+                elif phone_re.match(text):
+                    phone_run = run
+                else:
+                    leftovers.append(run)
+    if len(leftovers) == 1:
+        name_run = leftovers[0]
+    if not (email_run and phone_run and name_run):
+        raise TemplateError(
+            "thank_you: could not identify the contact runs to tokenize "
+            f"(email={bool(email_run)}, phone={bool(phone_run)}, "
+            f"name candidates={len(leftovers)}). The template's contact "
+            "block changed — update _tokenize_thank_you_contact."
+        )
+    name_run.text = "{{contact_name}}"
+    email_run.text = "{{contact_email}}"
+    phone_run.text = "{{contact_phone}}"
+
+
 def _strip_integration_page_number(slide) -> None:
     """The integration slide carries its page number as a bare "12", which
     the NN / NN pattern cannot catch — and a generic bare-number strip would
@@ -346,6 +405,7 @@ FIXUPS: dict[str, tuple] = {
     # same "Easier root cause..." subtitle box, same wrap hazard
     "library_ov80i": (_fix_library_subtitle,),
     "integration": (_strip_integration_page_number,),
+    "thank_you": (_tokenize_thank_you_contact,),
 }
 
 

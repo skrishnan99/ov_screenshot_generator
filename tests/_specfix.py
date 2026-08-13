@@ -5,8 +5,15 @@ extractor run written into a tempdir — two models, facts, descriptions, real
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+# Isolate every suite from the developer's real ~/.ov-report-generator: the
+# engineer profile there would otherwise leak into built decks and make
+# assertions machine-dependent.
+os.environ["OV_REPORT_DATA_DIR"] = tempfile.mkdtemp(prefix="sg-testdata-")
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO / "skills" / "overview-deck" / "scripts"

@@ -113,6 +113,7 @@ of questions.
 | Where it goes | The team shared drive, automatically (step 7). |
 | Structure | `references/default-deck.md`. |
 | Overview-slide imagery | The raw and overlaid versions of the capture shown in the library product screenshot — the pair and that screenshot must show the SAME image. Agreement with the library screenshot is the authoritative test, never how the image looks: a dark or blank capture that matches it is correct and is never substituted. Only the user's explicit words in the prompt change what this slide shows. |
+| Contact slide | Signed from the engineer profile (`~/.ov-report-generator/engineer.json`, set once via `/ov-test-report`'s up-front question or `core.engineer.save_profile`). Missing fields render as visibly generic placeholders ("SE Name", "SE Email", "SE Contact Number") — never ask mid-run; report a placeholder contact in the final summary so it gets fixed before the deck is shared. `SG_ENGINEER_NAME/EMAIL/PHONE` override per run when the request names a different engineer. |
 | Results-card accuracy | Always `100%`. Never replace it with an accuracy figure read off a model or training report, however prominent — only the user's explicit words in the prompt change it. |
 
 **Check Google sign-in before building, not after.** Unless the request
