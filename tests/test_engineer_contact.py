@@ -121,6 +121,52 @@ def main() -> int:
     except Exception as e:
         failures.append(f"malformed profile raised: {e}")
 
+    # ---- missing_fields: names exactly what the mandatory ask must
+    # request; env overrides count as present ----
+    d = _fresh_data_dir()
+    if engineer.missing_fields() != ["name", "email", "phone"]:
+        failures.append(f"empty profile missing_fields: {engineer.missing_fields()}")
+    (d / "engineer.json").write_text(json.dumps(
+        {"name": "Jane Doe", "email": "jane@overview.ai"}))
+    if engineer.missing_fields() != ["phone"]:
+        failures.append(f"partial profile missing_fields: {engineer.missing_fields()}")
+    os.environ["SG_ENGINEER_PHONE"] = "9096156153"
+    try:
+        if engineer.missing_fields():
+            failures.append("env-satisfied field still reported missing")
+    finally:
+        del os.environ["SG_ENGINEER_PHONE"]
+
+    # ---- save_profile merges: filling ONE missing field keeps the rest ----
+    engineer.save_profile(phone="9096156153")
+    stored = json.loads((d / "engineer.json").read_text())
+    if stored != {"name": "Jane Doe", "email": "jane@overview.ai",
+                  "phone": "9096156153"}:
+        failures.append(f"single-field save clobbered the profile: {stored}")
+    if engineer.missing_fields():
+        failures.append(f"profile still incomplete after merge save")
+
+    # ---- preflight: hard check under --ensure-engineer-profile only ----
+    import subprocess
+    env = dict(os.environ)
+    env["OV_REPORT_DATA_DIR"] = _fresh_data_dir().as_posix()
+    base = [sys.executable, str(REPO / "preflight.py")]
+    r = subprocess.run(base + ["--ensure-engineer-profile"],
+                       capture_output=True, text=True, env=env, cwd=REPO)
+    if r.returncode == 0:
+        failures.append("preflight passed with an empty profile under the flag")
+    if "missing: name, email, phone" not in r.stdout:
+        failures.append(f"preflight does not name the missing fields:\n{r.stdout[-300:]}")
+    r = subprocess.run(base, capture_output=True, text=True, env=env, cwd=REPO)
+    if r.returncode != 0:
+        failures.append(f"preflight failed WITHOUT the flag:\n{r.stdout[-300:]}")
+    (Path(env["OV_REPORT_DATA_DIR"]) / "engineer.json").write_text(json.dumps(
+        {"name": "Jane Doe", "email": "jane@overview.ai", "phone": "9096156153"}))
+    r = subprocess.run(base + ["--ensure-engineer-profile"],
+                       capture_output=True, text=True, env=env, cwd=REPO)
+    if r.returncode != 0:
+        failures.append(f"preflight failed with a complete profile:\n{r.stdout[-300:]}")
+
     # ---- append(): placeholder fill when no profile exists ----
     from ovdeck import SLIDE_H, SLIDE_W
 

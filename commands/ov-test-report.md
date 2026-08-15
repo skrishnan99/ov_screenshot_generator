@@ -18,38 +18,45 @@ $ARGUMENTS
   and carries the same force it would in a typed prompt.
 
 If the camera URL or the recipe name is genuinely absent, ask for the
-missing piece once, then start. That is the only up-front question
-permitted — and the engineer-profile collection below folds into that same
-single question, never a second one.
+missing piece once, then start. The engineer-profile collection below is
+MANDATORY and shares that same single up-front interaction — one moment of
+questions at minute zero, never a second round and never a mid-run one.
 
 ## What to do
 
 This command is the fire-and-forget flow the plugin's skills define — follow
 them, do not improvise around them:
 
-1. **Front-load the one interactive moment.** Unless the request opted out
-   of uploading, run the plugin's preflight with `--ensure-google-auth`
-   (plus `--fix` and the camera `--url`) BEFORE anything else. If Google
-   sign-in is missing, a browser opens once, now — tell the user that this
-   consent is the only interaction the whole run needs. Never let it surface
-   at the publish step, ~25-30 unattended minutes in. If the request said to
-   keep the deck local, skip the flag and run plain preflight.
+1. **Front-load the one interactive moment.** Run the plugin's preflight
+   with `--ensure-engineer-profile` (always) and `--ensure-google-auth`
+   (unless the request opted out of uploading), plus `--fix` and the camera
+   `--url`, BEFORE anything else. If Google sign-in is missing, a browser
+   opens once, now — tell the user that this moment is the only interaction
+   the whole run needs. Never let anything surface at the publish step,
+   ~25-30 unattended minutes in. If the request said to keep the deck
+   local, drop only the Google flag.
 
-   Preflight also reports whether the **engineer contact profile** is set —
-   it signs the report's contact slide. If it is missing or partial, ask for
-   the engineer's name, email and phone as part of this same up-front
-   moment (fold it into the missing-URL/recipe question if one is needed),
-   then save it for every future run:
+   **The engineer contact profile is mandatory.** It signs the report's
+   contact slide and title byline, and preflight FAILS while any of name /
+   email / phone is missing, naming the missing fields. When it does, you
+   MUST ask for exactly those fields — a direct, explicit question naming
+   each one ("What is your phone number?"), never an aside folded invisibly
+   into another question. It may share the single up-front interaction with
+   a missing-URL/recipe ask, but every missing field is spelled out. Then
+   save (empty arguments keep existing values, so pass just what was
+   given) and re-run preflight to confirm it now passes:
 
    ```bash
    uv run --project "$PLUGIN_ROOT" python -c \
      "from core.engineer import save_profile; save_profile('<name>', '<email>', '<phone>')"
    ```
 
-   If the user skips or gives a partial answer, save what they gave (or
-   nothing) and continue — the contact slide degrades to visibly generic
-   placeholders ("SE Name", "SE Email", "SE Contact Number"), which the
-   final summary must mention. Once the profile exists, never ask again.
+   If the user explicitly refuses or ignores the question, do not block the
+   run: save whatever they gave, re-run preflight WITHOUT
+   `--ensure-engineer-profile`, and continue — the contact slide degrades
+   to visibly generic placeholders ("SE Name", "SE Email", "SE Contact
+   Number"), and the final summary MUST say so prominently. Once the
+   profile is complete, no run ever asks again.
 2. Invoke the **`ov-test-reports:extract-recipe-assets`** skill with the URL
    and recipe. State once that the whole job takes ~25-30 minutes and that the
    run will activate the recipe on the camera if it is inactive, then start.

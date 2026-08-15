@@ -134,6 +134,13 @@ def main() -> int:
         "up front instead of interrupting an unattended run ~25-30 minutes in.",
     )
     ap.add_argument(
+        "--ensure-engineer-profile",
+        action="store_true",
+        help="Fail unless the engineer contact profile (name, email, phone) "
+        "is complete. The /ov-test-report flow uses this to force the "
+        "explicit up-front ask for exactly the missing fields.",
+    )
+    ap.add_argument(
         "--llm-backend",
         choices=["api", "claude-code", "agent-sdk"],
         default=os.environ.get("SG_LLM_BACKEND", "agent-sdk"),
@@ -190,23 +197,30 @@ def main() -> int:
         "visual feedback; brew install --cask libreoffice)",
         True,
     )
-    # Informational: the deck's contact slide signs with the SE profile.
-    # Missing profile never blocks a run — the slide shows visibly generic
-    # placeholders instead — but the /ov-test-report command uses this
-    # signal to collect the profile in its single up-front question.
+    # The deck's contact slide and title byline sign with the SE profile.
+    # Informational by default (headless deckgen and asset-only runs never
+    # block on it); a HARD check under --ensure-engineer-profile, naming
+    # exactly the missing fields so the /ov-test-report flow asks for each
+    # one explicitly, by name, before the unattended stretch begins.
     try:
-        from core.engineer import load_profile, profile_path
+        from core.engineer import missing_fields, profile_path
 
-        _, contact_source = load_profile()
-        _check(
-            "engineer contact profile set (signs the report's contact slide)"
-            if contact_source == "profile"
-            else f"engineer contact profile {contact_source} — contact slide "
-            f"will show generic placeholders (set {profile_path()})",
-            True,
-        )
+        missing = missing_fields()
+        if missing:
+            _check(
+                f"engineer contact profile incomplete — missing: "
+                f"{', '.join(missing)} (ask for exactly these, or set "
+                f"{profile_path()})",
+                not args.ensure_engineer_profile,
+            )
+            ok &= not args.ensure_engineer_profile
+        else:
+            _check("engineer contact profile complete (signs the report's "
+                   "contact slide)", True)
     except Exception as e:
-        _check(f"engineer profile unavailable ({str(e)[:80]})", True)
+        _check(f"engineer profile unavailable ({str(e)[:80]})",
+               not args.ensure_engineer_profile)
+        ok &= not args.ensure_engineer_profile
     if args.url:
         ok &= check_camera(args.url)
     if args.variant:

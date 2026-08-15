@@ -82,10 +82,30 @@ def load_profile() -> tuple[dict, str]:
     return contact, source
 
 
-def save_profile(name: str, email: str, phone: str) -> None:
-    """Write the profile (used by the one-time collection at preflight)."""
+def missing_fields() -> list[str]:
+    """Field names with no real value from the file or an env override —
+    what the mandatory up-front ask must request, each by name. Empty when
+    the profile is complete."""
+    contact, _ = load_profile()
+    return [f for f in FIELDS if contact[f] == PLACEHOLDERS[f]]
+
+
+def save_profile(name: str = "", email: str = "", phone: str = "") -> None:
+    """Write the profile, MERGING into what is stored: an empty argument
+    keeps the existing value, so asking for just the one missing field
+    ("what's your phone number?") can be saved without clobbering the
+    fields already on file."""
+    stored: dict = {}
     p = profile_path()
-    p.write_text(json.dumps(
-        {"name": name.strip(), "email": email.strip(), "phone": phone.strip()},
-        indent=2,
-    ) + "\n")
+    try:
+        if p.exists():
+            raw = json.loads(p.read_text())
+            if isinstance(raw, dict):
+                stored = raw
+    except Exception:
+        stored = {}
+    merged = {
+        f: (new.strip() or str(stored.get(f, "") or "").strip())
+        for f, new in (("name", name), ("email", email), ("phone", phone))
+    }
+    p.write_text(json.dumps(merged, indent=2) + "\n")
