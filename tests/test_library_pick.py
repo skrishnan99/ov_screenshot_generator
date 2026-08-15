@@ -59,10 +59,10 @@ class _Rig:
         self.first_by_page = {p: (ids[0] if ids else 900 + p)
                               for p, ids in page_thumbs.items()}
 
-    def product_thumbs(self, browser, recipe, part_desc=""):
+    def product_thumbs(self, browser, recipe, part_desc="", top_n=3):
         if self.thumb_crash:
             raise RuntimeError("vision down")
-        return list(self.page_thumbs.get(self.page, []))
+        return list(self.page_thumbs.get(self.page, []))[:top_n]
 
     def click(self, browser, cid):
         if cid in self.click_fails:
@@ -128,9 +128,10 @@ def main() -> int:
     if rec["chosen"] != {"page": 2, "id": 20}:
         failures.append(f"page-2 winner missed: {rec}")
 
-    # ---- click cap counts ACROSS pages and stops the search ----
-    rig = _Rig({1: [1, 2, 3, 4, 5, 6], 2: [7, 8, 9, 10, 11, 12]},
-               {12: (True, True)})
+    # ---- click cap counts ACROSS pages and stops the search (per-page
+    # candidates are capped at 3, so 5 pages offer 15 > the 10 budget) ----
+    rig = _Rig({p: [p * 10 + i for i in range(6)] for p in range(1, 6)},
+               {}, total_pages=5)
     rec = _run(rig, click_cap=10)
     # rec["clicked"] is the SEARCH log; the tier-4 reset's re-selection
     # afterwards is not a candidate and doesn't count against the cap
@@ -181,6 +182,47 @@ def main() -> int:
     rec = _run(rig)
     if rec["chosen"] != {"page": 1, "id": 11}:
         failures.append(f"click failure not skipped: {rec}")
+
+    # ---- the thumbnail RANKER: model order preserved (that IS the
+    # ranking), hallucinated ids dropped, duplicates collapsed, top-N cap —
+    # DOM-order re-sorting here once defeated the whole ranking design ----
+    from PIL import Image
+    import io as _io
+
+    from core import llm as _llm
+
+    class _ThumbPage:
+        def evaluate(self, js):
+            return ["101", "102", "103", "104", "105"]
+
+    class _ThumbBrowser:
+        page = _ThumbPage()
+
+        def screenshot_bytes(self, full_page=True):
+            buf = _io.BytesIO()
+            Image.new("RGB", (32, 20), (9, 9, 9)).save(buf, format="PNG")
+            return buf.getvalue()
+
+    class _ThumbBackend:
+        def complete(self, prompt, schema=None, images=None, max_tokens=4000,
+                     model=None):
+            self.prompt = prompt
+            # ranked: 104 first, a hallucination, a duplicate, then more
+            return {"reason": "r",
+                    "product_captures": [104, 999, 104, 101, 105, 102]}
+
+    _stub = _ThumbBackend()
+    _llm.set_backend(_stub)
+    try:
+        got = cli._library_product_thumbs(_ThumbBrowser(), "R", "desc", top_n=3)
+    finally:
+        _llm.set_backend(None)
+    if got != [104, 101, 105]:
+        failures.append(f"ranker order/cap wrong: {got}")
+    if "RANKED most likely first" not in getattr(_stub, "prompt", ""):
+        failures.append("thumbnail prompt lost the ranking instruction")
+    if "UP TO 3" not in " ".join(_stub.prompt.split()):
+        failures.append("thumbnail prompt lost the per-page candidate cap")
 
     # ---- spec: activated on the library step, after the filter ----
     spec = yaml.safe_load((REPO / "tasks" / "ov80i.yaml").read_text())

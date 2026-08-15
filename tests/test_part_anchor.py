@@ -89,29 +89,39 @@ def main() -> int:
         except Exception as e:
             failures.append(f"unreadable file raised: {e}")
 
-    # ---- anchored prompts name THIS part; unanchored fall back soft ----
+    # ---- anchored prompts: the part description sits IN the product
+    # criterion at the decision point, demanding positive identification —
+    # a preamble anchor with a generic criterion at the numbered line lost
+    # to the local text (a judge passed an unidentifiable frame as
+    # "plausibly" the part) ----
+    anchored_crit = cc.anchored_product_criterion(DESC)
+    if DESC not in anchored_crit or "positively identifiable" not in anchored_crit:
+        failures.append(f"anchored criterion malformed: {anchored_crit[:80]}")
     block_anchored = cli._block_capture_prompt("segmentation", "R", part_desc=DESC)
-    if DESC not in block_anchored or "THIS part" not in block_anchored:
-        failures.append("block prompt not anchored to the part description")
-    if "different angle, zoom, exposure or lighting" not in block_anchored:
-        failures.append("block anchor lost the variance allowance")
+    if f"1. product_image — {anchored_crit}" not in block_anchored:
+        failures.append("block decision point does not carry the anchored criterion")
+    if "plausibly" in block_anchored:
+        failures.append("the unfalsifiable 'plausibly' bar survived")
     if "any manufactured part" in block_anchored.lower() \
             or "still counts as a product image" in block_anchored:
         failures.append("the any-part softener survived into an anchored prompt")
     block_plain = cli._block_capture_prompt("segmentation", "R")
-    if "inspection recipe 'R'" not in block_plain:
-        failures.append("unanchored block prompt lost the soft recipe line")
+    if "inspection recipe 'R'" not in block_plain \
+            or cc.PRODUCT_CRITERION not in block_plain:
+        failures.append("unanchored block prompt lost the soft-line/generic pairing")
 
-    anchor = cli._anchor_line("R", DESC)
-    for judge_prompt in (
-        cli.LIBRARY_VIEWER_PROMPT.format(
-            recipe_line=anchor, product_criterion=cc.PRODUCT_CRITERION,
-            overlay_criterion=cc.INSPECTION_OVERLAY_CRITERION),
-        cli.LIBRARY_THUMBS_PROMPT.format(
-            recipe_line=anchor, ids="#1", product_criterion=cc.PRODUCT_CRITERION),
-    ):
-        if DESC not in judge_prompt:
-            failures.append("a library prompt did not carry the anchor")
+    viewer_anchored = cli.LIBRARY_VIEWER_PROMPT.format(
+        recipe_line="", product_criterion=anchored_crit,
+        overlay_criterion=cc.INSPECTION_OVERLAY_CRITERION)
+    if f"1. product_image — {anchored_crit}" not in viewer_anchored:
+        failures.append("viewer decision point does not carry the anchored criterion")
+    # the thumbnail PREFILTER stays soft (positive ID at ~100px would
+    # starve the search): preamble anchor + generic criterion
+    thumbs = cli.LIBRARY_THUMBS_PROMPT.format(
+        recipe_line=cli._anchor_line("R", DESC), ids="#1",
+        product_criterion=cc.PRODUCT_CRITERION, max_n=3)
+    if DESC not in thumbs or cc.PRODUCT_CRITERION not in thumbs:
+        failures.append("thumbnail prefilter lost its soft anchor pairing")
 
     # ---- evidence-first field order ----
     for name, schema in (("block", cli.BLOCK_CAPTURE_SCHEMA),

@@ -762,13 +762,16 @@ def _block_capture_prompt(block_type: str, recipe: str = "",
                           part_desc: str = "") -> str:
     """Criteria come from core.capture_criteria — shared verbatim with the
     deck's description judge so the two can never drift. With a part
-    description the judgment anchors to THE part being inspected."""
+    description, the ANCHORED product criterion replaces the generic one
+    AT THE DECISION POINT (a preamble anchor lost to the local text: a
+    judge passed an unidentifiable frame as 'plausibly' the part)."""
     from core import capture_criteria as cc
 
     return BLOCK_CAPTURE_PROMPT.format(
         block_type=block_type,
-        recipe_line=_anchor_line(recipe, part_desc),
-        product_criterion=cc.PRODUCT_CRITERION,
+        recipe_line="" if part_desc else _recipe_line(recipe),
+        product_criterion=(cc.anchored_product_criterion(part_desc)
+                           if part_desc else cc.PRODUCT_CRITERION),
         annotation_kind=cc.annotation_criterion(block_type),
         empty_note=cc.EMPTY_OUTLINES_NOTE,
     )
@@ -1104,6 +1107,11 @@ def prepare_model_view(browser, block_type: str, model_name: str) -> bool:
 
 LIBRARY_PAGE_SCAN_CAP = 5
 LIBRARY_CLICK_CAP = 10
+# Per-page candidate budget: the thumbnail call RANKS likeliest-first and
+# only the top N get clicked, so the global click budget spans pages
+# instead of drowning on page 1 (newest-first sorting fronts dim
+# production triggers; the genuine part captures often sit pages deep)."
+LIBRARY_PAGE_CANDIDATES = 3
 
 _LIBRARY_CARDS_JS = """
 () => {
@@ -1142,12 +1150,13 @@ cards, each labelled "#<number>" with a THUMBNAIL of that capture.{recipe_line}
 
 The capture numbers visible on this page are: {ids}.
 
-Which of these captures' thumbnails show a real photograph of a physical
-part/product? {product_criterion}
+Which of these captures' thumbnails most likely show a real photograph of
+a physical part/product? {product_criterion}
 
 Thumbnails never render inspection overlays — judge ONLY whether a real
-product photograph is present. Return product_captures as the matching
-numbers from the list above, in the order their cards appear."""
+product photograph is likely present. Return product_captures as UP TO
+{max_n} capture numbers from the list above, RANKED most likely first.
+Omit numbers whose thumbnails clearly show nothing."""
 
 LIBRARY_VIEWER_PROMPT = """This is the main capture viewer of a camera's Library page.{recipe_line}
 
@@ -1180,11 +1189,11 @@ def _recipe_line(recipe: str) -> str:
 
 
 def _anchor_line(recipe: str, part_desc: str = "") -> str:
-    """The product anchor for the pick judges. With a part description
-    (derived from the recipe's template image) the judgment is against THE
-    part being inspected — the 'any manufactured part counts' softener,
-    a proven false-positive source, applies only when no description
-    exists."""
+    """The SOFT product anchor — used only by the thumbnail prefilter,
+    which screens wide (positive identification at ~100px would starve
+    the search). The terminal viewer/block judges instead get the
+    anchored product criterion AT THE DECISION POINT
+    (capture_criteria.anchored_product_criterion)."""
     if part_desc:
         return (f"\nThe part being inspected, as seen in the recipe's "
                 f"template image: {part_desc}\nA product image must "
@@ -1243,11 +1252,14 @@ def describe_part_from_image(path) -> str | None:
     return None
 
 
-def _library_product_thumbs(browser, recipe: str, part_desc: str = "") -> list[int]:
-    """One batched vision call over the page's full grid: which captures'
-    thumbnails show a real product? Answers are validated against the
-    DOM's card list (hallucinated ids dropped, DOM order kept), so a wild
-    verdict can never click a nonexistent card. Empty on any failure."""
+def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
+                            top_n: int = LIBRARY_PAGE_CANDIDATES) -> list[int]:
+    """One batched vision call over the page's full grid, RANKING the
+    likeliest product thumbnails — the model's order is preserved (that IS
+    the ranking) and only the top_n survive. Answers are validated against
+    the DOM's card list (hallucinated ids dropped, duplicates collapsed),
+    so a wild verdict can never click a nonexistent card. Empty on any
+    failure."""
     from core import capture_criteria as cc, llm
     from core.llm import downscale_for_vision
 
@@ -1260,13 +1272,19 @@ def _library_product_thumbs(browser, recipe: str, part_desc: str = "") -> list[i
                 recipe_line=_anchor_line(recipe, part_desc),
                 ids=", ".join(f"#{i}" for i in dom_ids),
                 product_criterion=cc.PRODUCT_CRITERION,
+                max_n=top_n,
             ),
             schema=LIBRARY_THUMBS_SCHEMA,
             images=[downscale_for_vision(browser.screenshot_bytes(full_page=True))],
             max_tokens=800, model=llm.SONNET,
         )
-        picked = {int(i) for i in out.get("product_captures", [])}
-        return [i for i in dom_ids if i in picked]
+        dom = set(dom_ids)
+        ranked: list[int] = []
+        for i in out.get("product_captures", []):
+            i = int(i)
+            if i in dom and i not in ranked:
+                ranked.append(i)
+        return ranked[:top_n]
     except Exception as e:
         print(f"  warning: thumbnail judgement failed: {e}")
         return []
@@ -1292,8 +1310,9 @@ def judge_library_viewer(browser, recipe: str = "", part_desc: str = "") -> dict
             crop.save(buf, format="PNG")
             png = buf.getvalue()
     prompt = LIBRARY_VIEWER_PROMPT.format(
-        recipe_line=_anchor_line(recipe, part_desc),
-        product_criterion=cc.PRODUCT_CRITERION,
+        recipe_line="" if part_desc else _recipe_line(recipe),
+        product_criterion=(cc.anchored_product_criterion(part_desc)
+                           if part_desc else cc.PRODUCT_CRITERION),
         overlay_criterion=cc.INSPECTION_OVERLAY_CRITERION,
     )
     return llm.complete(prompt, schema=LIBRARY_VIEWER_SCHEMA,
@@ -2222,20 +2241,20 @@ def main(argv: list[str] | None = None) -> int:
                             f"{f', +{n_overlays} overlay(s)' if n_overlays else ''}"
                             f"{f', composite {composite}' if composite else ''})"
                         )
-                    # The template image is the canonical view of the part;
-                    # its description anchors every later pick judgment to
-                    # THE part being inspected. A blank/random template
-                    # (possible under Skip Aligner) yields no anchor —
-                    # enrichment, never a gate.
-                    if step.get("describe_part") and img_info.get("file"):
-                        desc = describe_part_from_image(
-                            out.run_dir / img_info["file"])
-                        if desc:
-                            meta["part_description"] = desc
-                            print(f"  part description: {desc[:110]}")
-                        else:
-                            print("  part description unavailable; pick "
-                                  "judges will run unanchored")
+                        # The template image is the canonical view of the
+                        # part; its description anchors every later pick
+                        # judgment to THE part being inspected. A blank or
+                        # random template (possible under Skip Aligner)
+                        # yields no anchor — enrichment, never a gate.
+                        if step.get("describe_part"):
+                            desc = describe_part_from_image(
+                                out.run_dir / img_info["file"])
+                            if desc:
+                                meta["part_description"] = desc
+                                print(f"  part description: {desc[:110]}")
+                            else:
+                                print("  part description unavailable; pick "
+                                      "judges will run unanchored")
                     else:
                         print(f"  warning: main image not saved: {img_info.get('error')}")
             step_record["status"] = "success"

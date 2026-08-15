@@ -20,6 +20,21 @@ PRODUCT_CRITERION = (
     "FALSE."
 )
 
+
+def anchored_product_criterion(part_desc: str) -> str:
+    """The product criterion when the recipe's part is known — placed AT
+    THE DECISION POINT, replacing the generic question. A preamble anchor
+    with a generic criterion at the numbered line lost to the local text
+    (a judge passed an unidentifiable frame as 'plausibly' the part);
+    positive identification is the bar, and a false negative is the safe
+    direction — the search just continues."""
+    return (
+        f"does it show THE part being inspected? The part, as seen in the "
+        f"recipe's template image: {part_desc} TRUE only if features of "
+        f"THIS part are positively identifiable in the image; otherwise "
+        f"FALSE."
+    )
+
 # The carve-out BOTH judges need on the annotation side. Two facts about
 # these UIs: the black frames that motivated all of this carried empty
 # labelled outlines; and ROI outline rectangles — coloured or not — are
