@@ -945,6 +945,146 @@ def pick_annotated_capture(browser, block_type: str,
 
 
 # --------------------------------------------------------------------------
+# Block-page model-view preparation. The View All ROIs captures were the
+# flow's most turn-hungry agent task: close the previous model's modal,
+# fight the portal-rendered Ant model selector, reopen the modal — and the
+# selector fight alone regularly blew the turn budget (the selector only
+# exists in the capture-review state, options render in a portal, and
+# "Model" is a strict PREFIX of "Model 3", so text matching betrays
+# agents). This hook does the mechanical parts deterministically before
+# the per-model agent runs, leaving it only "click View All ROIs and
+# wait". Best-effort: any failure leaves the page as-is and the agent's
+# goal still carries the full manual instructions.
+
+# NB: the click target is the .ant-select CONTAINER, not its inner input —
+# this non-searchable select's input sits UNDER the selection-item span and
+# never receives pointer events (a 5s click timeout, live-observed; the
+# mirror image of the library filter's placeholder-interception lesson).
+_MODEL_SELECT_JS = """
+(labelPrefix) => {
+  for (const sel of document.querySelectorAll('.ant-select')) {
+    if (!sel.getBoundingClientRect().width) continue;
+    let node = sel;
+    for (let i = 0; i < 5 && node; i++) {
+      node = node.parentElement;
+      const t = ((node && node.innerText) || '').trim();
+      if (t.toLowerCase().startsWith(labelPrefix.toLowerCase())) {
+        if (!sel.id) sel.id = 'sg-model-select';
+        const cur = sel.querySelector('.ant-select-selection-item');
+        return {input: '#' + CSS.escape(sel.id),
+                current: cur ? cur.innerText.trim() : ''};
+      }
+    }
+  }
+  return null;
+}
+"""
+
+
+def _escape_dialogs(browser) -> bool:
+    """Close any open modal (e.g. the previous model's View All ROIs):
+    Escape first (cannot misclick), then the modal's own close controls —
+    the X (ant-modal-close) and an Ok/Close button — because Escape has
+    been seen not to land when focus sits inside the modal. Returns True
+    when no dialog remains."""
+    try:
+        for attempt in range(3):
+            dlg = _visible_dialog(browser)
+            if dlg is None:
+                return True
+            if attempt == 0:
+                browser.page.keyboard.press("Escape")
+            else:
+                closed = False
+                try:
+                    x = dlg.query_selector("button.ant-modal-close")
+                    if x is not None and x.is_visible():
+                        x.click()
+                        closed = True
+                except Exception:
+                    pass
+                if not closed:
+                    for btn in dlg.query_selector_all("button"):
+                        if (btn.inner_text() or "").strip().lower() in ("ok", "close"):
+                            btn.click()
+                            break
+            browser.page.wait_for_timeout(800)
+        return _visible_dialog(browser) is None
+    except Exception:
+        return False
+
+
+def _model_selector_state(browser, block_type: str):
+    """(input_selector, current_value) of the page's model selector, or
+    (None, None). The selector only exists in the capture-review state."""
+    try:
+        got = browser.page.evaluate(_MODEL_SELECT_JS, f"{block_type} model")
+        if got:
+            return got["input"], got["current"]
+    except Exception:
+        pass
+    return None, None
+
+
+def _click_model_option(browser, name: str) -> bool:
+    """Click the portal-rendered option whose text EXACTLY equals `name` —
+    equality, never substring: "Model" is a prefix of "Model 3"."""
+    try:
+        for el in browser.page.query_selector_all(".ant-select-item-option"):
+            if el.is_visible() and (el.inner_text() or "").strip() == name:
+                el.click()
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def prepare_model_view(browser, block_type: str, model_name: str) -> bool:
+    """Deterministically stage the block page for a per-model View All
+    ROIs capture: close any open modal and set the model selector to
+    `model_name`. Returns True when the selector provably shows the model;
+    False leaves the agent's full manual fallback to do the work."""
+    try:
+        if not _escape_dialogs(browser):
+            # A dialog still overlays the page — a selector click would
+            # only time out against it. Bail fast; the agent knows how.
+            print("  model-view prep: a modal would not close; agent will "
+                  "drive the page")
+            return False
+        sel, current = _model_selector_state(browser, block_type)
+        if sel is None:
+            # Live view has no selector; Previous enters the review state.
+            if _click_nav_button(browser, "Previous"):
+                browser.page.wait_for_timeout(2500)
+                sel, current = _model_selector_state(browser, block_type)
+        if sel is None:
+            print(f"  model-view prep: no {block_type} model selector found; "
+                  f"agent will drive the page")
+            return False
+        if current == model_name:
+            print(f"  model-view prep: {model_name!r} already selected")
+            return True
+        browser.page.click(sel, timeout=5000)
+        browser.page.wait_for_timeout(800)
+        if not _click_model_option(browser, model_name):
+            browser.page.keyboard.press("Escape")
+            print(f"  model-view prep: selector lists no option {model_name!r}; "
+                  f"agent will drive the page")
+            return False
+        browser.page.wait_for_timeout(1500)
+        _, now = _model_selector_state(browser, block_type)
+        if now == model_name:
+            print(f"  model-view prep: selector set to {model_name!r}")
+            return True
+        print(f"  model-view prep: selector shows {now!r} after selecting "
+              f"{model_name!r}; agent will verify")
+        return False
+    except Exception as e:
+        print(f"  warning: model-view prep failed: {e}; agent will drive the page")
+        return False
+
+
+# --------------------------------------------------------------------------
 # Library capture picking. The filtered grid auto-selects the NEWEST
 # capture, with no guarantee its viewer shows a real product or the AI
 # inspection overlays (a real deck's overview slide shipped a black
@@ -1451,6 +1591,11 @@ def capture_block_per_model(
         return
     shots = []
     for m in models:
+        # Stage the mechanical parts deterministically (close modal, set
+        # the model selector) so the agent's turns go to the capture, not
+        # to fighting the portal dropdown.
+        if step.get("prepare_model_selector"):
+            prepare_model_view(browser, want, m["name"])
         goal = step["per_model_goal"].format(model=m["name"])
         result = run_step(
             browser,

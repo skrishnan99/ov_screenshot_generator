@@ -1,6 +1,6 @@
 {
   "name": "ov-test-reports",
-  "version": "0.25.3",
+  "version": "0.25.4",
   "description": "Generate Overview camera inspection assets and customer-facing test-report decks from natural language \u2014 decks compiled from a governed YAML spec (v2 generator)",
   "author": {
     "name": "Surya Krishnan",

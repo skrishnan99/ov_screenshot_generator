@@ -200,11 +200,19 @@ steps:
     foreach_block_models: segmentation
     item_label: "View All ROIs grid"
     meta_key: view_rois_screenshot
+    # A deterministic hook closes any open modal and sets the model
+    # selector before each per-model agent run — the selector fight
+    # (portal options, "Model" being a prefix of "Model 3") was the main
+    # turn-budget killer here.
+    prepare_model_selector: true
+    max_model_calls: 60
     per_model_goal: |
-      You are on the Segmentation Block page of a recipe. Make sure the page's
-      "Segmentation Model" selector has "{model}" selected — if a different model is
-      selected, open the selector and choose "{model}". If a "View All ROIs" modal is
-      already open, close it first, then re-select the model.
+      You are on the Segmentation Block page of a recipe. A deterministic helper
+      has usually ALREADY closed any open modal and set the page's "Segmentation
+      Model" selector to "{model}" — verify that with a snapshot. Only if the
+      selector shows a different model: open it and choose exactly "{model}" (note
+      that model names can be prefixes of each other — match the whole name), and
+      close any "View All ROIs" modal first if one is open.
 
       Then click "View All ROIs" and call wait_for_image_load so the thumbnail grid
       finishes rendering. When it reports loaded, finish. If it reports still not
@@ -307,11 +315,16 @@ steps:
     foreach_block_models: classification
     item_label: "View All ROIs grid"
     meta_key: view_rois_screenshot
+    # Same deterministic staging + budget as the segmentation twin above.
+    prepare_model_selector: true
+    max_model_calls: 60
     per_model_goal: |
-      You are on the Classification Block page of a recipe. Make sure the page's
-      classification model selector has "{model}" selected — if a different model is
-      selected, open the selector and choose "{model}". If a "View All ROIs" modal is
-      already open, close it first, then re-select the model.
+      You are on the Classification Block page of a recipe. A deterministic helper
+      has usually ALREADY closed any open modal and set the page's classification
+      model selector to "{model}" — verify that with a snapshot. Only if the
+      selector shows a different model: open it and choose exactly "{model}" (note
+      that model names can be prefixes of each other — match the whole name), and
+      close any "View All ROIs" modal first if one is open.
 
       Then click "View All ROIs" and call wait_for_image_load so the thumbnail grid
       finishes rendering. When it reports loaded, finish. If it reports still not
