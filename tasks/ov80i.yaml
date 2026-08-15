@@ -499,6 +499,13 @@ steps:
     # main-image download so both see the recipe's captures, not the
     # globally newest capture of whatever recipe ran last.
     filter_library_recipe: true
+    # After the filter: the grid auto-selects the newest capture, which
+    # may be dark/blank or overlay-less. The pick hook searches the pages
+    # (thumbnails batched, product-looking cards clicked and their viewers
+    # judged for product + inspection overlay) and leaves the viewer on
+    # the best capture BEFORE the screenshot and main-image download, so
+    # all three artifacts describe the same, good capture.
+    pick_library_capture: true
     # The viewer image lazy-loads ("Loading capture details..."); a fast
     # replay once downloaded a BLANK base layer, so wait for real imagery
     # before capturing/downloading.

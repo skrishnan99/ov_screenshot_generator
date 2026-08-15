@@ -50,6 +50,15 @@ def annotation_criterion(block_type: str) -> str:
     )
 
 
+# The Library viewer's overlay is the INSPECTION overlay (regions, marks,
+# result labels the inspection draws over the photograph) — a different
+# thing from training annotations, so it gets its own definition.
+INSPECTION_OVERLAY_CRITERION = (
+    "are AI inspection overlays drawn ON the image — regions, boxes, "
+    "masks, marks or result labels rendered over the photograph by the "
+    "inspection? A plain photograph with nothing drawn on it is FALSE."
+)
+
 # The extractor's capture-pick preference ladder, shared so the deck can
 # read a recorded pick and both sides describe tiers in the same words.
 PICK_TIER_MEANING = {
@@ -57,4 +66,12 @@ PICK_TIER_MEANING = {
     2: "product image, unannotated",
     3: "annotated, but no real product image",
     4: "no product image and no annotations",
+}
+
+# The library pick's ladder, same shape, overlay flavour.
+LIBRARY_TIER_MEANING = {
+    1: "product + inspection overlay",
+    2: "product image, no overlay",
+    3: "overlay, but no real product image",
+    4: "no product image and no overlay",
 }

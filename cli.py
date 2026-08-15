@@ -940,6 +940,299 @@ def pick_annotated_capture(browser, block_type: str,
     return rec
 
 
+# --------------------------------------------------------------------------
+# Library capture picking. The filtered grid auto-selects the NEWEST
+# capture, with no guarantee its viewer shows a real product or the AI
+# inspection overlays (a real deck's overview slide shipped a black
+# raw/composite pair this way). The pick runs after the recipe filter and
+# BEFORE the screenshot and the main-image download, so all three describe
+# the same chosen capture — which also preserves the deck's "overview pair
+# agrees with the library screenshot" doctrine by construction.
+#
+# Search shape, per the spec: judge every thumbnail on the page in ONE
+# batched vision call (thumbnails never render overlays, so they can only
+# answer "real product?"); click each product-looking card and judge the
+# VIEWER for product + overlay; exhaust the page before moving on. Two
+# caps: pages scanned and total candidates clicked. Preference ladder on
+# exhaustion mirrors the block pick: product+overlay short-circuits,
+# product-no-overlay beats overlay-no-product, nothing qualifying resets
+# to page 1's newest (today's exact behavior).
+
+LIBRARY_PAGE_SCAN_CAP = 5
+LIBRARY_CLICK_CAP = 10
+
+_LIBRARY_CARDS_JS = """
+() => {
+  const out = [];
+  document.querySelectorAll('img').forEach(img => {
+    const r = img.getBoundingClientRect();
+    if (r.width < 40 || r.width > 400) return;
+    let node = img;
+    for (let i = 0; i < 6 && node; i++) {
+      node = node.parentElement;
+      if (node && /#\\d+/.test(node.innerText || '') &&
+          (node.innerText.match(/#\\d+/g) || []).length === 1) {
+        out.push((node.innerText.match(/#(\\d+)/) || [])[1]);
+        return;
+      }
+    }
+  });
+  return out;
+}
+"""
+
+_SELECTED_CAPTURE_RE = re.compile(r"Capture\s+#(\d+)\s+from", re.I)
+
+LIBRARY_THUMBS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "product_captures": {"type": "array", "items": {"type": "integer"}},
+        "reason": {"type": "string"},
+    },
+    "required": ["product_captures", "reason"],
+    "additionalProperties": False,
+}
+
+LIBRARY_THUMBS_PROMPT = """This is the Library page of a camera's inspection UI: a grid of capture
+cards, each labelled "#<number>" with a THUMBNAIL of that capture.{recipe_line}
+
+The capture numbers visible on this page are: {ids}.
+
+Which of these captures' thumbnails show a real photograph of a physical
+part/product? {product_criterion}
+
+Thumbnails never render inspection overlays — judge ONLY whether a real
+product photograph is present. Return product_captures as the matching
+numbers from the list above, in the order their cards appear."""
+
+LIBRARY_VIEWER_PROMPT = """This is the main capture viewer of a camera's Library page.{recipe_line}
+
+Judge the IMAGE shown in the viewer (ignore the surrounding UI panels):
+
+1. product_image — {product_criterion}
+2. overlay — {overlay_criterion}
+
+Answer with product_image, overlay and a one-sentence reason."""
+
+LIBRARY_VIEWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "product_image": {"type": "boolean"},
+        "overlay": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["product_image", "overlay", "reason"],
+    "additionalProperties": False,
+}
+
+
+def _recipe_line(recipe: str) -> str:
+    if not recipe:
+        return ""
+    return (f'\nThe captures belong to the inspection recipe {recipe!r} — a '
+            f"photograph of the part this recipe inspects is expected. Any "
+            f"real manufactured part still counts as a product image.")
+
+
+def _library_product_thumbs(browser, recipe: str) -> list[int]:
+    """One batched vision call over the page's full grid: which captures'
+    thumbnails show a real product? Answers are validated against the
+    DOM's card list (hallucinated ids dropped, DOM order kept), so a wild
+    verdict can never click a nonexistent card. Empty on any failure."""
+    from core import capture_criteria as cc, llm
+    from core.llm import downscale_for_vision
+
+    try:
+        dom_ids = [int(i) for i in browser.page.evaluate(_LIBRARY_CARDS_JS)]
+        if not dom_ids:
+            return []
+        out = llm.complete(
+            LIBRARY_THUMBS_PROMPT.format(
+                recipe_line=_recipe_line(recipe),
+                ids=", ".join(f"#{i}" for i in dom_ids),
+                product_criterion=cc.PRODUCT_CRITERION,
+            ),
+            schema=LIBRARY_THUMBS_SCHEMA,
+            images=[downscale_for_vision(browser.screenshot_bytes(full_page=True))],
+            max_tokens=800, model=llm.HAIKU,
+        )
+        picked = {int(i) for i in out.get("product_captures", [])}
+        return [i for i in dom_ids if i in picked]
+    except Exception as e:
+        print(f"  warning: thumbnail judgement failed: {e}")
+        return []
+
+
+def judge_library_viewer(browser, recipe: str = "") -> dict:
+    """One Haiku vision verdict on the viewer: product + inspection
+    overlay. Cropped to the viewer when the bbox probe finds it."""
+    import io
+
+    from PIL import Image
+
+    from core import capture_criteria as cc, llm
+    from core.llm import downscale_for_vision
+
+    png = browser.screenshot_bytes(full_page=True)
+    bbox = main_image_bbox(browser, png)
+    if bbox:
+        with Image.open(io.BytesIO(png)) as im:
+            crop = im.crop((bbox["x"], bbox["y"],
+                            bbox["x"] + bbox["width"], bbox["y"] + bbox["height"]))
+            buf = io.BytesIO()
+            crop.save(buf, format="PNG")
+            png = buf.getvalue()
+    prompt = LIBRARY_VIEWER_PROMPT.format(
+        recipe_line=_recipe_line(recipe),
+        product_criterion=cc.PRODUCT_CRITERION,
+        overlay_criterion=cc.INSPECTION_OVERLAY_CRITERION,
+    )
+    return llm.complete(prompt, schema=LIBRARY_VIEWER_SCHEMA,
+                        images=[downscale_for_vision(png)], max_tokens=500,
+                        model=llm.HAIKU)
+
+
+def _library_selected_id(browser):
+    try:
+        m = _SELECTED_CAPTURE_RE.search(
+            browser.page.evaluate("document.body.innerText") or "")
+        return int(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
+def _click_library_capture(browser, cid: int) -> bool:
+    """Select capture #cid and wait for its viewer to load: the heading
+    must name the capture, then the image poll guards the lazy viewer."""
+    try:
+        browser.page.get_by_text(f"#{cid}", exact=True).first.click()
+    except Exception:
+        return False
+    for _ in range(8):
+        browser.page.wait_for_timeout(1000)
+        if _library_selected_id(browser) == cid:
+            break
+    else:
+        return False
+    ok, msg = poll_image_loaded(browser, max_wait_s=35, interval_s=5)
+    if not ok:
+        print(f"  warning: capture #{cid} viewer {msg}")
+    return True
+
+
+def _library_next_page(browser) -> bool:
+    try:
+        nxt = browser.page.query_selector("li.ant-pagination-next")
+        if nxt is None or "disabled" in (nxt.get_attribute("class") or ""):
+            return False
+        nxt.click()
+        browser.page.wait_for_timeout(2000)
+        return True
+    except Exception:
+        return False
+
+
+def _library_goto_page(browser, page_no: int) -> bool:
+    """Page numbers beyond 3 hide behind the pagination's '•••', so the
+    deterministic route is: click page 1 (always visible), then Next
+    (page_no - 1) times."""
+    try:
+        one = browser.page.query_selector("li.ant-pagination-item-1")
+        if one is None:
+            return page_no == 1
+        one.click()
+        browser.page.wait_for_timeout(2000)
+        for _ in range(page_no - 1):
+            if not _library_next_page(browser):
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def _library_first_capture(browser):
+    try:
+        ids = browser.page.evaluate(_LIBRARY_CARDS_JS)
+        return int(ids[0]) if ids else None
+    except Exception:
+        return None
+
+
+def pick_library_capture(browser, recipe: str = "",
+                         page_cap: int = LIBRARY_PAGE_SCAN_CAP,
+                         click_cap: int = LIBRARY_CLICK_CAP) -> dict:
+    """Leave the library viewer on the best available capture and say how
+    it was chosen; the caller screenshots and downloads afterwards, so all
+    three artifacts describe the same capture.
+
+    Per page: one batched thumbnail judgement, then every product-looking
+    card is clicked and its viewer judged — the page is exhausted before
+    moving on. product+overlay short-circuits. On exhaustion (all pages,
+    page cap, or click cap) the best partial wins: product-no-overlay over
+    overlay-no-product, first-seen ties; nothing qualifying resets to page
+    1's newest capture — exactly today's behavior. Best-effort like every
+    capture hook: failures degrade, never fail the step."""
+    from core.capture_criteria import LIBRARY_TIER_MEANING
+
+    rec: dict = {"clicked": [], "chosen": None, "tier": None, "pages_scanned": 0}
+    try:
+        best = (5, None)  # (tier, (page, capture id))
+        clicks = 0
+        capped = False
+        page = 1
+        while page <= page_cap:
+            rec["pages_scanned"] = page
+            for cid in _library_product_thumbs(browser, recipe):
+                if clicks >= click_cap:
+                    print(f"  library pick: click cap ({click_cap}) reached; "
+                          f"stopping the search")
+                    capped = True
+                    break
+                if not _click_library_capture(browser, cid):
+                    print(f"  warning: could not select capture #{cid}; skipping")
+                    continue
+                v = judge_library_viewer(browser, recipe)
+                clicks += 1
+                tier = (1 if v.get("product_image") and v.get("overlay")
+                        else 2 if v.get("product_image")
+                        else 3 if v.get("overlay") else 4)
+                rec["clicked"].append({"page": page, "id": cid, "tier": tier,
+                                       "reason": str(v.get("reason", ""))[:160]})
+                if tier == 1:
+                    rec["chosen"], rec["tier"] = {"page": page, "id": cid}, 1
+                    print(f"  library pick: capture #{cid} (page {page}) is "
+                          f"product + overlay")
+                    return rec
+                if tier in (2, 3) and tier < best[0]:
+                    best = (tier, (page, cid))
+            if capped or page == page_cap or not _library_next_page(browser):
+                if page == page_cap and not capped:
+                    print(f"  library pick: page cap ({page_cap}) reached")
+                break
+            page += 1
+
+        if best[1] is not None:
+            bp, bid = best[1]
+            last = rec["clicked"][-1] if rec["clicked"] else None
+            if not (last and last["page"] == bp and last["id"] == bid):
+                if _library_goto_page(browser, bp):
+                    _click_library_capture(browser, bid)
+            rec["chosen"], rec["tier"] = {"page": bp, "id": bid}, best[0]
+            print(f"  library pick: best partial is capture #{bid} (page {bp}, "
+                  f"tier {best[0]}: {LIBRARY_TIER_MEANING[best[0]]})")
+        else:
+            _library_goto_page(browser, 1)
+            first = _library_first_capture(browser)
+            if first is not None:
+                _click_library_capture(browser, first)
+            rec["tier"] = 4
+            print("  library pick: no capture met any criterion; keeping page "
+                  "1's newest capture")
+    except Exception as e:
+        print(f"  warning: library pick failed: {e}; capturing the current view")
+    return rec
+
+
 # The Library grid is global — unfiltered it shows every recipe's captures,
 # newest first, so both the screenshot and the main-image download can land
 # on another recipe's capture entirely. The filter is applied fresh every
@@ -1614,6 +1907,12 @@ def main(argv: list[str] | None = None) -> int:
             # must see the RECIPE'S captures, not the global newest.
             if step.get("filter_library_recipe"):
                 filter_library_by_recipe(browser, recipe_name or args.recipe)
+            # After the filter, before screenshot + download: leave the
+            # viewer on a capture that actually shows the product with its
+            # inspection overlays (searched, not taken on faith).
+            if step.get("pick_library_capture"):
+                step_record["library_pick"] = pick_library_capture(
+                    browser, recipe_name or args.recipe)
             if step.get("foreach_models"):
                 capture_per_model(
                     browser, step, out, step_record, desc_queue, base_ctx, meta
