@@ -76,7 +76,7 @@ class _Rig:
     def wait(self, browser):
         self.waits += 1
 
-    def judge(self, browser, block_type, recipe=""):
+    def judge(self, browser, block_type, recipe="", part_desc=""):
         if self.judge_crash_at is not None and self.cur == self.judge_crash_at:
             raise RuntimeError("vision judge unavailable")
         self.judged.append(self.cur)

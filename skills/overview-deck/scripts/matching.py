@@ -343,9 +343,13 @@ def _block_quality_prompt(description: str, block_type: str = "") -> str:
 def block_quality_call(description: str, block_type: str = "") -> dict:
     from core import llm
 
+    # SONNET: this verdict is terminal-ish (block page vs gallery) with no
+    # second opinion — the same asymmetry that moved the extractor's pick
+    # judges up a tier. Only runs for runs predating the capture-pick
+    # records, so the volume is a handful of calls on old runs.
     return llm.complete(
         _block_quality_prompt(description, block_type),
-        schema=BLOCK_QUALITY_SCHEMA, max_tokens=500, model=llm.HAIKU,
+        schema=BLOCK_QUALITY_SCHEMA, max_tokens=500, model=llm.SONNET,
     )
 
 

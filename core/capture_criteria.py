@@ -20,11 +20,19 @@ PRODUCT_CRITERION = (
     "FALSE."
 )
 
-# The carve-out BOTH judges need on the annotation side: the black frames
-# that motivated all of this carried empty labelled outlines.
+# The carve-out BOTH judges need on the annotation side. Two facts about
+# these UIs: the black frames that motivated all of this carried empty
+# labelled outlines; and ROI outline rectangles — coloured or not — are
+# STANDING CHROME drawn on every capture, each carrying its region's NAME
+# label (e.g. "Trumpet Front"), annotated or not, over real images too.
 EMPTY_OUTLINES_NOTE = (
-    "Empty outline rectangles (with or without name labels) over a "
-    "blank/black canvas do NOT count as annotations."
+    "ROI outline rectangles are standing chrome drawn on EVERY capture — "
+    "coloured or not, and even over a real product image — and each "
+    "carries its region's NAME label (e.g. \"Trumpet Front\"): neither the "
+    "outlines nor these region-name labels count as annotations. "
+    "Annotations are content ADDED to a region: class-verdict chips or "
+    "painted masks. Empty outlines over a blank/black canvas count as "
+    "nothing at all."
 )
 
 # What counts as an annotation is BLOCK-TYPE-SPECIFIC — labels are not
@@ -52,11 +60,17 @@ def annotation_criterion(block_type: str) -> str:
 
 # The Library viewer's overlay is the INSPECTION overlay (regions, marks,
 # result labels the inspection draws over the photograph) — a different
-# thing from training annotations, so it gets its own definition.
+# thing from training annotations, so it gets its own definition. The
+# search-area / alignment rectangle (e.g. a cyan "Search Area" box) is
+# standing chrome drawn on essentially every capture and must not satisfy
+# this criterion, or overlay degenerates to always-true.
 INSPECTION_OVERLAY_CRITERION = (
-    "are AI inspection overlays drawn ON the image — regions, boxes, "
-    "masks, marks or result labels rendered over the photograph by the "
-    "inspection? A plain photograph with nothing drawn on it is FALSE."
+    "are AI inspection RESULT overlays drawn ON the image — per-region "
+    "result boxes, masks, marks or verdict labels rendered over the "
+    "photograph by the inspection? The search-area/alignment rectangle "
+    "(e.g. a box labelled \"Search Area\") is standing chrome on every "
+    "capture and does NOT count. A photograph with nothing beyond that "
+    "standing chrome is FALSE."
 )
 
 # The extractor's capture-pick preference ladder, shared so the deck can

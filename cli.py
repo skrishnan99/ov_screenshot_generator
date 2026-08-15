@@ -732,14 +732,17 @@ _NAV_INPUT_JS = """
 }
 """
 
+# Evidence-first field order: `reason` leads, so the model describes what
+# it sees before committing to the booleans (decide-then-justify was a
+# false-positive source).
 BLOCK_CAPTURE_SCHEMA = {
     "type": "object",
     "properties": {
+        "reason": {"type": "string"},
         "product_image": {"type": "boolean"},
         "annotated": {"type": "boolean"},
-        "reason": {"type": "string"},
     },
-    "required": ["product_image", "annotated", "reason"],
+    "required": ["reason", "product_image", "annotated"],
     "additionalProperties": False,
 }
 
@@ -751,32 +754,28 @@ Judge the CAPTURE shown in the viewer (ignore the surrounding UI panels):
 2. annotated — are annotations drawn ON the capture: {annotation_kind}?
    {empty_note}
 
-Answer with product_image, annotated and a one-sentence reason."""
+Answer with a one-sentence reason FIRST — describe what is actually drawn
+and shown — then product_image and annotated."""
 
 
-def _block_capture_prompt(block_type: str, recipe: str = "") -> str:
+def _block_capture_prompt(block_type: str, recipe: str = "",
+                          part_desc: str = "") -> str:
     """Criteria come from core.capture_criteria — shared verbatim with the
-    deck's description judge so the two can never drift."""
+    deck's description judge so the two can never drift. With a part
+    description the judgment anchors to THE part being inspected."""
     from core import capture_criteria as cc
 
-    recipe_line = ""
-    if recipe:
-        recipe_line = (
-            f'\nThe capture belongs to the inspection recipe {recipe!r} — a '
-            f"photograph of the part this recipe inspects is expected. Any "
-            f"real manufactured part still counts as a product image; only "
-            f"content clearly unrelated to an industrial part does not."
-        )
     return BLOCK_CAPTURE_PROMPT.format(
         block_type=block_type,
-        recipe_line=recipe_line,
+        recipe_line=_anchor_line(recipe, part_desc),
         product_criterion=cc.PRODUCT_CRITERION,
         annotation_kind=cc.annotation_criterion(block_type),
         empty_note=cc.EMPTY_OUTLINES_NOTE,
     )
 
 
-def judge_block_capture(browser, block_type: str, recipe: str = "") -> dict:
+def judge_block_capture(browser, block_type: str, recipe: str = "",
+                        part_desc: str = "") -> dict:
     """One Haiku vision verdict on the CURRENT viewer image. Cropped to the
     viewer when the bbox probe finds it, so the judgment sees the capture
     rather than the whole page."""
@@ -796,10 +795,14 @@ def judge_block_capture(browser, block_type: str, recipe: str = "") -> dict:
             buf = io.BytesIO()
             crop.save(buf, format="PNG")
             png = buf.getvalue()
-    return llm.complete(_block_capture_prompt(block_type, recipe),
+    # SONNET, not Haiku — measured 6.5s vs 14.6s per call on the
+    # agent-sdk transport (session overhead dominates; Sonnet navigates
+    # the image-read turn in fewer steps) AND it is the terminal verdict
+    # the tier ladder ships. Availability still walks down to Haiku.
+    return llm.complete(_block_capture_prompt(block_type, recipe, part_desc),
                         schema=BLOCK_CAPTURE_SCHEMA,
                         images=[downscale_for_vision(png)], max_tokens=500,
-                        model=llm.HAIKU)
+                        model=llm.SONNET)
 
 
 def _capture_nav_state(browser):
@@ -852,7 +855,7 @@ def _wait_capture_loaded(browser) -> None:
 
 def pick_annotated_capture(browser, block_type: str,
                            cap: int = CAPTURE_SCAN_CAP,
-                           recipe: str = "") -> dict:
+                           recipe: str = "", part_desc: str = "") -> dict:
     """Position the block page's viewer on the best available capture and
     say how it was chosen. The caller screenshots afterwards.
 
@@ -868,7 +871,8 @@ def pick_annotated_capture(browser, block_type: str,
         cur, total, sel = _capture_nav_state(browser)
 
         def judge(idx):
-            v = judge_block_capture(browser, block_type, recipe=recipe)
+            v = judge_block_capture(browser, block_type, recipe=recipe,
+                                    part_desc=part_desc)
             tier = (1 if v.get("product_image") and v.get("annotated")
                     else 2 if v.get("product_image")
                     else 3 if v.get("annotated") else 4)
@@ -986,10 +990,10 @@ _SELECTED_CAPTURE_RE = re.compile(r"Capture\s+#(\d+)\s+from", re.I)
 LIBRARY_THUMBS_SCHEMA = {
     "type": "object",
     "properties": {
-        "product_captures": {"type": "array", "items": {"type": "integer"}},
         "reason": {"type": "string"},
+        "product_captures": {"type": "array", "items": {"type": "integer"}},
     },
-    "required": ["product_captures", "reason"],
+    "required": ["reason", "product_captures"],
     "additionalProperties": False,
 }
 
@@ -1012,16 +1016,17 @@ Judge the IMAGE shown in the viewer (ignore the surrounding UI panels):
 1. product_image — {product_criterion}
 2. overlay — {overlay_criterion}
 
-Answer with product_image, overlay and a one-sentence reason."""
+Answer with a one-sentence reason FIRST — describe what is actually drawn
+and shown — then product_image and overlay."""
 
 LIBRARY_VIEWER_SCHEMA = {
     "type": "object",
     "properties": {
+        "reason": {"type": "string"},
         "product_image": {"type": "boolean"},
         "overlay": {"type": "boolean"},
-        "reason": {"type": "string"},
     },
-    "required": ["product_image", "overlay", "reason"],
+    "required": ["reason", "product_image", "overlay"],
     "additionalProperties": False,
 }
 
@@ -1034,7 +1039,71 @@ def _recipe_line(recipe: str) -> str:
             f"real manufactured part still counts as a product image.")
 
 
-def _library_product_thumbs(browser, recipe: str) -> list[int]:
+def _anchor_line(recipe: str, part_desc: str = "") -> str:
+    """The product anchor for the pick judges. With a part description
+    (derived from the recipe's template image) the judgment is against THE
+    part being inspected — the 'any manufactured part counts' softener,
+    a proven false-positive source, applies only when no description
+    exists."""
+    if part_desc:
+        return (f"\nThe part being inspected, as seen in the recipe's "
+                f"template image: {part_desc}\nA product image must "
+                f"plausibly show THIS part — possibly at a different angle, "
+                f"zoom, exposure or lighting — not just any manufactured "
+                f"object.")
+    return _recipe_line(recipe)
+
+
+# One vision call per run, over the template step's native-res download —
+# the canonical reference view of the part (what alignment anchors to).
+# The description then anchors every pick judgment. part_visible is the
+# escape hatch: a blank or random template (possible under Skip Aligner)
+# yields NO anchor rather than a hallucinated one — the judges fall back
+# to the generic criterion, never block.
+PART_DESCRIPTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "description": {"type": "string"},
+        "part_visible": {"type": "boolean"},
+    },
+    "required": ["description", "part_visible"],
+    "additionalProperties": False,
+}
+
+PART_DESCRIPTION_PROMPT = """This is the template image of a camera inspection recipe — the canonical
+reference view of the part being inspected.
+
+Describe the part in 2-3 short sentences of INVARIANT features — overall
+shape, material, colour, distinctive geometry (bores, holes, edges,
+markings) — so a later judgment can recognise the same part at a different
+angle, zoom or exposure. Describe the part itself, never image quality and
+never UI elements.
+
+If the image does not clearly show a physical part (blank, uniform, a test
+pattern, or unrelated content), say so and set part_visible=false."""
+
+
+def describe_part_from_image(path) -> str | None:
+    """The part description for meta["part_description"], or None when the
+    template shows no usable part. Never raises."""
+    from core import llm
+    from core.llm import downscale_for_vision
+
+    try:
+        data = Path(path).read_bytes()
+        out = llm.complete(PART_DESCRIPTION_PROMPT, schema=PART_DESCRIPTION_SCHEMA,
+                           images=[downscale_for_vision(data)], max_tokens=600,
+                           model=llm.SONNET)
+        if out.get("part_visible") and str(out.get("description", "")).strip():
+            return " ".join(str(out["description"]).split())
+        print("  part description: template shows no clear part "
+              f"({str(out.get('description', ''))[:80]})")
+    except Exception as e:
+        print(f"  warning: part description failed: {e}")
+    return None
+
+
+def _library_product_thumbs(browser, recipe: str, part_desc: str = "") -> list[int]:
     """One batched vision call over the page's full grid: which captures'
     thumbnails show a real product? Answers are validated against the
     DOM's card list (hallucinated ids dropped, DOM order kept), so a wild
@@ -1048,13 +1117,13 @@ def _library_product_thumbs(browser, recipe: str) -> list[int]:
             return []
         out = llm.complete(
             LIBRARY_THUMBS_PROMPT.format(
-                recipe_line=_recipe_line(recipe),
+                recipe_line=_anchor_line(recipe, part_desc),
                 ids=", ".join(f"#{i}" for i in dom_ids),
                 product_criterion=cc.PRODUCT_CRITERION,
             ),
             schema=LIBRARY_THUMBS_SCHEMA,
             images=[downscale_for_vision(browser.screenshot_bytes(full_page=True))],
-            max_tokens=800, model=llm.HAIKU,
+            max_tokens=800, model=llm.SONNET,
         )
         picked = {int(i) for i in out.get("product_captures", [])}
         return [i for i in dom_ids if i in picked]
@@ -1063,7 +1132,7 @@ def _library_product_thumbs(browser, recipe: str) -> list[int]:
         return []
 
 
-def judge_library_viewer(browser, recipe: str = "") -> dict:
+def judge_library_viewer(browser, recipe: str = "", part_desc: str = "") -> dict:
     """One Haiku vision verdict on the viewer: product + inspection
     overlay. Cropped to the viewer when the bbox probe finds it."""
     import io
@@ -1083,13 +1152,13 @@ def judge_library_viewer(browser, recipe: str = "") -> dict:
             crop.save(buf, format="PNG")
             png = buf.getvalue()
     prompt = LIBRARY_VIEWER_PROMPT.format(
-        recipe_line=_recipe_line(recipe),
+        recipe_line=_anchor_line(recipe, part_desc),
         product_criterion=cc.PRODUCT_CRITERION,
         overlay_criterion=cc.INSPECTION_OVERLAY_CRITERION,
     )
     return llm.complete(prompt, schema=LIBRARY_VIEWER_SCHEMA,
                         images=[downscale_for_vision(png)], max_tokens=500,
-                        model=llm.HAIKU)
+                        model=llm.SONNET)
 
 
 def _library_selected_id(browser):
@@ -1160,7 +1229,8 @@ def _library_first_capture(browser):
 
 def pick_library_capture(browser, recipe: str = "",
                          page_cap: int = LIBRARY_PAGE_SCAN_CAP,
-                         click_cap: int = LIBRARY_CLICK_CAP) -> dict:
+                         click_cap: int = LIBRARY_CLICK_CAP,
+                         part_desc: str = "") -> dict:
     """Leave the library viewer on the best available capture and say how
     it was chosen; the caller screenshots and downloads afterwards, so all
     three artifacts describe the same capture.
@@ -1182,7 +1252,7 @@ def pick_library_capture(browser, recipe: str = "",
         page = 1
         while page <= page_cap:
             rec["pages_scanned"] = page
-            for cid in _library_product_thumbs(browser, recipe):
+            for cid in _library_product_thumbs(browser, recipe, part_desc):
                 if clicks >= click_cap:
                     print(f"  library pick: click cap ({click_cap}) reached; "
                           f"stopping the search")
@@ -1191,7 +1261,7 @@ def pick_library_capture(browser, recipe: str = "",
                 if not _click_library_capture(browser, cid):
                     print(f"  warning: could not select capture #{cid}; skipping")
                     continue
-                v = judge_library_viewer(browser, recipe)
+                v = judge_library_viewer(browser, recipe, part_desc=part_desc)
                 clicks += 1
                 tier = (1 if v.get("product_image") and v.get("overlay")
                         else 2 if v.get("product_image")
@@ -1912,7 +1982,8 @@ def main(argv: list[str] | None = None) -> int:
             # inspection overlays (searched, not taken on faith).
             if step.get("pick_library_capture"):
                 step_record["library_pick"] = pick_library_capture(
-                    browser, recipe_name or args.recipe)
+                    browser, recipe_name or args.recipe,
+                    part_desc=meta.get("part_description", ""))
             if step.get("foreach_models"):
                 capture_per_model(
                     browser, step, out, step_record, desc_queue, base_ctx, meta
@@ -1961,7 +2032,8 @@ def main(argv: list[str] | None = None) -> int:
                 if step.get("pick_annotated_capture"):
                     step_record["capture_pick"] = pick_annotated_capture(
                         browser, str(step["pick_annotated_capture"]),
-                        recipe=recipe_name or args.recipe)
+                        recipe=recipe_name or args.recipe,
+                        part_desc=meta.get("part_description", ""))
                 if step.get("close_node_red_panels"):
                     close_node_red_panels(browser)
                 name = f"{step['screenshot']}.png"
@@ -2005,6 +2077,20 @@ def main(argv: list[str] | None = None) -> int:
                             f"{f', +{n_overlays} overlay(s)' if n_overlays else ''}"
                             f"{f', composite {composite}' if composite else ''})"
                         )
+                    # The template image is the canonical view of the part;
+                    # its description anchors every later pick judgment to
+                    # THE part being inspected. A blank/random template
+                    # (possible under Skip Aligner) yields no anchor —
+                    # enrichment, never a gate.
+                    if step.get("describe_part") and img_info.get("file"):
+                        desc = describe_part_from_image(
+                            out.run_dir / img_info["file"])
+                        if desc:
+                            meta["part_description"] = desc
+                            print(f"  part description: {desc[:110]}")
+                        else:
+                            print("  part description unavailable; pick "
+                                  "judges will run unanchored")
                     else:
                         print(f"  warning: main image not saved: {img_info.get('error')}")
             step_record["status"] = "success"

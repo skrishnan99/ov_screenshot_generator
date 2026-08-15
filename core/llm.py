@@ -43,10 +43,18 @@ import jsonschema
 
 # Model tiers. Assignment policy: OPUS for quality-critical work (the
 # authoritative descriptions, customer-facing copy, recipe resolution, and
-# navigator escalation); SONNET for capable-but-cheaper agentic/extraction
-# work (first-attempt navigation, enumerations, image verification); HAIKU
-# for high-volume binary judgments (image-load polling) whose failure modes
-# are self-healing.
+# navigator escalation); SONNET for everything else — navigation,
+# enumerations, image verification, the pick judges, and the load polls.
+#
+# HAIKU holds no preferred call sites any more; it survives as the
+# fallback ladder's last rung. The old "Haiku for volume" policy died of
+# two facts learned the hard way: (1) it never applied to judgments whose
+# positive verdict is terminal (the capture pick judges — a false tier-1
+# short-circuits and ships an image with no second opinion), and (2) on
+# the agent-sdk transport Haiku is not even faster — session overhead
+# dominates and Sonnet clears the image-read turn in fewer steps
+# (measured 6.5s vs 14.6s per identical vision call). Do not "optimize"
+# any judge back down without re-measuring.
 OPUS = "claude-opus-5"
 SONNET = "claude-sonnet-5"
 HAIKU = "claude-haiku-4-5-20251001"

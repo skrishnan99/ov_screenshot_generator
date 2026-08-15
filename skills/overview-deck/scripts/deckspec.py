@@ -11,7 +11,7 @@ order drift, sections silently collapsed). Here structure is DATA:
     expand()         -> [SlideJob]     (repeats, conditions, steps, interp)
 
 Everything in this module is pure and deterministic, with ONE deliberate
-exception: build_context may make a single small Haiku call to read a
+exception: build_context may make a single small model call to read a
 toggle's state out of messy verbatim UI values (eval_toggle_call — a Traton
 run recorded skip_aligner as "enabled (toggle ON)" and exact-token parsing
 shipped an alignment slide for a skipped aligner). Unambiguous single-token
@@ -107,7 +107,7 @@ class Context:
 
 # Single-token toggle values that need no model to read. Anything outside
 # this table ("enabled (toggle ON)", "Skip Aligner is Enabled") goes to the
-# Haiku eval below — the extractor records UI values VERBATIM by design, so
+# model eval below — the extractor records UI values VERBATIM by design, so
 # their phrasing is open-ended.
 _TOGGLE_CLEAR = {
     "on": True, "enabled": True, "checked": True, "true": True, "yes": True,
@@ -138,7 +138,8 @@ Observations:
 
 def eval_toggle_call(setting: str, observations: list[str]) -> str:
     """'on' | 'off' | 'unknown' from verbatim UI observations — one small
-    text-only Haiku call. Isolated so tests stub it."""
+    text-only call, SONNET because a wrong answer changes deck STRUCTURE
+    (the aligner slide's presence). Isolated so tests stub it."""
     from core import llm
 
     out = llm.complete(
@@ -148,14 +149,14 @@ def eval_toggle_call(setting: str, observations: list[str]) -> str:
         ),
         schema=TOGGLE_SCHEMA,
         max_tokens=300,
-        model=llm.HAIKU,
+        model=llm.SONNET,
     )
     return out.get("state", "unknown")
 
 
 def _toggle_state(setting: str, primary: str | None, observations: list[str]) -> bool | None:
     """Resolve a toggle: the primary fact's bare token when unambiguous,
-    otherwise the Haiku eval over every observation. None means unknown —
+    otherwise the model eval over every observation. None means unknown —
     the caller leaves the context key unresolved (recorded, never guessed)."""
     token = (primary or "").strip().lower()
     if token in _TOGGLE_CLEAR:

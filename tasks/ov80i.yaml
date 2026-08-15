@@ -79,6 +79,11 @@ steps:
     # Also save the viewer's actual image at native resolution
     # (03_template_image_raw.*) and record how in meta.json.
     download_main_image: true
+    # Describe the part from that raw template image (the canonical
+    # reference view) into meta["part_description"] — it anchors the
+    # block/library pick judges to THE part being inspected. A blank or
+    # random template yields no anchor; the judges then run generic.
+    describe_part: true
     screenshot: "03_template_image"
 
   - id: inspection_rois

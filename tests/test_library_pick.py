@@ -59,7 +59,7 @@ class _Rig:
         self.first_by_page = {p: (ids[0] if ids else 900 + p)
                               for p, ids in page_thumbs.items()}
 
-    def product_thumbs(self, browser, recipe):
+    def product_thumbs(self, browser, recipe, part_desc=""):
         if self.thumb_crash:
             raise RuntimeError("vision down")
         return list(self.page_thumbs.get(self.page, []))
@@ -71,7 +71,7 @@ class _Rig:
         self.selected = cid
         return True
 
-    def viewer(self, browser, recipe=""):
+    def viewer(self, browser, recipe="", part_desc=""):
         product, overlay = self.viewers.get(self.selected, (False, False))
         return {"product_image": product, "overlay": overlay, "reason": "rig"}
 

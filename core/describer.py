@@ -150,15 +150,16 @@ is a plain grey bar is STILL LOADING, not loaded. Answer with loaded and a one-s
 
 
 def check_table_loaded(png_bytes: bytes, hint: str = "") -> dict:
-    # Haiku, same as the image check: a binary judgment called repeatedly, and
-    # a wrong "not loaded" only costs another poll.
+    # SONNET, same rationale as the image check: measured faster than Haiku
+    # per call on the agent-sdk transport, and a sharper read of skeleton
+    # rows vs real content.
     try:
         return complete(
             TABLE_LOADED_PROMPT.format(hint=hint or "n/a"),
             schema=TABLE_LOADED_SCHEMA,
             images=[png_bytes],
             max_tokens=1000,
-            model=llm.HAIKU,
+            model=llm.SONNET,
         )
     except LLMRefusal:
         return {"loaded": False, "reason": "table check refused"}
@@ -197,15 +198,19 @@ def poll_table_loaded(
 
 
 def check_image_loaded(png_bytes: bytes, hint: str = "") -> dict:
-    # Haiku: a binary loaded/not-loaded judgment, called dozens of times per
-    # run; a wrong "not loaded" just polls again, so the tier is safe.
+    # SONNET, deliberately: this is the hottest inner loop in every capture
+    # wait (dozens of calls per run, more since the pick loops), and on the
+    # agent-sdk transport Sonnet measured FASTER than Haiku per identical
+    # vision call (6.5s vs 14.6s — session overhead dominates; see the
+    # tier-policy caveats in core/llm.py). Accuracy tier is a bonus here,
+    # not the motivation.
     try:
         return complete(
             IMAGE_LOADED_PROMPT.format(hint=hint or "n/a"),
             schema=IMAGE_LOADED_SCHEMA,
             images=[png_bytes],
             max_tokens=1000,
-            model=llm.HAIKU,
+            model=llm.SONNET,
         )
     except LLMRefusal:
         return {"loaded": False, "reason": "vision check refused"}
