@@ -281,10 +281,17 @@ def verify_call(run_dir: Path, hole: Hole, rel_path: str) -> dict:
 #   3. else the block page anyway — flawed beats empty
 #
 # Paths come from the sanctioned contracts (meta["models"] envelope first,
-# manifest["assets"] join as fallback), never from filename guessing. The
-# quality judgment reads the screenshot's existing vision description via a
-# small Haiku eval (the toggle-state precedent); no description or a failed
-# call keeps the block page — the rule fires only on positive evidence.
+# manifest["assets"] join as fallback), never from filename guessing.
+#
+# The quality verdict, in trust order: (1) the extractor's recorded
+# capture-pick tier (manifest steps' capture_pick — ground truth from
+# pixels at capture time; tier 1 keeps the block, any other tier means the
+# extractor already searched every capture and found nothing better, so go
+# straight to the gallery); (2) for runs predating the pick hook, a small
+# Haiku eval over the screenshot's vision description (the toggle-state
+# precedent), sharing its criteria verbatim with the extractor's judge via
+# core.capture_criteria. No description or a failed call keeps the block
+# page — the rule fires only on positive evidence.
 
 BLOCK_QUALITY_SCHEMA = {
     "type": "object",
@@ -297,33 +304,47 @@ BLOCK_QUALITY_SCHEMA = {
     "additionalProperties": False,
 }
 
-BLOCK_QUALITY_PROMPT = """A screenshot of an AI model's training Block page was described as:
+BLOCK_QUALITY_PROMPT = """A screenshot of an AI model's {block_type} training Block page was described as:
 
 {description}
 
 Judge the VIEWER IMAGE (the main capture area), not the surrounding UI:
-1. product_image — does the viewer show an actual photograph of a part
-   (true), or is it blank, black, grey, a placeholder, or missing (false)?
+1. product_image — {product_criterion}
    Empty annotation outlines over a blank canvas are NOT a product image.
-2. annotated — are annotations visible ON that image: drawn regions,
-   segmentation masks, class labels or marks? A dark but real photograph
-   with visible label overlays counts as annotated.
+2. annotated — are annotations visible ON that image: {annotation_kind}?
+   {empty_note} A dark but real photograph with visible annotations counts.
 
 Answer strictly from the description. When it does not mention the viewer's
 content at all, answer product_image=true and annotated=true — absence of
 complaint is not evidence of a problem."""
 
 
-def block_quality_call(description: str) -> dict:
-    from core import llm
+def _block_quality_prompt(description: str, block_type: str = "") -> str:
+    """Criteria come from core.capture_criteria — shared verbatim with the
+    extractor's pixel judge so the two can never drift. Type-aware for the
+    same reason the extractor's is: labels are not masks (the same black
+    frame is tier 4 on a segmentation block, tier 3 on classification)."""
+    from core import capture_criteria as cc
 
     # The whole description, not a prefix: extractor descriptions run
     # ~2.5-3k chars and the viewer-content sentence tends to sit near the
     # END (UI chrome is described first). A 2000-char clip once hid the
     # "canvas is essentially black" sentence and the judge passed a black
     # block page it should have rejected.
+    return BLOCK_QUALITY_PROMPT.format(
+        block_type=block_type or "AI",
+        description=" ".join(str(description).split())[:8000],
+        product_criterion=cc.PRODUCT_CRITERION,
+        annotation_kind=cc.annotation_criterion(block_type),
+        empty_note=cc.EMPTY_OUTLINES_NOTE,
+    )
+
+
+def block_quality_call(description: str, block_type: str = "") -> dict:
+    from core import llm
+
     return llm.complete(
-        BLOCK_QUALITY_PROMPT.format(description=" ".join(str(description).split())[:8000]),
+        _block_quality_prompt(description, block_type),
         schema=BLOCK_QUALITY_SCHEMA, max_tokens=500, model=llm.HAIKU,
     )
 
@@ -360,12 +381,35 @@ def _model_rois_path(run_dir: Path, model: dict, manifest: dict) -> str | None:
     return None
 
 
-def _block_ok(rel: str, descriptions: dict, log) -> tuple[bool, str]:
+def _pick_tier(manifest: dict, block_type: str) -> int | None:
+    """The extractor's recorded capture-pick tier for this block type, or
+    None for runs predating the pick hook (or a hook that errored out).
+    The record is ground truth from PIXELS at capture time — strictly
+    better evidence than re-judging the lossy vision description."""
+    for s in manifest.get("steps", []):
+        if s.get("id") == f"{block_type}_block":
+            tier = (s.get("capture_pick") or {}).get("tier")
+            return tier if isinstance(tier, int) and 1 <= tier <= 4 else None
+    return None
+
+
+def _block_ok(rel: str, descriptions: dict, log,
+              block_type: str = "", manifest: dict | None = None) -> tuple[bool, str]:
+    from core.capture_criteria import PICK_TIER_MEANING
+
+    # 1st: the extractor's own pick verdict, when the run recorded one.
+    tier = _pick_tier(manifest or {}, block_type)
+    if tier == 1:
+        return True, "extractor capture pick: tier 1 (product + annotated at capture time)"
+    if tier is not None:
+        return False, (f"extractor capture pick: tier {tier} "
+                       f"({PICK_TIER_MEANING[tier]}) — no better capture existed")
+    # Fallback for runs without a pick record: judge the description.
     desc = descriptions.get(Path(rel).name)
     if not desc or str(desc).startswith("[description failed"):
         return True, "no description available; block page kept (status quo)"
     try:
-        v = block_quality_call(str(desc))
+        v = block_quality_call(str(desc), block_type)
     except Exception as e:
         log(f"  matching: block quality judgement unavailable ({e}); block page kept")
         return True, f"quality judgement unavailable; block page kept"
@@ -414,7 +458,9 @@ def ladder_pins(run_dir: Path, jobs, log=print) -> dict[str, tuple[str | None, d
             if block is None:
                 chosen, why = rois, "no block page capture; View All ROIs gallery used"
             else:
-                ok, why = _block_ok(block, descriptions, log)
+                ok, why = _block_ok(block, descriptions, log,
+                                    block_type=str(model.get("type", "")),
+                                    manifest=manifest)
                 if ok:
                     chosen = block
                 elif rois is not None:

@@ -743,33 +743,40 @@ BLOCK_CAPTURE_SCHEMA = {
     "additionalProperties": False,
 }
 
-BLOCK_CAPTURE_PROMPT = """This is the image viewer of a camera's {block_type} training Block page.
+BLOCK_CAPTURE_PROMPT = """This is the image viewer of a camera's {block_type} training Block page.{recipe_line}
 
 Judge the CAPTURE shown in the viewer (ignore the surrounding UI panels):
 
-1. product_image — does the viewer show a real photograph of a physical
-   part/product? A dark or dim photograph of a real part is TRUE. A black,
-   blank, grey or featureless frame, or content that is clearly not a
-   manufactured part, is FALSE.
-2. annotated — are annotations drawn ON the capture: {annotation_kind}
-   Empty outline rectangles over a blank/black canvas do NOT count as
-   annotations.
+1. product_image — {product_criterion}
+2. annotated — are annotations drawn ON the capture: {annotation_kind}?
+   {empty_note}
 
 Answer with product_image, annotated and a one-sentence reason."""
 
-_ANNOTATION_KIND = {
-    "classification": (
-        "ROI boxes carrying class labels — coloured boxes and/or "
-        "label chips (e.g. red/green/yellow class tags) attached to them?"
-    ),
-    "segmentation": (
-        "painted pixel masks or brush strokes marking defect areas "
-        "inside the ROIs (region outlines alone are not enough)?"
-    ),
-}
+
+def _block_capture_prompt(block_type: str, recipe: str = "") -> str:
+    """Criteria come from core.capture_criteria — shared verbatim with the
+    deck's description judge so the two can never drift."""
+    from core import capture_criteria as cc
+
+    recipe_line = ""
+    if recipe:
+        recipe_line = (
+            f'\nThe capture belongs to the inspection recipe {recipe!r} — a '
+            f"photograph of the part this recipe inspects is expected. Any "
+            f"real manufactured part still counts as a product image; only "
+            f"content clearly unrelated to an industrial part does not."
+        )
+    return BLOCK_CAPTURE_PROMPT.format(
+        block_type=block_type,
+        recipe_line=recipe_line,
+        product_criterion=cc.PRODUCT_CRITERION,
+        annotation_kind=cc.annotation_criterion(block_type),
+        empty_note=cc.EMPTY_OUTLINES_NOTE,
+    )
 
 
-def judge_block_capture(browser, block_type: str) -> dict:
+def judge_block_capture(browser, block_type: str, recipe: str = "") -> dict:
     """One Haiku vision verdict on the CURRENT viewer image. Cropped to the
     viewer when the bbox probe finds it, so the judgment sees the capture
     rather than the whole page."""
@@ -789,11 +796,8 @@ def judge_block_capture(browser, block_type: str) -> dict:
             buf = io.BytesIO()
             crop.save(buf, format="PNG")
             png = buf.getvalue()
-    prompt = BLOCK_CAPTURE_PROMPT.format(
-        block_type=block_type,
-        annotation_kind=_ANNOTATION_KIND.get(block_type, "labels or masks on the ROIs?"),
-    )
-    return llm.complete(prompt, schema=BLOCK_CAPTURE_SCHEMA,
+    return llm.complete(_block_capture_prompt(block_type, recipe),
+                        schema=BLOCK_CAPTURE_SCHEMA,
                         images=[downscale_for_vision(png)], max_tokens=500,
                         model=llm.HAIKU)
 
@@ -847,7 +851,8 @@ def _wait_capture_loaded(browser) -> None:
 
 
 def pick_annotated_capture(browser, block_type: str,
-                           cap: int = CAPTURE_SCAN_CAP) -> dict:
+                           cap: int = CAPTURE_SCAN_CAP,
+                           recipe: str = "") -> dict:
     """Position the block page's viewer on the best available capture and
     say how it was chosen. The caller screenshots afterwards.
 
@@ -863,7 +868,7 @@ def pick_annotated_capture(browser, block_type: str,
         cur, total, sel = _capture_nav_state(browser)
 
         def judge(idx):
-            v = judge_block_capture(browser, block_type)
+            v = judge_block_capture(browser, block_type, recipe=recipe)
             tier = (1 if v.get("product_image") and v.get("annotated")
                     else 2 if v.get("product_image")
                     else 3 if v.get("annotated") else 4)
@@ -921,9 +926,10 @@ def pick_annotated_capture(browser, block_type: str,
                 if _goto_capture(browser, sel, best[1]):
                     _wait_capture_loaded(browser)
             rec["chosen"], rec["tier"] = best[1], best[0]
+            from core.capture_criteria import PICK_TIER_MEANING
+
             print(f"  capture pick: best partial is capture {best[1]} "
-                  f"(tier {best[0]}: "
-                  f"{'product, unannotated' if best[0] == 2 else 'annotated, no product'})")
+                  f"(tier {best[0]}: {PICK_TIER_MEANING[best[0]]})")
         else:
             rec["chosen"], rec["tier"] = (rec["judged"][-1]["index"]
                                           if rec["judged"] else cur), 4
@@ -1655,7 +1661,8 @@ def main(argv: list[str] | None = None) -> int:
                 # flag's value names the block type for the vision judge.
                 if step.get("pick_annotated_capture"):
                     step_record["capture_pick"] = pick_annotated_capture(
-                        browser, str(step["pick_annotated_capture"]))
+                        browser, str(step["pick_annotated_capture"]),
+                        recipe=recipe_name or args.recipe)
                 if step.get("close_node_red_panels"):
                     close_node_red_panels(browser)
                 name = f"{step['screenshot']}.png"

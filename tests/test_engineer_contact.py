@@ -210,7 +210,7 @@ def main() -> int:
             {"hole": h.id, "path": None, "confidence": "high", "reason": "s"}
             for h in holes]
         matching_mod.verify_call = lambda *a, **k: {"match": True, "reason": "s"}
-        matching_mod.block_quality_call = lambda desc: {
+        matching_mod.block_quality_call = lambda desc, block_type="": {
             "product_image": True, "annotated": True, "reason": "s"}
         with tempfile.TemporaryDirectory() as td:
             run = make_run(Path(td))

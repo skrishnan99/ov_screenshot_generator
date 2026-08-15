@@ -76,10 +76,11 @@ class _Rig:
     def wait(self, browser):
         self.waits += 1
 
-    def judge(self, browser, block_type):
+    def judge(self, browser, block_type, recipe=""):
         if self.judge_crash_at is not None and self.cur == self.judge_crash_at:
             raise RuntimeError("vision judge unavailable")
         self.judged.append(self.cur)
+        self.recipes_seen = getattr(self, "recipes_seen", set()) | {recipe}
         product, annotated = self.tiers.get(self.cur, (False, False))
         return {"product_image": product, "annotated": annotated, "reason": "rig"}
 
@@ -171,6 +172,49 @@ def main() -> int:
         rec = _run(rig)
     except Exception as e:
         failures.append(f"judge crash escaped the hook: {e}")
+
+    # ---- both judges draw their criteria from core.capture_criteria —
+    # one source of truth, so the prompts cannot drift apart ----
+    sys.path.insert(0, str(REPO / "skills" / "overview-deck" / "scripts"))
+    import matching as matching_mod
+    from core import capture_criteria as cc
+
+    pixel_prompt = cli._block_capture_prompt("segmentation", recipe="Traton Bushing Wear")
+    desc_prompt = matching_mod._block_quality_prompt("some description", "segmentation")
+    for prompt, who in ((pixel_prompt, "extractor"), (desc_prompt, "deck")):
+        if cc.PRODUCT_CRITERION not in prompt:
+            failures.append(f"{who} prompt lost the shared product criterion")
+        if cc.annotation_criterion("segmentation") not in prompt:
+            failures.append(f"{who} prompt lost the shared annotation criterion")
+        if cc.EMPTY_OUTLINES_NOTE not in prompt:
+            failures.append(f"{who} prompt lost the empty-outlines carve-out")
+    # labels are not masks: the two block types get DIFFERENT definitions
+    if cc.annotation_criterion("segmentation") == cc.annotation_criterion("classification"):
+        failures.append("annotation criterion is not type-specific")
+    if "masks" not in cc.annotation_criterion("segmentation"):
+        failures.append("segmentation criterion lost the masks requirement")
+    # the recipe anchor reaches the pixel judge's prompt, softly
+    if "Traton Bushing Wear" not in pixel_prompt:
+        failures.append("recipe anchor missing from the pixel judge's prompt")
+    if "Traton" in matching_mod._block_quality_prompt("d", "classification"):
+        failures.append("recipe leaked into the description judge unexpectedly")
+
+    # ---- the hook threads the recipe to every judgment ----
+    rig = _Rig({3: (True, True)}, total=16)
+    saved = (cli._capture_nav_state, cli._goto_capture, cli._next_capture,
+             cli._wait_capture_loaded, cli.judge_block_capture)
+    try:
+        cli._capture_nav_state = rig.nav_state
+        cli._goto_capture = rig.goto
+        cli._next_capture = rig.next
+        cli._wait_capture_loaded = rig.wait
+        cli.judge_block_capture = rig.judge
+        cli.pick_annotated_capture(object(), "classification", recipe="R-42")
+    finally:
+        (cli._capture_nav_state, cli._goto_capture, cli._next_capture,
+         cli._wait_capture_loaded, cli.judge_block_capture) = saved
+    if getattr(rig, "recipes_seen", set()) != {"R-42"}:
+        failures.append(f"recipe not threaded to the judge: {getattr(rig, 'recipes_seen', None)}")
 
     # ---- the spec activates the hook on both block SCREENSHOT steps,
     # the flag's value naming the block type for the vision judge ----

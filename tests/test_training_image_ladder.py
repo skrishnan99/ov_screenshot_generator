@@ -61,7 +61,7 @@ def main() -> int:
                     failures.append(f"{j.id} hole lost `ladder: annotated_block`")
 
             # ---- good block page: pinned, gallery untouched ----
-            matching_mod.block_quality_call = lambda d: {
+            matching_mod.block_quality_call = lambda d, t="": {
                 "product_image": True, "annotated": True, "reason": "fine"}
             pins = matching_mod.ladder_pins(run, training, log=lambda *a: None)
             got = {h: p for h, (p, _) in pins.items()}
@@ -69,8 +69,46 @@ def main() -> int:
             if got != want:
                 failures.append(f"good-block pins wrong: {got}")
 
+            # ---- the extractor's recorded capture pick outranks the
+            # description judge: tier 1 keeps the block, any other tier
+            # goes straight to the gallery — no judge call either way ----
+            man_p = run / "data" / "manifest.json"
+            man = json.loads(man_p.read_text())
+            man["steps"] = [
+                {"id": "segmentation_block", "capture_pick": {"tier": 1}},
+                {"id": "classification_block", "capture_pick": {"tier": 3}},
+            ]
+            man_p.write_text(json.dumps(man))
+            judge_calls = []
+
+            def _never(d, t=""):
+                judge_calls.append(d)
+                raise AssertionError("description judge must not run")
+            matching_mod.block_quality_call = _never
+            pins = matching_mod.ladder_pins(run, training, log=lambda *a: None)
+            got = {h: p for h, (p, _) in pins.items()}
+            if got != {"training_model-s#0": BLOCK_S,
+                       "training_horn-quality#0": ROIS_C}:
+                failures.append(f"pick-record pins wrong: {got}")
+            if judge_calls:
+                failures.append("description judge ran despite a pick record")
+            reasons = {h: e["reason"] for h, (_, e) in pins.items()}
+            if "capture pick: tier 1" not in reasons["training_model-s#0"] \
+                    or "capture pick: tier 3" not in reasons["training_horn-quality#0"]:
+                failures.append(f"pick-record reasons unexplained: {reasons}")
+            # remove the records; the description judge takes over again,
+            # and receives the MODEL'S TYPE (labels are not masks)
+            man["steps"] = []
+            man_p.write_text(json.dumps(man))
+            types_seen = []
+            matching_mod.block_quality_call = lambda d, t="": types_seen.append(t) or {
+                "product_image": True, "annotated": True, "reason": "fine"}
+            matching_mod.ladder_pins(run, training, log=lambda *a: None)
+            if sorted(types_seen) != ["classification", "segmentation"]:
+                failures.append(f"judge not type-aware: {types_seen}")
+
             # ---- rejected block page: the model's gallery stands in ----
-            matching_mod.block_quality_call = lambda d: {
+            matching_mod.block_quality_call = lambda d, t="": {
                 "product_image": False, "annotated": False,
                 "reason": "black viewer, empty outlines"}
             pins = matching_mod.ladder_pins(run, training, log=lambda *a: None)
@@ -100,7 +138,7 @@ def main() -> int:
                 failures.append("fallback-despite-issues not recorded")
 
             # ---- judge failure: block kept, nothing raises ----
-            def _boom(d):
+            def _boom(d, t=""):
                 raise RuntimeError("llm down")
             matching_mod.block_quality_call = _boom
             pins = matching_mod.ladder_pins(run, training, log=lambda *a: None)
@@ -114,7 +152,7 @@ def main() -> int:
             descs.pop("05_segmentation.png", None)
             desc_p.write_text(json.dumps(descs))
             judged = []
-            matching_mod.block_quality_call = lambda d: judged.append(d) or {
+            matching_mod.block_quality_call = lambda d, t="": judged.append(d) or {
                 "product_image": False, "annotated": False, "reason": "x"}
             pins = matching_mod.ladder_pins(run, training, log=lambda *a: None)
             if pins["training_model-s#0"][0] != BLOCK_S:
@@ -135,7 +173,7 @@ def main() -> int:
 
             matching_mod.assign_call = fake_assign
             matching_mod.verify_call = lambda *a, **k: {"match": True, "reason": "s"}
-            matching_mod.block_quality_call = lambda d: {
+            matching_mod.block_quality_call = lambda d, t="": {
                 "product_image": True, "annotated": True, "reason": "fine"}
             ctx = ds.build_context(run2)
             jobs, _ = ds.expand(ds.load_spec(), ctx)

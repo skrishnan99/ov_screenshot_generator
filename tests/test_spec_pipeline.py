@@ -75,7 +75,7 @@ def main() -> int:
     # the training-image ladder judges good -> block page pinned, which is
     # this suite's historical assignment; the ladder itself is pinned by
     # tests/test_training_image_ladder.py
-    matching_mod.block_quality_call = lambda d: {
+    matching_mod.block_quality_call = lambda d, t="": {
         "product_image": True, "annotated": True, "reason": "stub"}
     content_mod.resolve_call = stub_resolve
     arrange_mod.arrange_call = stub_arrange

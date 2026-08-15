@@ -104,7 +104,7 @@ def main() -> int:
         try:
             matching_mod.assign_call = fake_assign
             matching_mod.verify_call = lambda *a, **k: {"match": True, "reason": "s"}
-            matching_mod.block_quality_call = lambda d: {
+            matching_mod.block_quality_call = lambda d, t="": {
                 "product_image": True, "annotated": True, "reason": "s"}
             ctx = ds.build_context(run2)
             jobs, _ = ds.expand(ds.load_spec(), ctx)
