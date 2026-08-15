@@ -702,6 +702,238 @@ def dismiss_promo_modal(browser) -> None:
         print(f"  warning: promo modal dismissal failed: {e}")
 
 
+# --------------------------------------------------------------------------
+# Block-page capture picking. "Previous" from live view lands on the LAST
+# source capture, which is frequently a dark/blank frame (a real deck once
+# shipped black block pages) — so the capture that feeds the training slide
+# is SEARCHED for, not taken on faith. Preference ladder, per the spec:
+#   tier 1  product photograph AND annotated  -> short-circuit, capture now
+#   tier 2  product photograph, unannotated   -> best-partial candidate
+#   tier 3  annotated but no real product     -> weaker candidate
+#   tier 4  neither                           -> qualifies for nothing
+# The judged-capture budget is capped; hitting the cap is logged, never
+# silent. DOM access lives in tiny helpers so the search itself is testable
+# as a pure state machine.
+
+CAPTURE_SCAN_CAP = 25
+
+_NAV_INPUT_JS = """
+() => {
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) {
+    const t = walk.currentNode.textContent || '';
+    if (t.includes('Source Capture')) {
+      const root = walk.currentNode.parentElement.closest('div');
+      const i = root ? root.querySelector('input') : null;
+      if (i) { if (!i.id) i.id = 'sg-capture-index'; return '#' + CSS.escape(i.id); }
+    }
+  }
+  return null;
+}
+"""
+
+BLOCK_CAPTURE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "product_image": {"type": "boolean"},
+        "annotated": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["product_image", "annotated", "reason"],
+    "additionalProperties": False,
+}
+
+BLOCK_CAPTURE_PROMPT = """This is the image viewer of a camera's {block_type} training Block page.
+
+Judge the CAPTURE shown in the viewer (ignore the surrounding UI panels):
+
+1. product_image — does the viewer show a real photograph of a physical
+   part/product? A dark or dim photograph of a real part is TRUE. A black,
+   blank, grey or featureless frame, or content that is clearly not a
+   manufactured part, is FALSE.
+2. annotated — are annotations drawn ON the capture: {annotation_kind}
+   Empty outline rectangles over a blank/black canvas do NOT count as
+   annotations.
+
+Answer with product_image, annotated and a one-sentence reason."""
+
+_ANNOTATION_KIND = {
+    "classification": (
+        "ROI boxes carrying class labels — coloured boxes and/or "
+        "label chips (e.g. red/green/yellow class tags) attached to them?"
+    ),
+    "segmentation": (
+        "painted pixel masks or brush strokes marking defect areas "
+        "inside the ROIs (region outlines alone are not enough)?"
+    ),
+}
+
+
+def judge_block_capture(browser, block_type: str) -> dict:
+    """One Haiku vision verdict on the CURRENT viewer image. Cropped to the
+    viewer when the bbox probe finds it, so the judgment sees the capture
+    rather than the whole page."""
+    import io
+
+    from PIL import Image
+
+    from core import llm
+    from core.llm import downscale_for_vision
+
+    png = browser.screenshot_bytes(full_page=True)
+    bbox = main_image_bbox(browser, png)
+    if bbox:
+        with Image.open(io.BytesIO(png)) as im:
+            crop = im.crop((bbox["x"], bbox["y"],
+                            bbox["x"] + bbox["width"], bbox["y"] + bbox["height"]))
+            buf = io.BytesIO()
+            crop.save(buf, format="PNG")
+            png = buf.getvalue()
+    prompt = BLOCK_CAPTURE_PROMPT.format(
+        block_type=block_type,
+        annotation_kind=_ANNOTATION_KIND.get(block_type, "labels or masks on the ROIs?"),
+    )
+    return llm.complete(prompt, schema=BLOCK_CAPTURE_SCHEMA,
+                        images=[downscale_for_vision(png)], max_tokens=500,
+                        model=llm.HAIKU)
+
+
+def _capture_nav_state(browser):
+    """(current_index, total, input_selector) — Nones when the navigator is
+    not on the page (it only exists after leaving live view)."""
+    try:
+        sel = browser.page.evaluate(_NAV_INPUT_JS)
+        if not sel:
+            return None, None, None
+        val = browser.page.evaluate(
+            f"() => document.querySelector({sel!r})?.value ?? ''")
+        cur = int(val) if str(val).strip().isdigit() else None
+        m = _CAPTURE_TOTAL_RE.search(
+            browser.page.evaluate("document.body.innerText") or "")
+        total = int(m.group(1)) if m else None
+        return cur, total, sel
+    except Exception:
+        return None, None, None
+
+
+def _click_nav_button(browser, label: str) -> bool:
+    for el in browser.page.query_selector_all("button"):
+        try:
+            if el.is_visible() and (el.inner_text() or "").strip() == label:
+                el.click()
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _goto_capture(browser, sel: str, idx: int) -> bool:
+    """Jump straight to capture `idx` via the number input + Go."""
+    try:
+        browser.page.fill(sel, str(idx))
+        return _click_nav_button(browser, "Go")
+    except Exception:
+        return False
+
+
+def _next_capture(browser) -> bool:
+    return _click_nav_button(browser, "Next")
+
+
+def _wait_capture_loaded(browser) -> None:
+    ok, msg = poll_image_loaded(browser, max_wait_s=35, interval_s=5)
+    if not ok:
+        print(f"  warning: capture image {msg}")
+
+
+def pick_annotated_capture(browser, block_type: str,
+                           cap: int = CAPTURE_SCAN_CAP) -> dict:
+    """Position the block page's viewer on the best available capture and
+    say how it was chosen. The caller screenshots afterwards.
+
+    Judges the current capture (the last one, where Previous lands) first;
+    a product+annotated verdict short-circuits immediately. Otherwise
+    cycles capture 1, 2, ... maintaining the best-tier index seen
+    (first-seen wins ties), and jumps back to it at the end. Best-effort
+    like every capture hook: any failure leaves the viewer where it is and
+    the capture proceeds — never fails the step.
+    """
+    rec: dict = {"judged": [], "chosen": None, "tier": None}
+    try:
+        cur, total, sel = _capture_nav_state(browser)
+
+        def judge(idx):
+            v = judge_block_capture(browser, block_type)
+            tier = (1 if v.get("product_image") and v.get("annotated")
+                    else 2 if v.get("product_image")
+                    else 3 if v.get("annotated") else 4)
+            rec["judged"].append({"index": idx, "tier": tier,
+                                  "reason": str(v.get("reason", ""))[:160]})
+            return tier
+
+        tier = judge(cur)
+        if tier == 1:
+            rec["chosen"], rec["tier"] = cur, 1
+            print(f"  capture pick: current capture ({cur}) is product+annotated")
+            return rec
+        best = (tier, cur) if tier in (2, 3) else (5, None)
+
+        if sel is None:
+            rec["chosen"], rec["tier"] = cur, tier
+            print("  warning: capture navigator not found; keeping current capture")
+            return rec
+
+        bound = min(total, cap + 1) if total else cap
+        judged = 1
+        idx = 0
+        while idx < bound:
+            idx += 1
+            if idx == cur:
+                continue  # the starting capture is already judged
+            if judged >= cap:
+                print(f"  capture pick: scan cap ({cap}) reached with "
+                      f"{(total or '?')} captures total; stopping the search")
+                break
+            moved = (_goto_capture(browser, sel, idx) if idx == 1 or judged == 0
+                     else _next_capture(browser))
+            if not moved:
+                print("  warning: capture navigation failed; stopping the search")
+                break
+            _wait_capture_loaded(browser)
+            now, _, _ = _capture_nav_state(browser)
+            if now is not None and now != idx:
+                # Next drifted (e.g. wrapped); correct deterministically.
+                if not _goto_capture(browser, sel, idx):
+                    break
+                _wait_capture_loaded(browser)
+            tier = judge(idx)
+            judged += 1
+            if tier == 1:
+                rec["chosen"], rec["tier"] = idx, 1
+                print(f"  capture pick: capture {idx} is product+annotated")
+                return rec
+            # only tiers 2/3 are candidates — tier 4 qualifies for nothing
+            if tier in (2, 3) and tier < best[0]:
+                best = (tier, idx)
+
+        if best[1] is not None:
+            if best[1] != (rec["judged"][-1]["index"] if rec["judged"] else None):
+                if _goto_capture(browser, sel, best[1]):
+                    _wait_capture_loaded(browser)
+            rec["chosen"], rec["tier"] = best[1], best[0]
+            print(f"  capture pick: best partial is capture {best[1]} "
+                  f"(tier {best[0]}: "
+                  f"{'product, unannotated' if best[0] == 2 else 'annotated, no product'})")
+        else:
+            rec["chosen"], rec["tier"] = (rec["judged"][-1]["index"]
+                                          if rec["judged"] else cur), 4
+            print("  capture pick: no capture met any criterion; keeping the "
+                  "last one visited")
+    except Exception as e:
+        print(f"  warning: capture pick failed: {e}; capturing the current view")
+    return rec
+
+
 # The Library grid is global — unfiltered it shows every recipe's captures,
 # newest first, so both the screenshot and the main-image download can land
 # on another recipe's capture entirely. The filter is applied fresh every
@@ -1416,6 +1648,14 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"  warning: {step_id} table {msg}")
                 else:
                     browser.page.wait_for_timeout(1500)
+                # Block pages: search the source captures for a
+                # product+annotated frame before capturing — the agent's
+                # "Previous" lands on the LAST capture, which carries no
+                # guarantee of showing the part or its annotations. The
+                # flag's value names the block type for the vision judge.
+                if step.get("pick_annotated_capture"):
+                    step_record["capture_pick"] = pick_annotated_capture(
+                        browser, str(step["pick_annotated_capture"]))
                 if step.get("close_node_red_panels"):
                     close_node_red_panels(browser)
                 name = f"{step['screenshot']}.png"

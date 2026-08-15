@@ -139,6 +139,12 @@ steps:
     # step above. This step clicks "Previous" to load a real capture into the
     # viewer for the screenshot — which is exactly why the stats harvest ran
     # BEFORE it.
+    # Previous lands on the LAST capture, with no guarantee it shows the
+    # part or its annotations; before the screenshot, the pick hook
+    # searches the source captures for a product+annotated frame
+    # (best-partial ladder, capped scan). The value names the block type
+    # for the vision judge.
+    pick_annotated_capture: segmentation
     goal: |
       You should be on the Segmentation Block page of a recipe, opened by the
       previous step. If you are not, go to the Recipe Editor overview page for
@@ -243,6 +249,12 @@ steps:
     # No path: continues from the Classification Block page opened by the stats
     # step above. Clicks "Previous" to load a real capture for the screenshot —
     # which is exactly why the stats harvest ran BEFORE it.
+    # Previous lands on the LAST capture, with no guarantee it shows the
+    # part or its annotations; before the screenshot, the pick hook
+    # searches the source captures for a product+annotated frame
+    # (best-partial ladder, capped scan). The value names the block type
+    # for the vision judge.
+    pick_annotated_capture: classification
     goal: |
       You should be on the Classification Block page of a recipe, opened by the
       previous step. If you are not, go to the Recipe Editor overview page for
