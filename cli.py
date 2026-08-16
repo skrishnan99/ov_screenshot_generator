@@ -204,6 +204,59 @@ COMPOSITE_JS = """
 IMAGE_FETCH_TIMEOUT_MS = 120_000
 
 
+# Fetch resilience. The request context is a SEPARATE network stack from
+# the browser page: a Node-side client doing a fresh getaddrinfo per call,
+# while Chromium rides warm connections and its own DNS cache. On Tailscale
+# links a cold lookup can transiently fail (a field run lost the template
+# download to getaddrinfo ENOTFOUND while the page rendered the same URL
+# fine). The ladder's rungs each use a MORE-ALIVE path:
+#   1. request-context fetch, retried on network-level errors
+#   2. in-page fetch (Chromium's stack — the one provably working)
+#   3. for <img> layers: canvas-export the already-decoded element
+_FETCH_RETRIES = 2
+_FETCH_BACKOFF_MS = (2000, 5000)
+_NETWORK_ERROR_MARKERS = (
+    "enotfound", "econnrefused", "econnreset", "eai_again", "etimedout",
+    "timeout", "timed out", "err_name_not_resolved", "socket hang up",
+    "network", "getaddrinfo",
+)
+
+
+def _is_network_error(err) -> bool:
+    return any(m in str(err).lower() for m in _NETWORK_ERROR_MARKERS)
+
+
+# In-page fetch: same-origin, same session, Chromium's resolver. Base64 is
+# chunked to stay under argument limits for multi-MB images.
+_PAGE_FETCH_JS = r"""
+async (src) => {
+  const r = await fetch(src, {credentials: 'include'});
+  if (!r.ok) return {error: 'HTTP ' + r.status};
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  let bin = '';
+  const chunk = 32768;
+  for (let i = 0; i < bytes.length; i += chunk)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  return {b64: btoa(bin), type: r.headers.get('content-type') || ''};
+}
+"""
+
+# Last resort for <img> layers: the decoded pixels are already in the page.
+# Pixel-identical to what the UI shows; re-encoded as PNG (bigger beats
+# missing). Same-origin, so the canvas is not tainted.
+_IMG_CANVAS_JS = r"""
+(idx) => {
+  const el = document.querySelector('[data-sg-layer="' + idx + '"]');
+  if (!el || el.tagName !== 'IMG' || !el.naturalWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = el.naturalWidth;
+  c.height = el.naturalHeight;
+  c.getContext('2d').drawImage(el, 0, 0);
+  return c.toDataURL('image/png');
+}
+"""
+
+
 def _fetch_layer(browser, layer: dict) -> dict:
     """Fetch one viewer layer's bytes (img source fetch or canvas bitmap
     export). Returns {content, ext, method, source_url?} or {error}."""
@@ -220,17 +273,67 @@ def _fetch_layer(browser, layer: dict) -> dict:
                 out["content"] = b64.standard_b64decode(data)
                 out["ext"] = ".png" if "png" in header else ".jpg"
             else:
-                resp = browser.page.request.get(
-                    urljoin(browser.page.url, src),
-                    timeout=IMAGE_FETCH_TIMEOUT_MS,
-                )
-                if not resp.ok:
-                    out["error"] = f"fetch of img src returned {resp.status}"
+                url = urljoin(browser.page.url, src)
+                errors: list[str] = []
+                # rung 1: request context, retried on network-level errors
+                for attempt in range(1 + _FETCH_RETRIES):
+                    try:
+                        resp = browser.page.request.get(
+                            url, timeout=IMAGE_FETCH_TIMEOUT_MS)
+                        if resp.ok:
+                            out["content"] = resp.body()
+                            ctype = resp.headers.get("content-type", "")
+                            out["ext"] = (".png" if "png" in ctype
+                                          else ".jpg" if "jpe" in ctype or "jpg" in ctype
+                                          else ".png")
+                            out["method"] = "img_src"
+                            break
+                        errors.append(f"HTTP {resp.status}")
+                        break  # an HTTP status is not transient; next rung
+                    except Exception as e:
+                        errors.append(str(e)[:160])
+                        if not _is_network_error(e) or attempt == _FETCH_RETRIES:
+                            break
+                        browser.page.wait_for_timeout(
+                            _FETCH_BACKOFF_MS[min(attempt, len(_FETCH_BACKOFF_MS) - 1)])
+                # rung 2: in-page fetch on Chromium's own network stack
+                if "content" not in out:
+                    try:
+                        got = browser.page.evaluate(_PAGE_FETCH_JS, src)
+                        if got and got.get("b64"):
+                            out["content"] = b64.standard_b64decode(got["b64"])
+                            ctype = got.get("type", "")
+                            out["ext"] = (".png" if "png" in ctype
+                                          else ".jpg" if "jpe" in ctype or "jpg" in ctype
+                                          else ".png")
+                            out["method"] = "img_src_page_fetch"
+                        else:
+                            errors.append(f"page fetch: {(got or {}).get('error', 'no data')}")
+                    except Exception as e:
+                        errors.append(f"page fetch: {str(e)[:160]}")
+                # rung 3: export the already-decoded element's pixels
+                if "content" not in out:
+                    try:
+                        data_url = browser.page.evaluate(_IMG_CANVAS_JS, layer["idx"])
+                        if data_url:
+                            out["content"] = b64.standard_b64decode(
+                                data_url.split(",", 1)[1])
+                            out["ext"] = ".png"
+                            out["method"] = "img_canvas_export"
+                        else:
+                            errors.append("canvas export: element not exportable")
+                    except Exception as e:
+                        errors.append(f"canvas export: {str(e)[:160]}")
+                if "content" not in out:
+                    out["error"] = "; ".join(errors)[:400]
                     return out
-                out["content"] = resp.body()
-                ctype = resp.headers.get("content-type", "")
-                out["ext"] = ".png" if "png" in ctype else ".jpg" if "jpe" in ctype or "jpg" in ctype else ".png"
-            out["method"] = "img_src"
+                if out["method"] != "img_src":
+                    # a fallback rung served this — visible, never silent
+                    out["source_error"] = "; ".join(errors)[:200]
+                    print(f"  note: layer fetched via {out['method']} "
+                          f"(direct fetch failed: {errors[0][:80]})")
+            if "method" not in out:
+                out["method"] = "img_src"
         else:
             # Throws on a tainted canvas (cross-origin content) — reported, not guessed.
             data_url = browser.page.evaluate(CANVAS_EXPORT_JS, layer["idx"])
@@ -360,7 +463,15 @@ def compose_imaging_with_template(out: RunOutput, meta: dict, manifest: dict) ->
     if not bbox:
         return unchanged("no viewer bbox recorded for the imaging screen")
     if not raw_name:
-        return unchanged("no template image was downloaded by the aligner step")
+        # Say WHY there is no template: a failed download and a recipe that
+        # genuinely has no template are entirely different situations (a
+        # field misdiagnosis blamed Skip Aligner for a DNS failure).
+        dl_err = (meta.get("template_image_main_image") or {}).get("error")
+        if dl_err:
+            return unchanged(
+                f"template image download failed: {str(dl_err)[:160]}")
+        return unchanged("no template image was downloaded by the aligner "
+                         "step (none may exist for this recipe)")
     raw_path = out.run_dir / raw_name
     if not raw_path.exists():
         return unchanged(f"template image missing at {raw_name}")
