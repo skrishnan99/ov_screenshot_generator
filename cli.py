@@ -666,6 +666,25 @@ def _is_basic_io_page(browser) -> bool:
         return False
 
 
+# innerText misses INPUT values — numeric rule thresholds live in input
+# boxes (a live harvest lost a "<= 50" threshold this way) — so visible
+# input values are appended in page order. RAW string, deliberately: a
+# non-raw "\n" here becomes a REAL newline inside the JS double-quoted
+# literal, which is a JS SyntaxError — a field run hit exactly that
+# ("Invalid or unexpected token") and lost the whole transcript, masked
+# by the warn-and-continue contract.
+_IO_RULES_TEXT_JS = r"""
+() => {
+  const vals = [...document.querySelectorAll('input, textarea')]
+    .filter(e => e.getBoundingClientRect().width && (e.value || '').trim())
+    .map(e => e.value.trim());
+  return document.body.innerText +
+    (vals.length ? "\n\nVISIBLE INPUT VALUES (in page order): "
+                   + vals.join(", ") : "");
+}
+"""
+
+
 def harvest_io_rules(browser, out: RunOutput, meta: dict) -> None:
     """Save the Basic-Mode rules page's innerText VERBATIM as
     data/io_rules.txt — the auditable stand-in for the exported flow JSON.
@@ -675,20 +694,7 @@ def harvest_io_rules(browser, out: RunOutput, meta: dict) -> None:
     Advanced-Mode path works unchanged. Enrichment: warns and continues,
     never fails a step."""
     try:
-        # innerText misses INPUT values — numeric rule thresholds live in
-        # input boxes (a live harvest lost a "<= 50" threshold this way) —
-        # so visible input values are appended in page order.
-        text = browser.page.evaluate("""
-            () => {
-              const vals = [...document.querySelectorAll('input, textarea')]
-                .filter(e => e.getBoundingClientRect().width &&
-                             (e.value || '').trim())
-                .map(e => e.value.trim());
-              return document.body.innerText +
-                (vals.length ? "\n\nVISIBLE INPUT VALUES (in page order): "
-                               + vals.join(", ") : "");
-            }
-        """) or ""
+        text = browser.page.evaluate(_IO_RULES_TEXT_JS) or ""
         if not text.strip():
             print("  warning: io rules harvest found no page text")
             return

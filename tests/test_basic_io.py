@@ -139,10 +139,21 @@ def main() -> int:
     # ---- the harvest captures INPUT values (innerText misses them; a
     # live harvest lost a "<= 50" threshold), and the analyst is told
     # where to find them ----
-    if "VISIBLE INPUT VALUES" not in inspect.getsource(cli.harvest_io_rules):
+    if "VISIBLE INPUT VALUES" not in cli._IO_RULES_TEXT_JS:
         failures.append("harvest lost the input-value capture")
     if "VISIBLE INPUT VALUES" not in describer.IO_RULES_PROMPT:
         failures.append("analysis prompt lost the input-value guidance")
+
+    # ---- the harvest JS must be syntactically deliverable: a non-raw
+    # Python "\n" once became a REAL newline inside a JS double-quoted
+    # literal — SyntaxError on every Basic-Mode harvest in the field,
+    # masked by warn-and-continue. Quoted JS string literals must contain
+    # NO raw newline characters.
+    import re as _re
+
+    for lit in _re.findall(r'"[^"]*"', cli._IO_RULES_TEXT_JS):
+        if "\n" in lit.replace("\\n", ""):
+            failures.append(f"raw newline inside a JS string literal: {lit[:40]!r}")
 
     # ---- wiring pins (source inspection) ----
     src = inspect.getsource(cli.main)
