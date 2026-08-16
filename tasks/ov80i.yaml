@@ -418,13 +418,22 @@ steps:
       and re-locate the control. Prefer controls whose text or row context clearly
       matches what you need over blind clicks on empty-text icon buttons.
 
-      Do ONLY the navigation: do not click any node, do not open any export or
-      settings dialog, and NEVER click "Deploy" (it pushes pending flow changes
-      live on a production camera). Finish once the flow canvas is visible and
-      has finished loading, with no dialog covering it.
+      The IO page has TWO valid layouts, and either one completes this step:
+      - ADVANCED mode: the embedded Node-RED flow editor canvas.
+      - BASIC mode: a "Pass/Fail & IO Logic" page with rule builders
+        (Classification Rules / Segmentation Rules panels) beside a capture
+        preview — there is no flow canvas in this mode, and that is fine.
+
+      Do ONLY the navigation: do not click any node or rule control, do not open
+      any export or settings dialog, NEVER click "Deploy" or "Save & Deploy"
+      (they push pending changes live on a production camera), and NEVER click
+      the "Advanced Mode" / "Basic Mode" toggle — switching modes changes the
+      recipe's IO configuration. Finish once either layout is visible and has
+      finished loading, with no dialog covering it.
     postcondition: |
-      The IO page is open with the Node-RED flow editor canvas fully loaded and
-      visible, and no dialog is covering it.
+      The IO page is open and fully loaded in either layout — the Node-RED flow
+      editor canvas, or the Basic Mode "Pass/Fail & IO Logic" rules page — with
+      no dialog covering it.
     check_recipe: false
     # Numbered 12 alongside 12_library: library's filename is a published
     # contract for existing runs, so it keeps its number; "io" sorts before
@@ -484,6 +493,11 @@ steps:
       The Node-RED export dialog's Download was clicked for the current flow (a JSON
       download was triggered).
     check_recipe: false
+    # BASIC-mode IO has no flow to export: a deterministic pre-step gate
+    # detects the rules layout, harvests its text verbatim
+    # (data/io_rules.txt -> the same analysis contract as the flow JSON),
+    # and skips this step before any agent turns are spent.
+    skip_when_basic_io: true
     expect_download: true
     download_as: node_red_flow.json
     # Icon-only buttons don't replay reliably (two flaky-replay incidents);

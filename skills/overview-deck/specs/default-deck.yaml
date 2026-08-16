@@ -279,18 +279,21 @@ slides:
       above.
     images:
       - expects: >
-          The IO Logic screen — the embedded Node-RED flow editor showing
-          this recipe's wired pass/fail logic (nodes and connections from
-          the inspection input to the outputs).
+          The IO Logic screen, in either of its two layouts: the embedded
+          Node-RED flow editor showing this recipe's wired pass/fail logic
+          (nodes and connections from the inspection input to the
+          outputs), OR the Basic Mode "Pass/Fail & IO Logic" rules page
+          (Classification/Segmentation rule builders beside a capture
+          preview). Both are the recipe's pass/fail logic.
     tokens:
       text:
         llm: >
           What this recipe's IO logic actually does, as 3-5 short lines:
           the real inputs (which models' results, per which regions), the
           actual rule with its thresholds, weights or grouping from the
-          flow — never a placeholder like "decision rule" — and what is
-          produced and written out (the camera's verdict, what reaches
-          the plant's systems).
+          flow or rules — never a placeholder like "decision rule" — and
+          what is produced and written out (the camera's verdict, what
+          reaches the plant's systems).
         shape: lines
         max_chars: 320
       rationale:

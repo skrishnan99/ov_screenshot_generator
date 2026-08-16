@@ -27,6 +27,7 @@ from core import llm, paths
 from core import trace as trace_store
 from core.browser import Browser
 from core.describer import (
+    describe_io_rules,
     describe_node_red,
     describe_screenshot,
     poll_image_loaded,
@@ -642,6 +643,63 @@ def close_node_red_panels(browser) -> None:
                 print(f"  node-red {label} closed for capture")
         except Exception as e:
             print(f"  warning: node-red {label} check failed: {e}")
+
+
+# The IO Logic tab has two modes. BASIC mode shows the "Pass/Fail & IO
+# Logic" rules layout (Classification/Segmentation rule builders beside a
+# capture preview) instead of the embedded Node-RED editor — a fully valid
+# IO page with no flow to export. Detection is text-shaped, never
+# selector-shaped: the flow iframe's absence plus the page's own headings.
+
+
+def _is_basic_io_page(browser) -> bool:
+    try:
+        if _node_red_frame(browser) is not None:
+            return False
+        text = browser.page.evaluate("document.body.innerText") or ""
+        return "Pass/Fail & IO Logic" in text and (
+            "Classification Rules" in text
+            or "Segmentation Rules" in text
+            or "Advanced Mode" in text
+        )
+    except Exception:
+        return False
+
+
+def harvest_io_rules(browser, out: RunOutput, meta: dict) -> None:
+    """Save the Basic-Mode rules page's innerText VERBATIM as
+    data/io_rules.txt — the auditable stand-in for the exported flow JSON.
+    Reading is text-to-model in this codebase; selectors are for clicking.
+    The analysis phase later turns this into node_red_description.md +
+    io_logic facts via describe_io_rules, so everything downstream of the
+    Advanced-Mode path works unchanged. Enrichment: warns and continues,
+    never fails a step."""
+    try:
+        # innerText misses INPUT values — numeric rule thresholds live in
+        # input boxes (a live harvest lost a "<= 50" threshold this way) —
+        # so visible input values are appended in page order.
+        text = browser.page.evaluate("""
+            () => {
+              const vals = [...document.querySelectorAll('input, textarea')]
+                .filter(e => e.getBoundingClientRect().width &&
+                             (e.value || '').trim())
+                .map(e => e.value.trim());
+              return document.body.innerText +
+                (vals.length ? "\n\nVISIBLE INPUT VALUES (in page order): "
+                               + vals.join(", ") : "");
+            }
+        """) or ""
+        if not text.strip():
+            print("  warning: io rules harvest found no page text")
+            return
+        dest = out.save(
+            "io_rules.txt", text, kind="data", role="data",
+            step="io_node_red", item="basic-mode IO rules page text",
+        )
+        meta["io_mode"] = "basic"
+        print(f"  io rules harvested -> {out.rel(dest)}")
+    except Exception as e:
+        print(f"  warning: io rules harvest failed: {e}")
 
 
 # Feature-promo / walkthrough modals pop over config screens on first visit
@@ -2013,6 +2071,22 @@ def main(argv: list[str] | None = None) -> int:
             step_record: dict = {"id": step_id}
             recipe_name = None
 
+            # BASIC-mode IO: there is no Node-RED flow to export, so the
+            # export step is skipped BEFORE any agent turns are spent — and
+            # the rules page is harvested instead, feeding the same
+            # analysis contract the flow JSON feeds in Advanced mode.
+            if step.get("skip_when_basic_io") and _is_basic_io_page(browser):
+                print("  IO page is in Basic Mode (rules layout): no flow to "
+                      "export; harvesting the rules instead")
+                harvest_io_rules(browser, out, meta)
+                step_record["status"] = "skipped"
+                step_record["notes"] = ("basic-mode IO: no Node-RED flow to "
+                                        "export; rules harvested")
+                step_record["duration_s"] = round(time.monotonic() - step_t0, 1)
+                manifest["steps"].append(step_record)
+                print(f"  SKIPPED ({step_record['duration_s']}s)")
+                continue
+
             cached = traces["steps"].get(step_id)
             done = False
             # Steps whose flow depends on live data (conditional branches the
@@ -2307,23 +2381,34 @@ def main(argv: list[str] | None = None) -> int:
         # order and nothing races on RunOutput.
         analysis_t0 = time.monotonic()
         flow_path = run_dir / "data" / "node_red_flow.json"
+        rules_path = run_dir / "data" / "io_rules.txt"
         nr_future = nr_pool = None
+        nr_source = None
+        # One IO-logic analysis per run, whatever the mode captured: the
+        # Advanced-mode flow JSON, or the Basic-mode rules text — both feed
+        # the SAME output contract (node_red_description.md + io_logic
+        # facts), so the deck never knows the difference.
         if flow_path.exists() and not args.skip_descriptions:
+            nr_source, io_text, io_fn = ("node_red_flow.json",
+                                         flow_path.read_text(), describe_node_red)
+        elif rules_path.exists() and not args.skip_descriptions:
+            nr_source, io_text, io_fn = ("io_rules.txt",
+                                         rules_path.read_text(), describe_io_rules)
+        if nr_source is not None:
 
-            def _describe_flow(text, ctx):
+            def _describe_io(fn, text, ctx):
                 t0 = time.monotonic()
-                return describe_node_red(text, ctx), round(time.monotonic() - t0, 1)
+                return fn(text, ctx), round(time.monotonic() - t0, 1)
 
             nr_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="node-red")
             nr_future = nr_pool.submit(
-                _describe_flow,
-                flow_path.read_text(),
+                _describe_io, io_fn, io_text,
                 {
                     "variant": manifest.get("variant"),
                     "recipe": manifest.get("recipe_input"),
                 },
             )
-            print("\ndescribing node-red flow (running in background)...")
+            print(f"\ndescribing IO logic from {nr_source} (running in background)...")
 
         try:
             if desc_queue and not args.skip_descriptions:
@@ -2408,15 +2493,16 @@ def main(argv: list[str] | None = None) -> int:
                              if m.get("name")],
                         )
                         meta.setdefault("facts", []).append(
-                            {**fact, "subject": subj, "source": "node_red_flow.json"}
+                            {**fact, "subject": subj, "source": nr_source}
                         )
                     manifest["node_red_description"] = (
                         "deliverables/report/node_red_description.md"
                     )
                     manifest["node_red_duration_s"] = nr_secs
-                    print("  node_red_description.md written")
+                    print(f"  node_red_description.md written (from {nr_source})")
                 except Exception as e:
-                    print(f"  FAILED to describe node-red flow: {e}", file=sys.stderr)
+                    print(f"  FAILED to describe IO logic ({nr_source}): {e}",
+                          file=sys.stderr)
         finally:
             if nr_pool is not None:
                 nr_pool.shutdown(wait=False)

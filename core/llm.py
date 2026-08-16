@@ -478,7 +478,11 @@ class AgentSdkBackend:
             setting_sources=[],
             tools=["Read"] if img_files else [],
             permission_mode="bypassPermissions",
-            max_turns=8 if img_files else 2,
+            # Text-only calls once capped at 2 turns; a live structured
+            # describe_io_rules died on "maximum number of turns (2)" — the
+            # json_schema output round-trip can itself take a turn. 4 keeps
+            # one-shot calls bounded with room for that.
+            max_turns=8 if img_files else 4,
             max_buffer_size=SDK_BUFFER_BYTES,
             output_format=(
                 {"type": "json_schema", "schema": schema} if schema else None

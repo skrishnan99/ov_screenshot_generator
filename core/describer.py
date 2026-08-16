@@ -36,6 +36,9 @@ this recipe is the one currently selected/running on the camera.
 report both when visible and don't conflate them.
 - Class names starting with "pass"/"fail" (e.g. pass_hole_presence) conventionally drive the \
 IO pass/fail rule: a classification passes when its predicted class name begins with "pass".
+- The "IO Logic" tab has TWO modes, both valid representations of the recipe's pass/fail \
+logic: Advanced (an embedded Node-RED flow editor) and Basic (a "Pass/Fail & IO Logic" page \
+with Classification/Segmentation rule builders beside a capture preview).
 - Imaging features worth explicitly flagging when visible: photometric stereo, HDR mode, \
 interval trigger, image rotation, LED strobe — these materially change the inspection.
 
@@ -333,6 +336,57 @@ def describe_node_red(flow_json: str, context: dict) -> dict:
         )
     except LLMRefusal:
         return {"markdown": "[node-red description refused by model]", "facts": []}
+
+
+IO_RULES_PROMPT = """Below is the VERBATIM text of the "Pass/Fail & IO Logic" page of an Overview AI \
+industrial vision camera ({variant}), captured for the recipe "{recipe}". The page was in BASIC \
+mode: instead of a Node-RED flow, the pass/fail logic is defined by rule builders. The text \
+mixes the rules' selected values with page chrome (navigation, capture preview metadata, \
+buttons) — ignore the chrome entirely.
+
+Domain knowledge for interpreting the rules:
+- "Classification Rules" rows read like: <ROI scope> <condition> <class> — e.g. "All ROIs \
+match zero" means every region's classification prediction must be the class "zero" for the \
+check to pass.
+- "Segmentation Rules" group per inspection type; rows read like: <defect class> <metric> \
+<aggregation> <comparator> <threshold> — e.g. "Defect Pixel Count Lowest <= 50" bounds the \
+defect mask's pixel count.
+- Multiple rules and rule groups combine into the overall verdict; describe the composition \
+as shown. Rules reference the recipe's models / inspection types by name.
+- The combined result is the camera's pass/fail verdict for each inspection cycle.
+- Numeric thresholds are typed into input boxes; their values appear at the END of the text \
+under "VISIBLE INPUT VALUES (in page order)" — associate them with the rules they belong to.
+
+Write `markdown`: a plain-language analysis (~150-300 words) of what this recipe's pass/fail \
+logic actually does — which model outputs are checked, the exact conditions and thresholds \
+(values verbatim), and how they combine into the verdict. Describe the LOGIC only: never \
+mention the page layout, buttons, or that this text came from a UI dump.
+
+Also extract `facts`: discrete checkable values as {{subject, property, value}} entries with \
+subject "io_logic" — one per rule (e.g. property "classification_rule" / "segmentation_rule" \
+with the rule text verbatim), plus thresholds. Only what the text actually states.
+
+PAGE TEXT:
+{rules_text}"""
+
+
+def describe_io_rules(rules_text: str, context: dict) -> dict:
+    """Basic-Mode sibling of describe_node_red — same {"markdown", "facts"}
+    contract, sourced from the rules page's verbatim innerText instead of
+    the exported flow JSON, so everything downstream (the
+    node_red_description.md file, io_logic facts, the deck's logic slide
+    material) works unchanged."""
+    prompt = IO_RULES_PROMPT.format(
+        variant=context.get("variant", "unknown variant"),
+        recipe=context.get("recipe", "unknown"),
+        rules_text=str(rules_text)[:20000],
+    )
+    try:
+        return complete(
+            prompt, schema=NODE_RED_SCHEMA, max_tokens=10000, model=llm.SONNET
+        )
+    except LLMRefusal:
+        return {"markdown": "[io rules description refused by model]", "facts": []}
 
 
 def describe_screenshot(png_bytes: bytes, context: dict) -> dict:
