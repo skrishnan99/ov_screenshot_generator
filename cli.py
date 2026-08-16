@@ -1657,73 +1657,153 @@ def _library_count(page) -> str | None:
         return None
 
 
-def filter_library_by_recipe(browser, recipe: str) -> None:
+LIBRARY_READY_WAIT_S = 30
+LIBRARY_READY_RETRY_WAIT_S = 10
+
+_LIBRARY_CARD_NAME_RE = re.compile(r"#\d+\n(?:(?:PASS|FAIL)\n)?([^\n#][^\n]*)")
+
+
+def _wait_for_library_ready(browser, max_wait_s: float = LIBRARY_READY_WAIT_S) -> bool:
+    """Poll until the library's filter panel exists. A fast replay
+    completes on URL/text postconditions while the SPA is still hydrating
+    (a field page was blank at 0s and rendered at 14s), so a one-shot
+    query here silently no-op'd the filter and shipped ANOTHER recipe's
+    captures. Bounded, 1s cadence; the image-load poll downstream absorbs
+    the same delay anyway, so this costs nothing overall."""
+    deadline = time.monotonic() + max_wait_s
+    while True:
+        try:
+            box = browser.page.query_selector("#recipe")
+            if box is not None and box.is_visible():
+                return True
+            if "Total Captures" in (
+                    browser.page.evaluate("document.body.innerText") or ""):
+                return True
+        except Exception:
+            pass
+        if time.monotonic() > deadline:
+            return False
+        browser.page.wait_for_timeout(1000)
+
+
+def _attempt_library_filter(page, recipe: str, count_before) -> tuple[str, str]:
+    """One filter attempt. Returns (status, detail); "filtered" is the only
+    success status (a legitimate zero-capture result included)."""
+    box = page.query_selector("#recipe")
+    if box is None or not box.is_visible():
+        return "no-filter-control", ""
+    box.click()
+    box.fill(recipe)
+    page.wait_for_timeout(1200)
+    option = next(
+        (el for el in page.query_selector_all(".ant-select-item-option")
+         if el.is_visible() and el.inner_text().strip() == recipe),
+        None,
+    )
+    if option is None:
+        # A prefix sibling ("X - pin inspection" vs "X - second pin
+        # inspection") must never be accepted; close the dropdown instead.
+        page.keyboard.press("Escape")
+        return "no-recipe-option", recipe
+    option.click()
+    page.wait_for_timeout(400)
+    search = next(
+        (el for el in page.query_selector_all("button")
+         if el.is_visible() and el.inner_text().strip().lower() == "search"),
+        None,
+    )
+    if search is None:
+        return "no-search-button", ""
+    search.click()
+    page.wait_for_timeout(2500)  # grid re-render
+    deadline = time.monotonic() + LIBRARY_FILTER_WAIT_S
+    while True:
+        count = _library_count(page)
+        body = page.evaluate("document.body.innerText") or ""
+        if count == "0":
+            print(f"  library filtered to {recipe!r}: 0 captures — "
+                  f"the recipe's true state")
+            return "filtered", "0"
+        if count is not None and (count != count_before or recipe in body):
+            print(f"  library filtered to {recipe!r}: {count} captures")
+            return "filtered", str(count)
+        if time.monotonic() > deadline:
+            return "did-not-settle", ""
+        page.wait_for_timeout(1000)
+
+
+def _library_filter_verdict(page, recipe: str) -> tuple[str, str]:
+    """What the grid actually shows now: ("ok"|"zero"|"foreign"|"unknown",
+    foreign recipe name when identifiable). Text-shaped — the capture
+    cards carry their recipe names in plain text."""
+    try:
+        body = page.evaluate("document.body.innerText") or ""
+    except Exception:
+        return "unknown", ""
+    if _library_count(page) == "0":
+        return "zero", ""
+    names = [n.strip() for n in _LIBRARY_CARD_NAME_RE.findall(body)]
+    if not names:
+        return "unknown", ""
+    if any(n == recipe for n in names):
+        return "ok", ""
+    foreign = max(set(names), key=names.count)
+    return "foreign", foreign
+
+
+def filter_library_by_recipe(browser, recipe: str) -> dict:
     """Filter the Library page to the run's recipe and search, so the capture
     grid, the selected capture and the main-image download all belong to the
     recipe under test.
 
     Deterministic via the filter's stable #recipe input; the option click is
-    an exact-text match against the resolved recipe name. Zero results is
-    the recipe's true state and is captured, with a note. Best-effort like
-    the other capture hooks: any failure warns and the capture proceeds with
-    the page as it is — never fails the step.
-    """
+    an exact-text match against the resolved recipe name. Reliability: waits
+    for the panel to render (a one-shot query once raced the SPA and shipped
+    another recipe's captures), retries the whole attempt once on any
+    degradation, and VERIFIES the outcome against the cards' recipe names —
+    an unfiltered grid showing a foreign recipe is loudly flagged and
+    recorded in the manifest, never silent. Still best-effort at the step
+    level: every failure path warns and the capture proceeds; the step
+    never fails."""
     page = browser.page
+    rec: dict = {"recipe": recipe, "filtered": False, "verified": None,
+                 "attempts": []}
     try:
         recipe = (recipe or "").strip()
         if not recipe:
-            print("  warning: no recipe name to filter the library by; capturing unfiltered")
-            return
-        box = page.query_selector("#recipe")
-        if box is None or not box.is_visible():
-            print("  warning: library recipe filter (#recipe) not found; capturing unfiltered")
-            return
-        count_before = _library_count(page)
-        box.click()
-        box.fill(recipe)
-        page.wait_for_timeout(1200)
-        option = next(
-            (el for el in page.query_selector_all(".ant-select-item-option")
-             if el.is_visible() and el.inner_text().strip() == recipe),
-            None,
-        )
-        if option is None:
-            # A prefix sibling ("X - pin inspection" vs "X - second pin
-            # inspection") must never be accepted; close the dropdown instead.
-            print(f"  warning: library filter lists no recipe named {recipe!r}; "
-                  f"capturing unfiltered")
-            page.keyboard.press("Escape")
-            return
-        option.click()
-        page.wait_for_timeout(400)
-        search = next(
-            (el for el in page.query_selector_all("button")
-             if el.is_visible() and el.inner_text().strip().lower() == "search"),
-            None,
-        )
-        if search is None:
-            print("  warning: library Search button not found; capturing unfiltered")
-            return
-        search.click()
-        page.wait_for_timeout(2500)  # grid re-render
-        deadline = time.monotonic() + LIBRARY_FILTER_WAIT_S
-        while True:
-            count = _library_count(page)
-            body = page.evaluate("document.body.innerText") or ""
-            if count == "0":
-                print(f"  library filtered to {recipe!r}: 0 captures — "
-                      f"the recipe's true state")
-                return
-            if count is not None and (count != count_before or recipe in body):
-                print(f"  library filtered to {recipe!r}: {count} captures")
-                return
-            if time.monotonic() > deadline:
-                print("  warning: library filter results did not settle; "
-                      "capturing current state")
-                return
-            page.wait_for_timeout(1000)
+            print("  warning: no recipe name to filter the library by; "
+                  "capturing unfiltered")
+            rec["note"] = "no recipe name"
+            return rec
+        for attempt in range(2):
+            ready = _wait_for_library_ready(
+                browser, LIBRARY_READY_WAIT_S if attempt == 0
+                else LIBRARY_READY_RETRY_WAIT_S)
+            if not ready:
+                rec["attempts"].append("library page never became ready")
+                continue
+            count_before = _library_count(page)
+            status, detail = _attempt_library_filter(page, recipe, count_before)
+            rec["attempts"].append(f"{status}: {detail}" if detail else status)
+            if status == "filtered":
+                rec["filtered"] = True
+                break
+            print(f"  library filter attempt {attempt + 1} degraded "
+                  f"({status}); " + ("retrying once" if attempt == 0
+                                     else "capturing the page as-is"))
+            browser.page.wait_for_timeout(5000)
+        verdict, foreign = _library_filter_verdict(page, recipe)
+        rec["verified"] = verdict
+        if verdict == "foreign":
+            rec["note"] = f"grid shows another recipe's captures ({foreign})"
+            print(f"  WARNING: library grid is showing {foreign!r} — NOT the "
+                  f"recipe under test; the library capture pair may show the "
+                  f"wrong recipe's part")
+        return rec
     except Exception as e:
         print(f"  warning: library recipe filter failed: {e}; capturing unfiltered")
+        rec["note"] = str(e)[:200]
+        return rec
 
 
 # "Source Capture: <n> of <TOTAL>" — innerText may put the input value and
@@ -2331,7 +2411,8 @@ def main(argv: list[str] | None = None) -> int:
             # Also before the vision wait and the main-image download: both
             # must see the RECIPE'S captures, not the global newest.
             if step.get("filter_library_recipe"):
-                filter_library_by_recipe(browser, recipe_name or args.recipe)
+                step_record["library_filter"] = filter_library_by_recipe(
+                    browser, recipe_name or args.recipe)
             # After the filter, before screenshot + download: leave the
             # viewer on a capture that actually shows the product with its
             # inspection overlays (searched, not taken on faith).

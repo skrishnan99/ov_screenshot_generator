@@ -234,7 +234,7 @@ def main() -> int:
 
     # ---- ordering: filter -> pick -> (wait/screenshot/download) ----
     src = inspect.getsource(cli.main)
-    filt = src.index("filter_library_by_recipe(browser")
+    filt = src.index("filter_library_by_recipe(")
     pick = src.index("pick_library_capture(")
     wait = src.index('step.get("wait_image_loaded")')
     dl = src.index('step.get("download_main_image")')
