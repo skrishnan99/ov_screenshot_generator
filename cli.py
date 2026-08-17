@@ -1333,6 +1333,72 @@ _LIBRARY_CARD_STATE_JS = """
 }
 """
 
+# Third sibling of the card walk (keep in sync): the document-coordinate
+# bottom edge of the DEEPEST card, so the grid screenshot can grow the
+# viewport to fit every card.
+_LIBRARY_GRID_EXTENT_JS = """
+() => {
+  let maxBottom = 0;
+  document.querySelectorAll('img').forEach(img => {
+    const r = img.getBoundingClientRect();
+    if (r.width < 40 || r.width > 400) return;
+    let node = img;
+    for (let i = 0; i < 6 && node; i++) {
+      node = node.parentElement;
+      if (node && /#\\d+/.test(node.innerText || '') &&
+          (node.innerText.match(/#\\d+/g) || []).length === 1) {
+        maxBottom = Math.max(maxBottom, r.bottom + window.scrollY);
+        return;
+      }
+    }
+  });
+  return maxBottom;
+}
+"""
+
+LIBRARY_GRID_MAX_VIEWPORT_H = 3000
+
+
+def _library_grid_screenshot(browser) -> bytes:
+    """Full-page screenshot with the WHOLE capture grid in frame. The grid
+    scrolls inside an inner panel whose height derives from the viewport,
+    and a full-page screenshot stops at the DOCUMENT's height — it never
+    reaches into an inner container's overflow. At the default 1000px
+    viewport only the top ~9 of a 20-card page were in the image while the
+    ranker's prompt listed all 20 ids: the bottom half of every page was
+    invisible to the search. Measured live: the panel is viewport-derived,
+    so growing the viewport to the deepest card's bottom edge puts the
+    whole grid in one screenshot (all thumbnails are in the DOM and
+    painted without scrolling — no lazy-load). The viewport is restored no
+    matter what, so the deliverable screenshot and everything downstream
+    keep their normal geometry. Degrades to the plain screenshot on any
+    failure."""
+    page = browser.page
+    try:
+        need = int(page.evaluate(_LIBRARY_GRID_EXTENT_JS) or 0) + 40
+    except Exception:
+        need = 0
+    vp = page.viewport_size or {"width": 1600, "height": 1000}
+    if need <= vp["height"]:
+        return browser.screenshot_bytes(full_page=True)
+    try:
+        page.set_viewport_size(
+            {"width": vp["width"],
+             "height": min(need, LIBRARY_GRID_MAX_VIEWPORT_H)})
+        page.wait_for_timeout(1000)  # re-layout at the taller viewport
+    except Exception as e:
+        print(f"  warning: could not grow the viewport for the grid "
+              f"screenshot: {e}; judging the visible part")
+    try:
+        return browser.screenshot_bytes(full_page=True)
+    finally:
+        try:
+            page.set_viewport_size(vp)
+            page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+
 _SELECTED_CAPTURE_RE = re.compile(r"Capture\s+#(\d+)\s+from", re.I)
 
 LIBRARY_THUMBS_SCHEMA = {
@@ -1475,7 +1541,7 @@ def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
                 max_n=top_n,
             ),
             schema=LIBRARY_THUMBS_SCHEMA,
-            images=[downscale_for_vision(browser.screenshot_bytes(full_page=True))],
+            images=[downscale_for_vision(_library_grid_screenshot(browser))],
             max_tokens=800, model=llm.SONNET,
         )
         dom = set(dom_ids)

@@ -32,7 +32,13 @@ the search runs as a pure state machine):
   (nav_notes); the blind 2s sleep is gone from both nav helpers; page 1
   settles before the first thumbnail ranking; the state JS carries no
   raw newline inside quoted literals and stays in sync with the card
-  walk.
+  walk,
+- GRID VISIBILITY (the grid scrolls inside a viewport-derived inner
+  panel, so full_page screenshots clipped the bottom ~11 of 20 cards —
+  the ranker could only see half of every page): the grid screenshot
+  grows the viewport to the deepest card (bounded), always restores it
+  — even when the screenshot itself fails — never resizes when the grid
+  already fits, and degrades to the plain shot on any probe failure.
 
 Run: uv run python tests/test_library_pick.py
 """
@@ -210,7 +216,11 @@ def main() -> int:
     from core import llm as _llm
 
     class _ThumbPage:
+        viewport_size = {"width": 1600, "height": 1000}
+
         def evaluate(self, js):
+            if js is cli._LIBRARY_GRID_EXTENT_JS:
+                return 900   # grid fits: no viewport growth on this path
             return ["101", "102", "103", "104", "105"]
 
     class _ThumbBrowser:
@@ -385,19 +395,107 @@ def main() -> int:
     if ps.index("_library_page_settled") > ps.index("_library_product_thumbs"):
         failures.append("page 1 must settle before the first thumbnail ranking")
 
-    # ---- 0.25.7 bug class: no raw newline in the state JS's literals ----
-    for q in ('"', "'"):
-        for lit in re.findall(q + r"[^" + q + r"]*" + q,
-                              cli._LIBRARY_CARD_STATE_JS):
-            if "\n" in lit.replace("\\n", ""):
-                failures.append(f"raw newline in state-JS literal {lit[:30]!r}")
+    # ---- GRID VISIBILITY: the grid scrolls inside an inner panel whose
+    # height derives from the viewport, and full_page screenshots stop at
+    # the DOCUMENT's height — at 1000px only the top ~9 of a 20-card page
+    # reached the ranker's image while its prompt listed all 20 ids. The
+    # grid screenshot grows the viewport to the deepest card and ALWAYS
+    # restores it ----
+    class _GridPage:
+        def __init__(self, extent, fail_resize=False, fail_extent=False):
+            self.extent = extent
+            self.fail_resize = fail_resize
+            self.fail_extent = fail_extent
+            self.viewport_size = {"width": 1600, "height": 1000}
+            self.sets: list = []
 
-    # ---- the two card walks stay in sync (same filter + detection) ----
+        def evaluate(self, js):
+            if self.fail_extent:
+                raise RuntimeError("no dom")
+            return self.extent
+
+        def set_viewport_size(self, vp):
+            if self.fail_resize:
+                raise RuntimeError("resize refused")
+            self.sets.append(dict(vp))
+            self.viewport_size = dict(vp)
+
+        def wait_for_timeout(self, ms):
+            pass
+
+    class _GridBrowser:
+        def __init__(self, page, boom=False):
+            self.page = page
+            self.boom = boom
+            self.shot_heights: list = []
+
+        def screenshot_bytes(self, full_page=True):
+            self.shot_heights.append(self.page.viewport_size["height"])
+            if self.boom:
+                raise RuntimeError("shot failed")
+            return b"png"
+
+    # a clipped grid: grown to fit (+margin), shot tall, restored
+    gb = _GridBrowser(_GridPage(1677))
+    out = cli._library_grid_screenshot(gb)
+    if out != b"png" or gb.shot_heights != [1717]:
+        failures.append(f"grid shot not taken tall: {gb.shot_heights}")
+    if gb.page.viewport_size["height"] != 1000 \
+            or [s["height"] for s in gb.page.sets] != [1717, 1000]:
+        failures.append(f"viewport not restored: {gb.page.sets}")
+
+    # a grid that already fits: no viewport churn
+    gb = _GridBrowser(_GridPage(900))
+    cli._library_grid_screenshot(gb)
+    if gb.page.sets or gb.shot_heights != [1000]:
+        failures.append(f"needless resize: {gb.page.sets}")
+
+    # a monster grid: clamped to the cap
+    gb = _GridBrowser(_GridPage(9000))
+    cli._library_grid_screenshot(gb)
+    if gb.page.sets[0]["height"] != cli.LIBRARY_GRID_MAX_VIEWPORT_H:
+        failures.append(f"viewport growth not capped: {gb.page.sets}")
+
+    # extent probe failing / resize refused: plain screenshot, no raise
+    for label, page in (("extent fail", _GridPage(0, fail_extent=True)),
+                        ("resize fail", _GridPage(1677, fail_resize=True))):
+        gb = _GridBrowser(page)
+        try:
+            if cli._library_grid_screenshot(gb) != b"png":
+                failures.append(f"{label}: no screenshot returned")
+        except Exception as e:
+            failures.append(f"{label}: raised {e}")
+
+    # the screenshot itself failing STILL restores the viewport
+    gb = _GridBrowser(_GridPage(1677), boom=True)
+    try:
+        cli._library_grid_screenshot(gb)
+    except Exception:
+        pass
+    if gb.page.viewport_size["height"] != 1000:
+        failures.append("viewport leaked tall after a failed screenshot")
+
+    # the ranker uses the grid screenshot, not the plain one
+    ts = inspect.getsource(cli._library_product_thumbs)
+    if "_library_grid_screenshot(" not in ts or "screenshot_bytes(" in ts:
+        failures.append("ranker not wired to the grid screenshot")
+
+    # ---- 0.25.7 bug class: no raw newline in the new JS's literals ----
+    for js_name in ("_LIBRARY_CARD_STATE_JS", "_LIBRARY_GRID_EXTENT_JS"):
+        for q in ('"', "'"):
+            for lit in re.findall(q + r"[^" + q + r"]*" + q,
+                                  getattr(cli, js_name)):
+                if "\n" in lit.replace("\\n", ""):
+                    failures.append(f"raw newline in {js_name} literal "
+                                    f"{lit[:30]!r}")
+
+    # ---- the three card walks stay in sync (same filter + detection) ----
     for frag in ("r.width < 40 || r.width > 400", "img.getBoundingClientRect()",
                  "/#\\d+/"):
-        if frag not in cli._LIBRARY_CARD_STATE_JS \
-                or frag not in cli._LIBRARY_CARDS_JS:
-            failures.append(f"card walks diverged on {frag!r}")
+        for js_name in ("_LIBRARY_CARDS_JS", "_LIBRARY_CARD_STATE_JS",
+                        "_LIBRARY_GRID_EXTENT_JS"):
+            if frag not in getattr(cli, js_name):
+                failures.append(f"{js_name} diverged on {frag!r}")
 
     # ---- spec: activated on the library step, after the filter ----
     spec = yaml.safe_load((REPO / "tasks" / "ov80i.yaml").read_text())
