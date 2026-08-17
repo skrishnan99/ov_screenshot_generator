@@ -1308,6 +1308,31 @@ _LIBRARY_CARDS_JS = """
 }
 """
 
+# Sibling of _LIBRARY_CARDS_JS — the SAME card-detection walk (keep the
+# two in sync) — but also reporting whether each card's thumbnail has
+# actually painted, so the page-turn settle gate can refuse to hand the
+# thumbnail ranker a half-rendered grid.
+_LIBRARY_CARD_STATE_JS = """
+() => {
+  const out = [];
+  document.querySelectorAll('img').forEach(img => {
+    const r = img.getBoundingClientRect();
+    if (r.width < 40 || r.width > 400) return;
+    let node = img;
+    for (let i = 0; i < 6 && node; i++) {
+      node = node.parentElement;
+      if (node && /#\\d+/.test(node.innerText || '') &&
+          (node.innerText.match(/#\\d+/g) || []).length === 1) {
+        out.push({id: (node.innerText.match(/#(\\d+)/) || [])[1],
+                  painted: !!(img.complete && img.naturalWidth > 0)});
+        return;
+      }
+    }
+  });
+  return out;
+}
+"""
+
 _SELECTED_CAPTURE_RE = re.compile(r"Capture\s+#(\d+)\s+from", re.I)
 
 LIBRARY_THUMBS_SCHEMA = {
@@ -1523,34 +1548,91 @@ def _click_library_capture(browser, cid: int) -> bool:
     return True
 
 
-def _library_next_page(browser) -> bool:
+LIBRARY_PAGE_TURN_WAIT_S = 20
+
+
+def _library_card_ids(browser) -> list[int]:
     try:
+        return [int(i) for i in browser.page.evaluate(_LIBRARY_CARDS_JS)]
+    except Exception:
+        return []
+
+
+def _library_page_settled(browser, prev_ids, max_wait_s: float | None = None,
+                          require_change: bool = True) -> tuple[bool, list[int]]:
+    """After a pagination click: poll until the grid shows the DESTINATION
+    page — card ids differ from prev_ids (skipped via require_change=False
+    for hops whose destination can equal the origin, e.g. clicking "1"
+    while already on page 1), every card's thumbnail has PAINTED, and the
+    view holds identical across two consecutive reads. The fixed 2s sleep
+    this replaces raced the SPA (the same grid rendered 14s late in the
+    field): the thumbnail ranker judged a stale or half-painted grid and a
+    valid-looking wrong pick shipped, silently. Bounded, 1s cadence;
+    returns (settled, ids) — on timeout the caller degrades to judging
+    whatever is rendered, never fails."""
+    if max_wait_s is None:
+        max_wait_s = LIBRARY_PAGE_TURN_WAIT_S
+    deadline = time.monotonic() + max_wait_s
+    prev = list(prev_ids)
+    last_good: list[int] | None = None
+    while True:
+        ids: list[int] = []
+        try:
+            cards = browser.page.evaluate(_LIBRARY_CARD_STATE_JS) or []
+            ids = [int(c["id"]) for c in cards]
+            good = (bool(ids) and (not require_change or ids != prev)
+                    and all(c.get("painted") for c in cards))
+        except Exception:
+            good = False
+        if good and ids == last_good:
+            return True, ids
+        last_good = ids if good else None
+        if time.monotonic() > deadline:
+            return False, ids
+        browser.page.wait_for_timeout(1000)
+
+
+def _library_nav_note(notes: list | None, msg: str) -> None:
+    print(f"  warning: library {msg}")
+    if notes is not None:
+        notes.append(msg)
+
+
+def _library_next_page(browser, notes: list | None = None) -> bool:
+    try:
+        prev = _library_card_ids(browser)
         nxt = browser.page.query_selector("li.ant-pagination-next")
         if nxt is None or "disabled" in (nxt.get_attribute("class") or ""):
             return False
         nxt.click()
-        browser.page.wait_for_timeout(2000)
-        return True
     except Exception:
         return False
+    settled, _ = _library_page_settled(browser, prev)
+    if not settled:
+        _library_nav_note(notes, "page turn did not settle within "
+                          f"{LIBRARY_PAGE_TURN_WAIT_S}s; judging the grid as-is")
+    return True
 
 
-def _library_goto_page(browser, page_no: int) -> bool:
+def _library_goto_page(browser, page_no: int, notes: list | None = None) -> bool:
     """Page numbers beyond 3 hide behind the pagination's '•••', so the
     deterministic route is: click page 1 (always visible), then Next
-    (page_no - 1) times."""
+    (page_no - 1) times — every hop settle-gated like the forward scan."""
     try:
         one = browser.page.query_selector("li.ant-pagination-item-1")
         if one is None:
             return page_no == 1
         one.click()
-        browser.page.wait_for_timeout(2000)
-        for _ in range(page_no - 1):
-            if not _library_next_page(browser):
-                return False
-        return True
     except Exception:
         return False
+    settled, _ = _library_page_settled(browser, [], require_change=False)
+    if not settled:
+        _library_nav_note(notes, "jump to page 1 did not settle; "
+                          "proceeding as-is")
+    for _ in range(page_no - 1):
+        if not _library_next_page(browser, notes):
+            return False
+    return True
 
 
 def _library_first_capture(browser):
@@ -1574,12 +1656,22 @@ def pick_library_capture(browser, recipe: str = "",
     moving on. product+overlay short-circuits. On exhaustion (all pages,
     page cap, or click cap) the best partial wins: product-no-overlay over
     overlay-no-product, first-seen ties; nothing qualifying resets to page
-    1's newest capture — exactly today's behavior. Best-effort like every
-    capture hook: failures degrade, never fail the step."""
+    1's newest capture — exactly today's behavior. Every grid the ranker
+    judges is settle-gated first (_library_page_settled) — a page that
+    never settles is judged as-is and noted in the record. Best-effort
+    like every capture hook: failures degrade, never fail the step."""
     from core.capture_criteria import LIBRARY_TIER_MEANING
 
     rec: dict = {"clicked": [], "chosen": None, "tier": None, "pages_scanned": 0}
+    nav_notes: list = []
     try:
+        # The entry grid gets the same settle gate as every page turn: the
+        # filter's verdict proves cards rendered, not that their thumbnails
+        # painted — and the ranker must never judge grey tiles.
+        settled, _ = _library_page_settled(browser, [], require_change=False)
+        if not settled:
+            _library_nav_note(nav_notes, "page 1 grid did not settle; "
+                              "judging it as-is")
         best = (5, None)  # (tier, (page, capture id))
         clicks = 0
         capped = False
@@ -1609,7 +1701,8 @@ def pick_library_capture(browser, recipe: str = "",
                     return rec
                 if tier in (2, 3) and tier < best[0]:
                     best = (tier, (page, cid))
-            if capped or page == page_cap or not _library_next_page(browser):
+            if capped or page == page_cap \
+                    or not _library_next_page(browser, nav_notes):
                 if page == page_cap and not capped:
                     print(f"  library pick: page cap ({page_cap}) reached")
                 break
@@ -1619,13 +1712,13 @@ def pick_library_capture(browser, recipe: str = "",
             bp, bid = best[1]
             last = rec["clicked"][-1] if rec["clicked"] else None
             if not (last and last["page"] == bp and last["id"] == bid):
-                if _library_goto_page(browser, bp):
+                if _library_goto_page(browser, bp, nav_notes):
                     _click_library_capture(browser, bid)
             rec["chosen"], rec["tier"] = {"page": bp, "id": bid}, best[0]
             print(f"  library pick: best partial is capture #{bid} (page {bp}, "
                   f"tier {best[0]}: {LIBRARY_TIER_MEANING[best[0]]})")
         else:
-            _library_goto_page(browser, 1)
+            _library_goto_page(browser, 1, nav_notes)
             first = _library_first_capture(browser)
             if first is not None:
                 _click_library_capture(browser, first)
@@ -1634,6 +1727,9 @@ def pick_library_capture(browser, recipe: str = "",
                   "1's newest capture")
     except Exception as e:
         print(f"  warning: library pick failed: {e}; capturing the current view")
+    finally:
+        if nav_notes:
+            rec["nav_notes"] = nav_notes
     return rec
 
 

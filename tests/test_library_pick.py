@@ -23,12 +23,22 @@ the search runs as a pure state machine):
 - thumbnail-judge failure and click failure both degrade, never raise,
 - the spec activates the hook on the library step, after the filter,
 - consistency by construction: the hook precedes the screenshot and the
-  main-image download in the capture dispatch.
+  main-image download in the capture dispatch,
+- PAGE-TURN SETTLE GATE (a field pick judged a stale/half-painted grid
+  after pagination and shipped a valid-looking wrong capture): every
+  navigation waits until the card ids CHANGE, every thumbnail has
+  PAINTED, and the view is stable across two reads — bounded; a page
+  that never settles is judged as-is and noted in the pick record
+  (nav_notes); the blind 2s sleep is gone from both nav helpers; page 1
+  settles before the first thumbnail ranking; the state JS carries no
+  raw newline inside quoted literals and stays in sync with the card
+  walk.
 
 Run: uv run python tests/test_library_pick.py
 """
 
 import inspect
+import re
 import sys
 from pathlib import Path
 
@@ -75,13 +85,13 @@ class _Rig:
         product, overlay = self.viewers.get(self.selected, (False, False))
         return {"product_image": product, "overlay": overlay, "reason": "rig"}
 
-    def next_page(self, browser):
+    def next_page(self, browser, notes=None):
         if self.page >= self.total_pages:
             return False
         self.page += 1
         return True
 
-    def goto_page(self, browser, n):
+    def goto_page(self, browser, n, notes=None):
         self.gotos.append(n)
         self.page = n
         return True
@@ -90,10 +100,16 @@ class _Rig:
         return self.first_by_page.get(self.page, 999)
 
 
-def _run(rig, page_cap=cli.LIBRARY_PAGE_SCAN_CAP, click_cap=cli.LIBRARY_CLICK_CAP):
+def _settled(browser, prev, max_wait_s=None, require_change=True):
+    return True, []
+
+
+def _run(rig, page_cap=cli.LIBRARY_PAGE_SCAN_CAP, click_cap=cli.LIBRARY_CLICK_CAP,
+         settle=_settled):
     saved = (cli._library_product_thumbs, cli._click_library_capture,
              cli.judge_library_viewer, cli._library_next_page,
-             cli._library_goto_page, cli._library_first_capture)
+             cli._library_goto_page, cli._library_first_capture,
+             cli._library_page_settled)
     try:
         cli._library_product_thumbs = rig.product_thumbs
         cli._click_library_capture = rig.click
@@ -101,12 +117,14 @@ def _run(rig, page_cap=cli.LIBRARY_PAGE_SCAN_CAP, click_cap=cli.LIBRARY_CLICK_CA
         cli._library_next_page = rig.next_page
         cli._library_goto_page = rig.goto_page
         cli._library_first_capture = rig.first_capture
+        cli._library_page_settled = settle
         return cli.pick_library_capture(object(), "R", page_cap=page_cap,
                                         click_cap=click_cap)
     finally:
         (cli._library_product_thumbs, cli._click_library_capture,
          cli.judge_library_viewer, cli._library_next_page,
-         cli._library_goto_page, cli._library_first_capture) = saved
+         cli._library_goto_page, cli._library_first_capture,
+         cli._library_page_settled) = saved
 
 
 def main() -> int:
@@ -223,6 +241,163 @@ def main() -> int:
         failures.append("thumbnail prompt lost the ranking instruction")
     if "UP TO 3" not in " ".join(_stub.prompt.split()):
         failures.append("thumbnail prompt lost the per-page candidate cap")
+
+    # ---- the page-turn settle gate: after a pagination click the grid
+    # must show NEW ids, fully painted, stable across two reads ----
+    class _TurnPage:
+        """Card state is a function of a fake clock advanced by
+        wait_for_timeout — the settle deadline is a tiny REAL one, so the
+        poll spins through its iterations in microseconds."""
+
+        def __init__(self, timeline):
+            self.timeline = sorted(timeline)     # (at_ms, cards)
+            self.clock_ms = 0
+
+        def evaluate(self, js):
+            cards = []
+            for at, c in self.timeline:
+                if self.clock_ms >= at:
+                    cards = c
+            return cards
+
+        def wait_for_timeout(self, ms):
+            self.clock_ms += ms
+
+    class _TurnBrowser:
+        def __init__(self, page):
+            self.page = page
+
+    def _settle_run(page, prev, require_change=True):
+        saved = cli.LIBRARY_PAGE_TURN_WAIT_S
+        try:
+            cli.LIBRARY_PAGE_TURN_WAIT_S = 0.4
+            return cli._library_page_settled(_TurnBrowser(page), prev,
+                                             require_change=require_change)
+        finally:
+            cli.LIBRARY_PAGE_TURN_WAIT_S = saved
+
+    old = [{"id": "10", "painted": True}]
+    new_grey = [{"id": "20", "painted": False}, {"id": "21", "painted": True}]
+    new_ok = [{"id": "20", "painted": True}, {"id": "21", "painted": True}]
+
+    # the field failure shape: stale grid, then unpainted tiles, then done
+    page = _TurnPage([(0, old), (3000, new_grey), (6000, new_ok)])
+    ok, ids = _settle_run(page, [10])
+    if not ok or ids != [20, 21]:
+        failures.append(f"late paint not absorbed: {ok} {ids}")
+    if page.clock_ms < 7000:
+        failures.append(f"stability tick skipped: settled at {page.clock_ms}ms")
+
+    # a tile that never paints: bounded timeout, ids still reported
+    page = _TurnPage([(0, new_grey)])
+    ok, ids = _settle_run(page, [10])
+    if ok or ids != [20, 21]:
+        failures.append(f"unpainted grid claimed settled: {ok} {ids}")
+
+    # ids never change (the click no-op'd): bounded timeout ...
+    page = _TurnPage([(0, new_ok)])
+    ok, _ids = _settle_run(page, [20, 21])
+    if ok:
+        failures.append("unchanged grid claimed settled")
+    # ... but identical content is FINE when no change is required (the
+    # page-1 jump's destination can equal the origin)
+    ok, _ids = _settle_run(_TurnPage([(0, new_ok)]), [20, 21],
+                           require_change=False)
+    if not ok:
+        failures.append("require_change=False rejected a settled grid")
+
+    # ---- nav helpers: settle-gated, degradation noted, disabled Next
+    # costs no wait ----
+    class _NavEl:
+        def __init__(self, cls=""):
+            self._cls = cls
+
+        def get_attribute(self, name):
+            return self._cls
+
+        def click(self):
+            pass
+
+    class _NavPage:
+        def __init__(self, next_cls="", has_page_one=False):
+            self.next_cls = next_cls
+            self.has_page_one = has_page_one
+
+        def query_selector(self, sel):
+            if sel == "li.ant-pagination-next":
+                return _NavEl(self.next_cls)
+            if sel == "li.ant-pagination-item-1" and self.has_page_one:
+                return _NavEl()
+            return None
+
+        def evaluate(self, js):
+            return []
+
+    settle_calls = []
+
+    def _spy_settle(verdict):
+        def spy(browser, prev, max_wait_s=None, require_change=True):
+            settle_calls.append(require_change)
+            return verdict, []
+        return spy
+
+    saved_settle = cli._library_page_settled
+    try:
+        cli._library_page_settled = _spy_settle(False)
+        notes: list = []
+        ok = cli._library_next_page(_TurnBrowser(_NavPage()), notes)
+        if not ok or not notes or "did not settle" not in notes[0]:
+            failures.append(f"next_page degrade note: ok={ok} notes={notes}")
+        if settle_calls != [True]:
+            failures.append(f"next_page settle must require an id change: "
+                            f"{settle_calls}")
+        ok = cli._library_next_page(_TurnBrowser(_NavPage("disabled")), [])
+        if ok or len(settle_calls) != 1:
+            failures.append("disabled Next clicked or settle-waited")
+        settle_calls.clear()
+        cli._library_page_settled = _spy_settle(True)
+        ok = cli._library_goto_page(
+            _TurnBrowser(_NavPage(has_page_one=True)), 3, [])
+        if not ok or settle_calls != [False, True, True]:
+            failures.append(f"goto_page hop gating wrong: {settle_calls}")
+    finally:
+        cli._library_page_settled = saved_settle
+
+    # ---- an unsettled page 1 lands in the pick record; a settled run
+    # stays clean ----
+    rig = _Rig({1: [10]}, {10: (True, True)})
+    rec = _run(rig, settle=lambda *a, **k: (False, []))
+    if not rec.get("nav_notes") or rec["tier"] != 1:
+        failures.append(f"unsettled page not recorded (or pick broken): {rec}")
+    rig = _Rig({1: [10]}, {10: (True, True)})
+    rec = _run(rig)
+    if "nav_notes" in rec:
+        failures.append(f"settled run polluted with nav_notes: {rec}")
+
+    # ---- the blind 2s sleep is gone; page 1 settles before ranking ----
+    for fn in (cli._library_next_page, cli._library_goto_page):
+        s = inspect.getsource(fn)
+        if "wait_for_timeout(2000)" in s:
+            failures.append(f"{fn.__name__} kept the blind 2s sleep")
+        if "_library_page_settled" not in s:
+            failures.append(f"{fn.__name__} is not settle-gated")
+    ps = inspect.getsource(cli.pick_library_capture)
+    if ps.index("_library_page_settled") > ps.index("_library_product_thumbs"):
+        failures.append("page 1 must settle before the first thumbnail ranking")
+
+    # ---- 0.25.7 bug class: no raw newline in the state JS's literals ----
+    for q in ('"', "'"):
+        for lit in re.findall(q + r"[^" + q + r"]*" + q,
+                              cli._LIBRARY_CARD_STATE_JS):
+            if "\n" in lit.replace("\\n", ""):
+                failures.append(f"raw newline in state-JS literal {lit[:30]!r}")
+
+    # ---- the two card walks stay in sync (same filter + detection) ----
+    for frag in ("r.width < 40 || r.width > 400", "img.getBoundingClientRect()",
+                 "/#\\d+/"):
+        if frag not in cli._LIBRARY_CARD_STATE_JS \
+                or frag not in cli._LIBRARY_CARDS_JS:
+            failures.append(f"card walks diverged on {frag!r}")
 
     # ---- spec: activated on the library step, after the filter ----
     spec = yaml.safe_load((REPO / "tasks" / "ov80i.yaml").read_text())
