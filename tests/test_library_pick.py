@@ -35,10 +35,15 @@ the search runs as a pure state machine):
   walk,
 - GRID VISIBILITY (the grid scrolls inside a viewport-derived inner
   panel, so full_page screenshots clipped the bottom ~11 of 20 cards —
-  the ranker could only see half of every page): the grid screenshot
-  grows the viewport to the deepest card (bounded), always restores it
-  — even when the screenshot itself fails — never resizes when the grid
-  already fits, and degrades to the plain shot on any probe failure.
+  the ranker could only see half of every page; and the grid is only
+  ~625px of a 1600px page, so the rest of the frame cost resolution):
+  the grid screenshot grows the viewport to the card containers' bottom
+  edge (bounded), re-measures the bbox after the re-layout, CROPS to it
+  (labels included — the model maps thumbnails to ids by the "#N" text)
+  so thumbnails reach the model undownscaled, always restores the
+  viewport — even when the screenshot itself fails — never resizes when
+  the grid already fits, and degrades stage by stage to the plain
+  full-page shot.
 
 Run: uv run python tests/test_library_pick.py
 """
@@ -219,8 +224,8 @@ def main() -> int:
         viewport_size = {"width": 1600, "height": 1000}
 
         def evaluate(self, js):
-            if js is cli._LIBRARY_GRID_EXTENT_JS:
-                return 900   # grid fits: no viewport growth on this path
+            if js is cli._LIBRARY_GRID_BBOX_JS:
+                return None   # no grid bbox: no growth, no crop
             return ["101", "102", "103", "104", "105"]
 
     class _ThumbBrowser:
@@ -399,20 +404,29 @@ def main() -> int:
     # height derives from the viewport, and full_page screenshots stop at
     # the DOCUMENT's height — at 1000px only the top ~9 of a 20-card page
     # reached the ranker's image while its prompt listed all 20 ids. The
-    # grid screenshot grows the viewport to the deepest card and ALWAYS
-    # restores it ----
+    # grid screenshot grows the viewport to the containers' bottom edge,
+    # crops to their bbox (labels included) and ALWAYS restores the
+    # viewport ----
+    import io as _gio
+
+    from PIL import Image as _GImage
+
+    BOX = {"left": 265, "top": 419, "right": 890, "bottom": 1677}
+
     class _GridPage:
-        def __init__(self, extent, fail_resize=False, fail_extent=False):
-            self.extent = extent
+        def __init__(self, box=BOX, fail_resize=False, fail_probe=False):
+            self.box = box
             self.fail_resize = fail_resize
-            self.fail_extent = fail_extent
+            self.fail_probe = fail_probe
             self.viewport_size = {"width": 1600, "height": 1000}
             self.sets: list = []
+            self.probes = 0
 
         def evaluate(self, js):
-            if self.fail_extent:
+            if self.fail_probe:
                 raise RuntimeError("no dom")
-            return self.extent
+            self.probes += 1
+            return dict(self.box) if self.box else None
 
         def set_viewport_size(self, vp):
             if self.fail_resize:
@@ -424,42 +438,72 @@ def main() -> int:
             pass
 
     class _GridBrowser:
-        def __init__(self, page, boom=False):
+        def __init__(self, page, boom=False, real_png=True):
             self.page = page
             self.boom = boom
+            self.real_png = real_png
             self.shot_heights: list = []
 
         def screenshot_bytes(self, full_page=True):
-            self.shot_heights.append(self.page.viewport_size["height"])
+            h = self.page.viewport_size["height"]
+            self.shot_heights.append(h)
             if self.boom:
                 raise RuntimeError("shot failed")
-            return b"png"
+            if not self.real_png:
+                return b"png"
+            buf = _gio.BytesIO()
+            _GImage.new("RGB", (1600, h), (30, 30, 30)).save(buf, format="PNG")
+            return buf.getvalue()
 
-    # a clipped grid: grown to fit (+margin), shot tall, restored
-    gb = _GridBrowser(_GridPage(1677))
+    # a clipped grid: grown to fit its bottom edge (+margin), shot tall,
+    # CROPPED to the container bbox (+pad), viewport restored, bbox
+    # re-measured after the re-layout
+    gb = _GridBrowser(_GridPage())
     out = cli._library_grid_screenshot(gb)
-    if out != b"png" or gb.shot_heights != [1717]:
+    if gb.shot_heights != [1717]:
         failures.append(f"grid shot not taken tall: {gb.shot_heights}")
+    pad = cli.LIBRARY_GRID_CROP_PAD
+    with _GImage.open(_gio.BytesIO(out)) as im:
+        want = (890 - 265 + 2 * pad, min(1717, 1677 + pad) - (419 - pad))
+        if im.size != want:
+            failures.append(f"crop wrong: {im.size} != {want}")
     if gb.page.viewport_size["height"] != 1000 \
             or [s["height"] for s in gb.page.sets] != [1717, 1000]:
         failures.append(f"viewport not restored: {gb.page.sets}")
+    if gb.page.probes != 2:
+        failures.append(f"bbox not re-measured after growth: {gb.page.probes}")
 
-    # a grid that already fits: no viewport churn
-    gb = _GridBrowser(_GridPage(900))
-    cli._library_grid_screenshot(gb)
-    if gb.page.sets or gb.shot_heights != [1000]:
-        failures.append(f"needless resize: {gb.page.sets}")
+    # a grid that already fits: no viewport churn, one probe, still cropped
+    gb = _GridBrowser(_GridPage({"left": 265, "top": 119, "right": 890,
+                                 "bottom": 877}))
+    out = cli._library_grid_screenshot(gb)
+    if gb.page.sets or gb.shot_heights != [1000] or gb.page.probes != 1:
+        failures.append(f"needless resize/probe: {gb.page.sets} "
+                        f"{gb.page.probes}")
+    with _GImage.open(_gio.BytesIO(out)) as im:
+        if im.size != (890 - 265 + 2 * pad, 877 - 119 + 2 * pad):
+            failures.append(f"fits-crop wrong: {im.size}")
 
     # a monster grid: clamped to the cap
-    gb = _GridBrowser(_GridPage(9000))
+    gb = _GridBrowser(_GridPage(dict(BOX, bottom=9000)))
     cli._library_grid_screenshot(gb)
     if gb.page.sets[0]["height"] != cli.LIBRARY_GRID_MAX_VIEWPORT_H:
         failures.append(f"viewport growth not capped: {gb.page.sets}")
 
-    # extent probe failing / resize refused: plain screenshot, no raise
-    for label, page in (("extent fail", _GridPage(0, fail_extent=True)),
-                        ("resize fail", _GridPage(1677, fail_resize=True))):
-        gb = _GridBrowser(page)
+    # degradations: empty grid -> plain uncropped shot; probe crash /
+    # resize refusal / undecodable screenshot -> a shot always comes back
+    gb = _GridBrowser(_GridPage(None))
+    out = cli._library_grid_screenshot(gb)
+    with _GImage.open(_gio.BytesIO(out)) as im:
+        if im.size != (1600, 1000) or gb.page.sets:
+            failures.append(f"empty grid mishandled: {im.size} {gb.page.sets}")
+    for label, gb in (
+        ("probe fail", _GridBrowser(_GridPage(fail_probe=True),
+                                    real_png=False)),
+        ("resize fail", _GridBrowser(_GridPage(fail_resize=True),
+                                     real_png=False)),
+        ("bad png", _GridBrowser(_GridPage(), real_png=False)),
+    ):
         try:
             if cli._library_grid_screenshot(gb) != b"png":
                 failures.append(f"{label}: no screenshot returned")
@@ -467,7 +511,7 @@ def main() -> int:
             failures.append(f"{label}: raised {e}")
 
     # the screenshot itself failing STILL restores the viewport
-    gb = _GridBrowser(_GridPage(1677), boom=True)
+    gb = _GridBrowser(_GridPage(), boom=True)
     try:
         cli._library_grid_screenshot(gb)
     except Exception:
@@ -481,7 +525,7 @@ def main() -> int:
         failures.append("ranker not wired to the grid screenshot")
 
     # ---- 0.25.7 bug class: no raw newline in the new JS's literals ----
-    for js_name in ("_LIBRARY_CARD_STATE_JS", "_LIBRARY_GRID_EXTENT_JS"):
+    for js_name in ("_LIBRARY_CARD_STATE_JS", "_LIBRARY_GRID_BBOX_JS"):
         for q in ('"', "'"):
             for lit in re.findall(q + r"[^" + q + r"]*" + q,
                                   getattr(cli, js_name)):
@@ -493,7 +537,7 @@ def main() -> int:
     for frag in ("r.width < 40 || r.width > 400", "img.getBoundingClientRect()",
                  "/#\\d+/"):
         for js_name in ("_LIBRARY_CARDS_JS", "_LIBRARY_CARD_STATE_JS",
-                        "_LIBRARY_GRID_EXTENT_JS"):
+                        "_LIBRARY_GRID_BBOX_JS"):
             if frag not in getattr(cli, js_name):
                 failures.append(f"{js_name} diverged on {frag!r}")
 

@@ -1334,11 +1334,12 @@ _LIBRARY_CARD_STATE_JS = """
 """
 
 # Third sibling of the card walk (keep in sync): the document-coordinate
-# bottom edge of the DEEPEST card, so the grid screenshot can grow the
-# viewport to fit every card.
-_LIBRARY_GRID_EXTENT_JS = """
+# bounding box of the card CONTAINERS — labels included, so a crop keeps
+# the "#N" text the model needs to map thumbnails to the prompt's ids.
+# null when the grid is empty.
+_LIBRARY_GRID_BBOX_JS = """
 () => {
-  let maxBottom = 0;
+  let box = null;
   document.querySelectorAll('img').forEach(img => {
     const r = img.getBoundingClientRect();
     if (r.width < 40 || r.width > 400) return;
@@ -1347,56 +1348,108 @@ _LIBRARY_GRID_EXTENT_JS = """
       node = node.parentElement;
       if (node && /#\\d+/.test(node.innerText || '') &&
           (node.innerText.match(/#\\d+/g) || []).length === 1) {
-        maxBottom = Math.max(maxBottom, r.bottom + window.scrollY);
+        const c = node.getBoundingClientRect();
+        const t = c.top + window.scrollY, b = c.bottom + window.scrollY;
+        if (!box) box = {left: c.left, top: t, right: c.right, bottom: b};
+        else {
+          box.left = Math.min(box.left, c.left);
+          box.top = Math.min(box.top, t);
+          box.right = Math.max(box.right, c.right);
+          box.bottom = Math.max(box.bottom, b);
+        }
         return;
       }
     }
   });
-  return maxBottom;
+  return box;
 }
 """
 
 LIBRARY_GRID_MAX_VIEWPORT_H = 3000
+LIBRARY_GRID_CROP_PAD = 16
+
+
+def _library_grid_bbox(browser) -> dict | None:
+    try:
+        box = browser.page.evaluate(_LIBRARY_GRID_BBOX_JS)
+        if box and box["right"] > box["left"] and box["bottom"] > box["top"]:
+            return box
+    except Exception:
+        pass
+    return None
+
+
+def _crop_to_grid(png: bytes, box: dict) -> bytes:
+    """Crop the shot to the grid's bounding box (plus padding). The grid
+    occupies ~625px of a 1600px-wide page — cropping away the sidebar and
+    the viewer panel puts the whole grid under the vision cap in BOTH
+    dimensions, so the ranker sees thumbnails at native resolution instead
+    of downscaled. Degrades to the full shot on any failure."""
+    import io
+
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(png)) as im:
+            pad = LIBRARY_GRID_CROP_PAD
+            left = max(0, int(box["left"]) - pad)
+            top = max(0, int(box["top"]) - pad)
+            right = min(im.width, int(box["right"]) + pad)
+            bottom = min(im.height, int(box["bottom"]) + pad)
+            if right - left < 100 or bottom - top < 100:
+                return png
+            crop = im.crop((left, top, right, bottom))
+            buf = io.BytesIO()
+            crop.save(buf, format="PNG")
+            return buf.getvalue()
+    except Exception as e:
+        print(f"  warning: grid crop failed: {e}; sending the full shot")
+        return png
 
 
 def _library_grid_screenshot(browser) -> bytes:
-    """Full-page screenshot with the WHOLE capture grid in frame. The grid
-    scrolls inside an inner panel whose height derives from the viewport,
-    and a full-page screenshot stops at the DOCUMENT's height — it never
-    reaches into an inner container's overflow. At the default 1000px
-    viewport only the top ~9 of a 20-card page were in the image while the
-    ranker's prompt listed all 20 ids: the bottom half of every page was
-    invisible to the search. Measured live: the panel is viewport-derived,
-    so growing the viewport to the deepest card's bottom edge puts the
-    whole grid in one screenshot (all thumbnails are in the DOM and
-    painted without scrolling — no lazy-load). The viewport is restored no
-    matter what, so the deliverable screenshot and everything downstream
-    keep their normal geometry. Degrades to the plain screenshot on any
-    failure."""
+    """Screenshot with the WHOLE capture grid in frame at native
+    resolution. Two field-measured facts drive this: (1) the grid scrolls
+    inside an inner panel whose height derives from the viewport, and a
+    full-page screenshot stops at the DOCUMENT's height — at the default
+    1000px viewport only the top ~9 of a 20-card page were in the image
+    while the ranker's prompt listed all 20 ids; (2) the grid itself is
+    only ~625px wide, so cropped to its bounding box the shot fits the
+    vision cap in BOTH dimensions and the thumbnails reach the model
+    undownscaled. So: probe the card containers' bbox, grow the viewport
+    to fit its bottom edge (the panel is viewport-derived; all thumbnails
+    are in the DOM and painted without scrolling — no lazy-load),
+    re-measure after the re-layout, screenshot, crop. The viewport is
+    restored no matter what, so the deliverable screenshot and everything
+    downstream keep their normal geometry; every stage degrades toward
+    the plain full-page screenshot, never fails."""
     page = browser.page
-    try:
-        need = int(page.evaluate(_LIBRARY_GRID_EXTENT_JS) or 0) + 40
-    except Exception:
-        need = 0
+    box = _library_grid_bbox(browser)
+    need = (int(box["bottom"]) + 40) if box else 0
     vp = page.viewport_size or {"width": 1600, "height": 1000}
-    if need <= vp["height"]:
-        return browser.screenshot_bytes(full_page=True)
+    grown = False
     try:
-        page.set_viewport_size(
-            {"width": vp["width"],
-             "height": min(need, LIBRARY_GRID_MAX_VIEWPORT_H)})
-        page.wait_for_timeout(1000)  # re-layout at the taller viewport
-    except Exception as e:
-        print(f"  warning: could not grow the viewport for the grid "
-              f"screenshot: {e}; judging the visible part")
-    try:
-        return browser.screenshot_bytes(full_page=True)
+        if need > vp["height"]:
+            try:
+                page.set_viewport_size(
+                    {"width": vp["width"],
+                     "height": min(need, LIBRARY_GRID_MAX_VIEWPORT_H)})
+                page.wait_for_timeout(1000)  # re-layout at the taller viewport
+                grown = True
+                # the re-layout moves the cards: re-measure for the crop
+                box = _library_grid_bbox(browser) or box
+            except Exception as e:
+                print(f"  warning: could not grow the viewport for the grid "
+                      f"screenshot: {e}; judging the visible part")
+        png = browser.screenshot_bytes(full_page=True)
+        return _crop_to_grid(png, box) if box else png
     finally:
-        try:
-            page.set_viewport_size(vp)
-            page.wait_for_timeout(500)
-        except Exception:
-            pass
+        if grown:
+            try:
+                page.set_viewport_size(vp)
+                page.wait_for_timeout(500)
+            except Exception:
+                pass
 
 
 _SELECTED_CAPTURE_RE = re.compile(r"Capture\s+#(\d+)\s+from", re.I)
