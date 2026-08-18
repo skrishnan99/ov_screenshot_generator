@@ -30,9 +30,17 @@ the search runs as a pure state machine):
   PAINTED, and the view is stable across two reads — bounded; a page
   that never settles is judged as-is and noted in the pick record
   (nav_notes); the blind 2s sleep is gone from both nav helpers; page 1
-  settles before the first thumbnail ranking; the state JS carries no
-  raw newline inside quoted literals and stays in sync with the card
-  walk,
+  settles before the first thumbnail ranking; the walk JS carries no
+  raw newline inside quoted literals,
+- BATCHED POPULATION (measured live: after Next the grid goes stale ->
+  empty -> a 5-card batch -> 20 cards a second later; a stability-only
+  gate released on the batch and the ranker judged a page whose real
+  part captures were not yet in the DOM): the gate now demands the
+  EXPECTED card count — min(page size, total - size*(N-1)) from the
+  page's static "N Total Captures" / "N / page" texts — plus painted +
+  one confirming read; without readable texts it falls back to three
+  identical reads and notes the degradation; page numbers are threaded
+  from the pick loop and goto hops so every gate knows its count,
 - GRID VISIBILITY (the grid scrolls inside a viewport-derived inner
   panel, so full_page screenshots clipped the bottom ~11 of 20 cards —
   the ranker could only see half of every page; and the grid is only
@@ -80,7 +88,8 @@ class _Rig:
         self.first_by_page = {p: (ids[0] if ids else 900 + p)
                               for p, ids in page_thumbs.items()}
 
-    def product_thumbs(self, browser, recipe, part_desc="", top_n=3):
+    def product_thumbs(self, browser, recipe, part_desc="", top_n=3,
+                       trace=None):
         if self.thumb_crash:
             raise RuntimeError("vision down")
         return [{"id": i, "badge": "pass"}
@@ -97,7 +106,7 @@ class _Rig:
         product, overlay = self.viewers.get(self.selected, (False, False))
         return {"product_image": product, "overlay": overlay, "reason": "rig"}
 
-    def next_page(self, browser, notes=None):
+    def next_page(self, browser, notes=None, page_no=None):
         if self.page >= self.total_pages:
             return False
         self.page += 1
@@ -112,7 +121,8 @@ class _Rig:
         return self.first_by_page.get(self.page, 999)
 
 
-def _settled(browser, prev, max_wait_s=None, require_change=True):
+def _settled(browser, prev, max_wait_s=None, require_change=True,
+             expected=None):
     return True, []
 
 
@@ -295,12 +305,21 @@ def main() -> int:
 
     _stub = _ThumbBackend()
     _llm.set_backend(_stub)
+    trace: dict = {}
     try:
-        got = cli._library_product_thumbs(_ThumbBrowser(), R, "desc", top_n=3)
+        got = cli._library_product_thumbs(_ThumbBrowser(), R, "desc", top_n=3,
+                                          trace=trace)
     finally:
         _llm.set_backend(None)
     if [c["id"] for c in got] != [105, 102, 101]:
         failures.append(f"ranker order/cap wrong: {got}")
+    # the trace records the raw model answer and the full order (WHY)
+    if trace.get("cards") != 5 or trace.get("model_ranked") != model_answer \
+            or trace.get("ordered") != [105, 102, 101, 103, 104]:
+        failures.append(f"ranker trace incomplete: {trace}")
+    if 'rec.setdefault("pages", []).append(trace)' not in \
+            inspect.getsource(cli.pick_library_capture):
+        failures.append("per-page ranker trace not stored in the pick record")
     prompt_flat = " ".join(getattr(_stub, "prompt", "").split())
     if "RANKED most likely first" not in prompt_flat:
         failures.append("thumbnail prompt lost the ranking instruction")
@@ -341,12 +360,13 @@ def main() -> int:
         def __init__(self, page):
             self.page = page
 
-    def _settle_run(page, prev, require_change=True):
+    def _settle_run(page, prev, require_change=True, expected=None):
         saved = cli.LIBRARY_PAGE_TURN_WAIT_S
         try:
-            cli.LIBRARY_PAGE_TURN_WAIT_S = 0.4
+            cli.LIBRARY_PAGE_TURN_WAIT_S = 0.6
             return cli._library_page_settled(_TurnBrowser(page), prev,
-                                             require_change=require_change)
+                                             require_change=require_change,
+                                             expected=expected)
         finally:
             cli.LIBRARY_PAGE_TURN_WAIT_S = saved
 
@@ -376,9 +396,77 @@ def main() -> int:
     # ... but identical content is FINE when no change is required (the
     # page-1 jump's destination can equal the origin)
     ok, _ids = _settle_run(_TurnPage([(0, new_ok)]), [20, 21],
-                           require_change=False)
+                           require_change=False, expected=2)
     if not ok:
         failures.append("require_change=False rejected a settled grid")
+
+    # ---- BATCHED POPULATION (measured live: 20 stale -> 0 -> 5 cards ->
+    # 20 cards a second later): a partial batch that holds across reads
+    # must NOT be believed when the expected count is known ----
+    def _cards(*ids):
+        return [{"id": str(i), "painted": True} for i in ids]
+    stale = _cards(*range(2610, 2590, -1))
+    batch = _cards(2590, 2589, 2588, 2587, 2586)
+    full = _cards(*range(2590, 2570, -1))
+    # the partial batch holds for THREE reads (2s..4s) before the rest lands
+    timeline = [(0, stale), (1000, []), (2000, batch), (5000, full)]
+    page = _TurnPage(timeline)
+    ok, ids = _settle_run(page, [c["id"] for c in stale], expected=20)
+    if not ok or len(ids) != 20 or ids[0] != 2590:
+        failures.append(f"expected-count gate released on the batch: {ok} "
+                        f"{len(ids)} cards")
+    if page.clock_ms < 6000:
+        failures.append(f"settled before the full grid + confirm read: "
+                        f"{page.clock_ms}ms")
+    # the same timeline with NO expected count: stability alone must
+    # demand LIBRARY_SETTLE_STABLE_READS_FALLBACK identical reads — three
+    # here — so a batch held for two reads is still not enough ...
+    page = _TurnPage([(0, stale), (1000, []), (2000, batch), (4000, full)])
+    ok, ids = _settle_run(page, [c["id"] for c in stale])
+    if not ok or len(ids) != 20:
+        failures.append(f"fallback gate released on a 2-read batch: {ok} "
+                        f"{len(ids)} cards")
+    # ... and the two-read gate the fallback replaces would have released
+    # on it (documenting the fixed weakness, not asserting it)
+    if cli.LIBRARY_SETTLE_STABLE_READS_FALLBACK < 3:
+        failures.append("fallback stability window too short for batches")
+
+    # a wrong count never settles (bounded), ids still reported
+    ok, ids = _settle_run(_TurnPage([(0, batch)]), [], expected=20)
+    if ok or len(ids) != 5:
+        failures.append(f"short grid claimed settled under expected=20: {ok}")
+    # the last page: fewer cards is exactly right when expected says so
+    ok, ids = _settle_run(_TurnPage([(0, batch)]), [], expected=5)
+    if not ok:
+        failures.append("last-page short grid rejected under expected=5")
+    # a zero-capture recipe: expected 0 settles on an empty grid
+    ok, ids = _settle_run(_TurnPage([(0, [])]), [], require_change=False,
+                          expected=0)
+    if not ok or ids:
+        failures.append("expected=0 did not settle on the empty grid")
+
+    # ---- the expected count comes from two static page texts ----
+    class _CountPage:
+        def __init__(self, text):
+            self.text = text
+
+        def evaluate(self, js):
+            return self.text
+
+    def _exp(text, page_no):
+        return cli._library_expected_cards(_TurnBrowser(_CountPage(text)),
+                                           page_no)
+    body = "Library\n77 Total Captures\nSort By\n20 / page\nGo to"
+    if [_exp(body, n) for n in (1, 2, 3, 4, 5)] != [20, 20, 20, 17, 0]:
+        failures.append(f"expected counts wrong: "
+                        f"{[_exp(body, n) for n in (1, 2, 3, 4, 5)]}")
+    if _exp("Library\n2,243 Total Captures\n20 / page", 1) != 20:
+        failures.append("comma total not parsed")
+    if _exp("Library\n0 Total Captures\n20 / page", 1) != 0:
+        failures.append("zero total must expect zero cards")
+    for text in ("Library\n77 Total Captures", "Library\n20 / page", ""):
+        if _exp(text, 2) is not None:
+            failures.append(f"unreadable texts must yield None: {text!r}")
 
     # ---- nav helpers: settle-gated, degradation noted, disabled Next
     # costs no wait ----
@@ -410,7 +498,8 @@ def main() -> int:
     settle_calls = []
 
     def _spy_settle(verdict):
-        def spy(browser, prev, max_wait_s=None, require_change=True):
+        def spy(browser, prev, max_wait_s=None, require_change=True,
+                expected=None):
             settle_calls.append(require_change)
             return verdict, []
         return spy
@@ -437,6 +526,28 @@ def main() -> int:
     finally:
         cli._library_page_settled = saved_settle
 
+    # ---- page numbers reach the gate as expected counts: the pick loop
+    # settles page N+1 on Next, goto hops 2..N, entry gate page 1 ----
+    exp_calls = []
+    saved_exp = cli._library_settle_expectation
+
+    def _spy_exp(browser, page_no, notes):
+        exp_calls.append(page_no)
+        return None
+    cli._library_settle_expectation = _spy_exp
+    cli._library_page_settled = _spy_settle(True)
+    try:
+        cli._library_goto_page(_TurnBrowser(_NavPage(has_page_one=True)), 4, [])
+        if exp_calls != [1, 2, 3, 4]:
+            failures.append(f"goto_page hop numbering wrong: {exp_calls}")
+    finally:
+        cli._library_settle_expectation = saved_exp
+        cli._library_page_settled = saved_settle
+    ps_src = inspect.getsource(cli.pick_library_capture)
+    if "page_no=page + 1" not in ps_src \
+            or "_library_settle_expectation(browser, 1, nav_notes)" not in ps_src:
+        failures.append("pick loop does not hand page numbers to the gate")
+
     # ---- an unsettled page 1 lands in the pick record; a settled run
     # stays clean ----
     rig = _Rig({1: [10]}, {10: (True, True)})
@@ -445,8 +556,8 @@ def main() -> int:
         failures.append(f"unsettled page not recorded (or pick broken): {rec}")
     rig = _Rig({1: [10]}, {10: (True, True)})
     rec = _run(rig)
-    if "nav_notes" in rec:
-        failures.append(f"settled run polluted with nav_notes: {rec}")
+    if any("did not settle" in n for n in rec.get("nav_notes", [])):
+        failures.append(f"settled run polluted with settle notes: {rec}")
 
     # ---- the blind 2s sleep is gone; page 1 settles before ranking ----
     for fn in (cli._library_next_page, cli._library_goto_page):

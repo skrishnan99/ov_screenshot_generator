@@ -1605,7 +1605,8 @@ def describe_part_from_image(path) -> str | None:
 
 
 def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
-                            top_n: int = LIBRARY_PAGE_CANDIDATES) -> list[dict]:
+                            top_n: int = LIBRARY_PAGE_CANDIDATES,
+                            trace: dict | None = None) -> list[dict]:
     """The page's click candidates, in click order: one batched vision call
     over the grid FILTERS to thumbnails plausibly showing the part, then
     the deterministic badge sort orders them (verdict-tagged > untagged >
@@ -1615,7 +1616,9 @@ def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
     model's own confidence order. Answers are validated against the DOM's
     card list (hallucinated ids dropped, duplicates collapsed), so a wild
     verdict can never click a nonexistent card. Returns [{id, badge}];
-    empty on any failure."""
+    empty on any failure. `trace`, when given, receives the page's card
+    count, the model's raw ranked answer + reason and the full ordered
+    list — the manifest's record of WHY these candidates, in this order."""
     from core import capture_criteria as cc, llm
     from core.llm import downscale_for_vision
 
@@ -1633,8 +1636,13 @@ def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
             images=[downscale_for_vision(_library_grid_screenshot(browser))],
             max_tokens=800, model=llm.SONNET,
         )
-        ordered = _order_candidates(out.get("product_captures", []), cards,
-                                    recipe)
+        model_ranked = [int(i) for i in out.get("product_captures", [])
+                        if str(i).lstrip("-").isdigit()]
+        ordered = _order_candidates(model_ranked, cards, recipe)
+        if trace is not None:
+            trace.update({"cards": len(cards), "model_ranked": model_ranked,
+                          "model_reason": str(out.get("reason", ""))[:200],
+                          "ordered": [c["id"] for c in ordered]})
         return ordered[:top_n]
     except Exception as e:
         print(f"  warning: thumbnail judgement failed: {e}")
@@ -1702,34 +1710,78 @@ def _click_library_capture(browser, cid: int) -> bool:
 LIBRARY_PAGE_TURN_WAIT_S = 20
 
 
+# "20 / page" — the pagination's page-size control, plain text on the page.
+_LIBRARY_PAGE_SIZE_RE = re.compile(r"(\d+)\s*/\s*page", re.I)
+# Without an expected count the gate can only watch for stability; the
+# grid populates in BATCHES (5 cards, then 20 a second later — measured
+# live), so a partial batch must hold this many consecutive reads before
+# it is believed. With an expected count, one confirming read suffices.
+LIBRARY_SETTLE_STABLE_READS_FALLBACK = 3
+
+
+def _library_expected_cards(browser, page_no: int) -> int | None:
+    """How many cards page_no MUST show, from two static texts on the page:
+    the filtered total ("77 Total Captures") and the page size ("20 /
+    page"). None when either is unreadable — the gate then falls back to
+    stability alone. Read BEFORE the pagination click: both are constant
+    across page turns."""
+    try:
+        total_s = _library_count(browser.page)
+        body = browser.page.evaluate("document.body.innerText") or ""
+        m = _LIBRARY_PAGE_SIZE_RE.search(body)
+        if total_s is None or m is None:
+            return None
+        total = int(str(total_s).replace(",", ""))
+        size = int(m.group(1))
+        if size <= 0 or page_no < 1:
+            return None
+        return max(0, min(size, total - size * (page_no - 1)))
+    except Exception:
+        return None
+
+
 def _library_page_settled(browser, prev_ids, max_wait_s: float | None = None,
-                          require_change: bool = True) -> tuple[bool, list[int]]:
+                          require_change: bool = True,
+                          expected: int | None = None) -> tuple[bool, list[int]]:
     """After a pagination click: poll until the grid shows the DESTINATION
     page — card ids differ from prev_ids (skipped via require_change=False
     for hops whose destination can equal the origin, e.g. clicking "1"
-    while already on page 1), every card's thumbnail has PAINTED, and the
-    view holds identical across two consecutive reads. The fixed 2s sleep
-    this replaces raced the SPA (the same grid rendered 14s late in the
-    field): the thumbnail ranker judged a stale or half-painted grid and a
-    valid-looking wrong pick shipped, silently. Bounded, 1s cadence;
-    returns (settled, ids) — on timeout the caller degrades to judging
-    whatever is rendered, never fails."""
+    while already on page 1), every card's thumbnail has PAINTED, the card
+    COUNT equals `expected` when known, and the view holds identical
+    across consecutive reads (one confirming read with an expected count;
+    LIBRARY_SETTLE_STABLE_READS_FALLBACK without). The grid populates in
+    batches — a field page went 5 cards, then 20 a second later — and a
+    stability-only gate released on the 5-card batch: the ranker judged
+    a page whose real part captures were not yet in the DOM. Bounded, 1s
+    cadence; returns (settled, ids) — on timeout the caller degrades to
+    judging whatever is rendered, never fails."""
     if max_wait_s is None:
         max_wait_s = LIBRARY_PAGE_TURN_WAIT_S
     deadline = time.monotonic() + max_wait_s
     prev = list(prev_ids)
+    need_reads = 2 if expected is not None else LIBRARY_SETTLE_STABLE_READS_FALLBACK
     last_good: list[int] | None = None
+    streak = 0
     while True:
         ids: list[int] = []
         try:
             cards = _library_cards(browser)
             ids = [int(c["id"]) for c in cards]
-            good = (bool(ids) and (not require_change or ids != prev)
-                    and all(c.get("painted") for c in cards))
+            painted = all(c.get("painted") for c in cards)
+            if expected is not None:
+                good = (len(ids) == expected and painted
+                        and (expected == 0 or not require_change or ids != prev))
+            else:
+                good = (bool(ids) and (not require_change or ids != prev)
+                        and painted)
         except Exception:
             good = False
         if good and ids == last_good:
-            return True, ids
+            streak += 1
+            if streak >= need_reads:
+                return True, ids
+        else:
+            streak = 1 if good else 0
         last_good = ids if good else None
         if time.monotonic() > deadline:
             return False, ids
@@ -1742,19 +1794,40 @@ def _library_nav_note(notes: list | None, msg: str) -> None:
         notes.append(msg)
 
 
-def _library_next_page(browser, notes: list | None = None) -> bool:
+def _library_settle_expectation(browser, page_no: int | None,
+                                notes: list | None) -> int | None:
+    """The expected card count for a hop, or None (noted once) when the
+    page's total / page-size texts can't be read."""
+    if page_no is None:
+        return None
+    expected = _library_expected_cards(browser, page_no)
+    if expected is None:
+        msg = ("page total/page-size unreadable; settling page "
+               f"{page_no} on stability alone")
+        if notes is None or msg not in notes:
+            _library_nav_note(notes, msg)
+    return expected
+
+
+def _library_next_page(browser, notes: list | None = None,
+                       page_no: int | None = None) -> bool:
+    """Click Next and settle on the destination page (page_no, when the
+    caller knows it, gives the gate its exact expected card count)."""
     try:
         prev = _library_card_ids(browser)
+        expected = _library_settle_expectation(browser, page_no, notes)
         nxt = browser.page.query_selector("li.ant-pagination-next")
         if nxt is None or "disabled" in (nxt.get_attribute("class") or ""):
             return False
         nxt.click()
     except Exception:
         return False
-    settled, _ = _library_page_settled(browser, prev)
+    settled, ids = _library_page_settled(browser, prev, expected=expected)
     if not settled:
         _library_nav_note(notes, "page turn did not settle within "
-                          f"{LIBRARY_PAGE_TURN_WAIT_S}s; judging the grid as-is")
+                          f"{LIBRARY_PAGE_TURN_WAIT_S}s ({len(ids)} cards"
+                          + (f", expected {expected}" if expected is not None
+                             else "") + "); judging the grid as-is")
     return True
 
 
@@ -1763,18 +1836,20 @@ def _library_goto_page(browser, page_no: int, notes: list | None = None) -> bool
     deterministic route is: click page 1 (always visible), then Next
     (page_no - 1) times — every hop settle-gated like the forward scan."""
     try:
+        expected = _library_settle_expectation(browser, 1, notes)
         one = browser.page.query_selector("li.ant-pagination-item-1")
         if one is None:
             return page_no == 1
         one.click()
     except Exception:
         return False
-    settled, _ = _library_page_settled(browser, [], require_change=False)
+    settled, _ = _library_page_settled(browser, [], require_change=False,
+                                       expected=expected)
     if not settled:
         _library_nav_note(notes, "jump to page 1 did not settle; "
                           "proceeding as-is")
-    for _ in range(page_no - 1):
-        if not _library_next_page(browser, notes):
+    for hop in range(2, page_no + 1):
+        if not _library_next_page(browser, notes, page_no=hop):
             return False
     return True
 
@@ -1811,7 +1886,9 @@ def pick_library_capture(browser, recipe: str = "",
         # The entry grid gets the same settle gate as every page turn: the
         # filter's verdict proves cards rendered, not that their thumbnails
         # painted — and the ranker must never judge grey tiles.
-        settled, _ = _library_page_settled(browser, [], require_change=False)
+        settled, _ = _library_page_settled(
+            browser, [], require_change=False,
+            expected=_library_settle_expectation(browser, 1, nav_notes))
         if not settled:
             _library_nav_note(nav_notes, "page 1 grid did not settle; "
                               "judging it as-is")
@@ -1821,7 +1898,10 @@ def pick_library_capture(browser, recipe: str = "",
         page = 1
         while page <= page_cap:
             rec["pages_scanned"] = page
-            candidates = _library_product_thumbs(browser, recipe, part_desc)
+            trace: dict = {"page": page}
+            candidates = _library_product_thumbs(browser, recipe, part_desc,
+                                                 trace=trace)
+            rec.setdefault("pages", []).append(trace)
             if candidates:
                 print(f"  library pick: page {page} candidates (badge, then "
                       "newest first): " + ", ".join(
@@ -1852,7 +1932,8 @@ def pick_library_capture(browser, recipe: str = "",
                 if tier in (2, 3) and tier < best[0]:
                     best = (tier, (page, cid))
             if capped or page == page_cap \
-                    or not _library_next_page(browser, nav_notes):
+                    or not _library_next_page(browser, nav_notes,
+                                              page_no=page + 1):
                 if page == page_cap and not capped:
                     print(f"  library pick: page cap ({page_cap}) reached")
                 break
