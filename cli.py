@@ -1282,64 +1282,25 @@ def prepare_model_view(browser, block_type: str, model_name: str) -> bool:
 
 LIBRARY_PAGE_SCAN_CAP = 5
 LIBRARY_CLICK_CAP = 10
-# Per-page candidate budget: the thumbnail call RANKS likeliest-first and
-# only the top N get clicked, so the global click budget spans pages
-# instead of drowning on page 1 (newest-first sorting fronts dim
-# production triggers; the genuine part captures often sit pages deep)."
+# Per-page candidate budget: the thumbnail call FILTERS to product-bearing
+# cards, the badge sort orders them (verdict-tagged > untagged > trainset,
+# newest first within each), and only the top N get clicked, so the global
+# click budget spans pages instead of drowning on page 1 (newest-first
+# sorting fronts dim production triggers; the genuine part captures often
+# sit pages deep).
 LIBRARY_PAGE_CANDIDATES = 3
 
-_LIBRARY_CARDS_JS = """
+# THE card walk — the single source of card detection for the whole
+# library pick. A card is a thumbnail-sized <img> whose nearest ancestor
+# carries exactly one "#N" label; each card reports its id, whether the
+# thumbnail has PAINTED (settle gate), its container's document-coordinate
+# box (grid crop) and its container's innerText (badge ordering: PASS/FAIL
+# tag, "Used for training"). Document order == grid order == recency
+# (the library sorts newest first). Every consumer derives from this one
+# walk — there is nothing to keep in sync.
+_LIBRARY_CARD_WALK_JS = """
 () => {
   const out = [];
-  document.querySelectorAll('img').forEach(img => {
-    const r = img.getBoundingClientRect();
-    if (r.width < 40 || r.width > 400) return;
-    let node = img;
-    for (let i = 0; i < 6 && node; i++) {
-      node = node.parentElement;
-      if (node && /#\\d+/.test(node.innerText || '') &&
-          (node.innerText.match(/#\\d+/g) || []).length === 1) {
-        out.push((node.innerText.match(/#(\\d+)/) || [])[1]);
-        return;
-      }
-    }
-  });
-  return out;
-}
-"""
-
-# Sibling of _LIBRARY_CARDS_JS — the SAME card-detection walk (keep the
-# two in sync) — but also reporting whether each card's thumbnail has
-# actually painted, so the page-turn settle gate can refuse to hand the
-# thumbnail ranker a half-rendered grid.
-_LIBRARY_CARD_STATE_JS = """
-() => {
-  const out = [];
-  document.querySelectorAll('img').forEach(img => {
-    const r = img.getBoundingClientRect();
-    if (r.width < 40 || r.width > 400) return;
-    let node = img;
-    for (let i = 0; i < 6 && node; i++) {
-      node = node.parentElement;
-      if (node && /#\\d+/.test(node.innerText || '') &&
-          (node.innerText.match(/#\\d+/g) || []).length === 1) {
-        out.push({id: (node.innerText.match(/#(\\d+)/) || [])[1],
-                  painted: !!(img.complete && img.naturalWidth > 0)});
-        return;
-      }
-    }
-  });
-  return out;
-}
-"""
-
-# Third sibling of the card walk (keep in sync): the document-coordinate
-# bounding box of the card CONTAINERS — labels included, so a crop keeps
-# the "#N" text the model needs to map thumbnails to the prompt's ids.
-# null when the grid is empty.
-_LIBRARY_GRID_BBOX_JS = """
-() => {
-  let box = null;
   document.querySelectorAll('img').forEach(img => {
     const r = img.getBoundingClientRect();
     if (r.width < 40 || r.width > 400) return;
@@ -1349,34 +1310,105 @@ _LIBRARY_GRID_BBOX_JS = """
       if (node && /#\\d+/.test(node.innerText || '') &&
           (node.innerText.match(/#\\d+/g) || []).length === 1) {
         const c = node.getBoundingClientRect();
-        const t = c.top + window.scrollY, b = c.bottom + window.scrollY;
-        if (!box) box = {left: c.left, top: t, right: c.right, bottom: b};
-        else {
-          box.left = Math.min(box.left, c.left);
-          box.top = Math.min(box.top, t);
-          box.right = Math.max(box.right, c.right);
-          box.bottom = Math.max(box.bottom, b);
-        }
+        out.push({id: (node.innerText.match(/#(\\d+)/) || [])[1],
+                  painted: !!(img.complete && img.naturalWidth > 0),
+                  text: node.innerText || '',
+                  box: {left: c.left, top: c.top + window.scrollY,
+                        right: c.right, bottom: c.bottom + window.scrollY}});
         return;
       }
     }
   });
-  return box;
+  return out;
 }
 """
 
-LIBRARY_GRID_MAX_VIEWPORT_H = 3000
-LIBRARY_GRID_CROP_PAD = 16
+
+def _library_cards(browser) -> list[dict]:
+    """The grid's cards in grid (= recency) order; [] on any failure."""
+    try:
+        cards = browser.page.evaluate(_LIBRARY_CARD_WALK_JS) or []
+        return [c for c in cards if str(c.get("id", "")).isdigit()]
+    except Exception:
+        return []
+
+
+def _library_card_ids(browser) -> list[int]:
+    return [int(c["id"]) for c in _library_cards(browser)]
 
 
 def _library_grid_bbox(browser) -> dict | None:
-    try:
-        box = browser.page.evaluate(_LIBRARY_GRID_BBOX_JS)
-        if box and box["right"] > box["left"] and box["bottom"] > box["top"]:
-            return box
-    except Exception:
-        pass
+    """Union of the card CONTAINERS' boxes — labels included, so a crop
+    keeps the "#N" text the model needs to map thumbnails to the prompt's
+    ids. None when the grid is empty."""
+    boxes = [c["box"] for c in _library_cards(browser) if c.get("box")]
+    if not boxes:
+        return None
+    box = {"left": min(b["left"] for b in boxes),
+           "top": min(b["top"] for b in boxes),
+           "right": max(b["right"] for b in boxes),
+           "bottom": max(b["bottom"] for b in boxes)}
+    if box["right"] > box["left"] and box["bottom"] > box["top"]:
+        return box
     return None
+
+
+# Badge groups — the SECONDARY ordering among a page's product-bearing
+# thumbnails. Thumbnails never show overlays, so once the model has kept
+# only cards showing THE part, the card's own text is the best available
+# predictor of a full AI overlay behind it: a PASS/FAIL tag means an
+# inspection ran (overlays likely); "Used for training" means a trainset
+# capture (least likely). Ties break by recency = grid position.
+BADGE_VERDICT, BADGE_NONE, BADGE_TRAINING = 0, 1, 2
+_BADGE_NAMES = {BADGE_VERDICT: "verdict", BADGE_NONE: "none",
+                BADGE_TRAINING: "training"}
+_TRAINING_RE = re.compile(r"used\s+for\s+training", re.I)
+_VERDICT_LINE_RE = re.compile(r"^\s*(PASS|FAIL)\s*$", re.M)
+
+
+def _card_badge(text: str, recipe: str = "") -> tuple[int, str]:
+    """(group, label) for a card's innerText. Training is checked FIRST —
+    a trainset capture that also shows a verdict is still last. The recipe
+    name is stripped before matching so a recipe called "...Training..."
+    cannot mark every card as trainset."""
+    body = text or ""
+    if recipe:
+        body = body.replace(recipe, " ")
+    if _TRAINING_RE.search(body):
+        return BADGE_TRAINING, "training"
+    m = _VERDICT_LINE_RE.search(body)
+    if m:
+        return BADGE_VERDICT, m.group(1).lower()
+    return BADGE_NONE, "none"
+
+
+def _order_candidates(product_ids, cards, recipe: str = "") -> list[dict]:
+    """The click order for a page: the model's product-bearing ids, sorted
+    by badge group then grid position (recency). Ids the DOM does not show
+    are dropped, duplicates collapsed. Returns [{id, badge}] — the sort is
+    stable and total, so the order is reproducible run to run."""
+    by_id: dict[int, tuple[int, int, str]] = {}
+    for idx, c in enumerate(cards):
+        cid = int(c["id"])
+        if cid not in by_id:
+            group, label = _card_badge(c.get("text", ""), recipe)
+            by_id[cid] = (group, idx, label)
+    seen: set[int] = set()
+    picked = []
+    for i in product_ids:
+        try:
+            i = int(i)
+        except (TypeError, ValueError):
+            continue
+        if i in by_id and i not in seen:
+            seen.add(i)
+            picked.append(i)
+    picked.sort(key=lambda i: (by_id[i][0], by_id[i][1]))
+    return [{"id": i, "badge": by_id[i][2]} for i in picked]
+
+
+LIBRARY_GRID_MAX_VIEWPORT_H = 3000
+LIBRARY_GRID_CROP_PAD = 16
 
 
 def _crop_to_grid(png: bytes, box: dict) -> bytes:
@@ -1473,9 +1505,10 @@ Which of these captures' thumbnails most likely show a real photograph of
 a physical part/product? {product_criterion}
 
 Thumbnails never render inspection overlays — judge ONLY whether a real
-product photograph is likely present. Return product_captures as UP TO
-{max_n} capture numbers from the list above, RANKED most likely first.
-Omit numbers whose thumbnails clearly show nothing."""
+product photograph is likely present. Return product_captures as EVERY
+capture number from the list above whose thumbnail plausibly shows the
+part, RANKED most likely first. Omit numbers whose thumbnails clearly
+show nothing or clearly show something else."""
 
 LIBRARY_VIEWER_PROMPT = """This is the main capture viewer of a camera's Library page.{recipe_line}
 
@@ -1572,38 +1605,37 @@ def describe_part_from_image(path) -> str | None:
 
 
 def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
-                            top_n: int = LIBRARY_PAGE_CANDIDATES) -> list[int]:
-    """One batched vision call over the page's full grid, RANKING the
-    likeliest product thumbnails — the model's order is preserved (that IS
-    the ranking) and only the top_n survive. Answers are validated against
-    the DOM's card list (hallucinated ids dropped, duplicates collapsed),
-    so a wild verdict can never click a nonexistent card. Empty on any
-    failure."""
+                            top_n: int = LIBRARY_PAGE_CANDIDATES) -> list[dict]:
+    """The page's click candidates, in click order: one batched vision call
+    over the grid FILTERS to thumbnails plausibly showing the part, then
+    the deterministic badge sort orders them (verdict-tagged > untagged >
+    "Used for training", recency within each group — see _card_badge) and
+    only the top_n survive. The sort runs BEFORE the cap: a PASS-tagged
+    product card must be clicked ahead of a trainset one whatever the
+    model's own confidence order. Answers are validated against the DOM's
+    card list (hallucinated ids dropped, duplicates collapsed), so a wild
+    verdict can never click a nonexistent card. Returns [{id, badge}];
+    empty on any failure."""
     from core import capture_criteria as cc, llm
     from core.llm import downscale_for_vision
 
     try:
-        dom_ids = [int(i) for i in browser.page.evaluate(_LIBRARY_CARDS_JS)]
-        if not dom_ids:
+        cards = _library_cards(browser)
+        if not cards:
             return []
         out = llm.complete(
             LIBRARY_THUMBS_PROMPT.format(
                 recipe_line=_anchor_line(recipe, part_desc),
-                ids=", ".join(f"#{i}" for i in dom_ids),
+                ids=", ".join(f"#{c['id']}" for c in cards),
                 product_criterion=cc.PRODUCT_CRITERION,
-                max_n=top_n,
             ),
             schema=LIBRARY_THUMBS_SCHEMA,
             images=[downscale_for_vision(_library_grid_screenshot(browser))],
             max_tokens=800, model=llm.SONNET,
         )
-        dom = set(dom_ids)
-        ranked: list[int] = []
-        for i in out.get("product_captures", []):
-            i = int(i)
-            if i in dom and i not in ranked:
-                ranked.append(i)
-        return ranked[:top_n]
+        ordered = _order_candidates(out.get("product_captures", []), cards,
+                                    recipe)
+        return ordered[:top_n]
     except Exception as e:
         print(f"  warning: thumbnail judgement failed: {e}")
         return []
@@ -1670,13 +1702,6 @@ def _click_library_capture(browser, cid: int) -> bool:
 LIBRARY_PAGE_TURN_WAIT_S = 20
 
 
-def _library_card_ids(browser) -> list[int]:
-    try:
-        return [int(i) for i in browser.page.evaluate(_LIBRARY_CARDS_JS)]
-    except Exception:
-        return []
-
-
 def _library_page_settled(browser, prev_ids, max_wait_s: float | None = None,
                           require_change: bool = True) -> tuple[bool, list[int]]:
     """After a pagination click: poll until the grid shows the DESTINATION
@@ -1697,7 +1722,7 @@ def _library_page_settled(browser, prev_ids, max_wait_s: float | None = None,
     while True:
         ids: list[int] = []
         try:
-            cards = browser.page.evaluate(_LIBRARY_CARD_STATE_JS) or []
+            cards = _library_cards(browser)
             ids = [int(c["id"]) for c in cards]
             good = (bool(ids) and (not require_change or ids != prev)
                     and all(c.get("painted") for c in cards))
@@ -1755,11 +1780,8 @@ def _library_goto_page(browser, page_no: int, notes: list | None = None) -> bool
 
 
 def _library_first_capture(browser):
-    try:
-        ids = browser.page.evaluate(_LIBRARY_CARDS_JS)
-        return int(ids[0]) if ids else None
-    except Exception:
-        return None
+    ids = _library_card_ids(browser)
+    return ids[0] if ids else None
 
 
 def pick_library_capture(browser, recipe: str = "",
@@ -1770,9 +1792,11 @@ def pick_library_capture(browser, recipe: str = "",
     it was chosen; the caller screenshots and downloads afterwards, so all
     three artifacts describe the same capture.
 
-    Per page: one batched thumbnail judgement, then every product-looking
-    card is clicked and its viewer judged — the page is exhausted before
-    moving on. product+overlay short-circuits. On exhaustion (all pages,
+    Per page: one batched thumbnail judgement filters to product-looking
+    cards, the badge sort puts the likeliest-overlaid first (PASS/FAIL tag
+    > untagged > "Used for training", newest first within each), then each
+    is clicked and its viewer judged — the page is exhausted before moving
+    on. product+overlay short-circuits. On exhaustion (all pages,
     page cap, or click cap) the best partial wins: product-no-overlay over
     overlay-no-product, first-seen ties; nothing qualifying resets to page
     1's newest capture — exactly today's behavior. Every grid the ranker
@@ -1797,7 +1821,13 @@ def pick_library_capture(browser, recipe: str = "",
         page = 1
         while page <= page_cap:
             rec["pages_scanned"] = page
-            for cid in _library_product_thumbs(browser, recipe, part_desc):
+            candidates = _library_product_thumbs(browser, recipe, part_desc)
+            if candidates:
+                print(f"  library pick: page {page} candidates (badge, then "
+                      "newest first): " + ", ".join(
+                          f"#{c['id']} {c['badge']}" for c in candidates))
+            for cand in candidates:
+                cid, badge = cand["id"], cand["badge"]
                 if clicks >= click_cap:
                     print(f"  library pick: click cap ({click_cap}) reached; "
                           f"stopping the search")
@@ -1811,7 +1841,8 @@ def pick_library_capture(browser, recipe: str = "",
                 tier = (1 if v.get("product_image") and v.get("overlay")
                         else 2 if v.get("product_image")
                         else 3 if v.get("overlay") else 4)
-                rec["clicked"].append({"page": page, "id": cid, "tier": tier,
+                rec["clicked"].append({"page": page, "id": cid, "badge": badge,
+                                       "tier": tier,
                                        "reason": str(v.get("reason", ""))[:160]})
                 if tier == 1:
                     rec["chosen"], rec["tier"] = {"page": page, "id": cid}, 1

@@ -83,7 +83,8 @@ class _Rig:
     def product_thumbs(self, browser, recipe, part_desc="", top_n=3):
         if self.thumb_crash:
             raise RuntimeError("vision down")
-        return list(self.page_thumbs.get(self.page, []))[:top_n]
+        return [{"id": i, "badge": "pass"}
+                for i in list(self.page_thumbs.get(self.page, []))[:top_n]]
 
     def click(self, browser, cid):
         if cid in self.click_fails:
@@ -212,9 +213,61 @@ def main() -> int:
     if rec["chosen"] != {"page": 1, "id": 11}:
         failures.append(f"click failure not skipped: {rec}")
 
-    # ---- the thumbnail RANKER: model order preserved (that IS the
-    # ranking), hallucinated ids dropped, duplicates collapsed, top-N cap —
-    # DOM-order re-sorting here once defeated the whole ranking design ----
+    # ---- the BADGE classifier: pure text -> group. Training first (a
+    # trainset card with a verdict is still last), verdict must be its
+    # own line, recipe name stripped so "...Training..." recipes can't
+    # mark every card, case/whitespace tolerant ----
+    R = "Traton Bushing Wear"
+    for text, want in (
+        (f"#2609\nPASS\n{R}\n2026-08-14 12:52:11.471\n3 days ago", "pass"),
+        (f"#2603\nFAIL\n{R}\n2026-08-03", "fail"),
+        (f"#2607\n{R}\n2026-08-11\n6 days ago\nUsed for training\n"
+         f"(Classification, Segmentation)", "training"),
+        (f"#2607\nPASS\n{R}\nused  For\nTRAINING", "training"),
+        (f"#2601\n{R}\n2026-08-03", "none"),
+        ("#2601\nPASSED inspection notes\nR", "none"),   # not a bare tag line
+        ("", "none"),
+    ):
+        got = cli._card_badge(text, R)[1]
+        if got != want:
+            failures.append(f"badge {want!r} expected, got {got!r} for {text[:30]!r}")
+    if cli._card_badge("#5\nPASS\nTraining Line Check\n2026", "Training Line Check")[1] != "pass":
+        failures.append("recipe name containing 'training' marked the card trainset")
+    if not (cli.BADGE_VERDICT < cli.BADGE_NONE < cli.BADGE_TRAINING):
+        failures.append("badge group order broken")
+
+    # ---- the ORDERING: model FILTERS (its rank is not the order), then
+    # badge group, then grid position (recency); hallucinated ids dropped,
+    # duplicates collapsed; sort happens BEFORE the per-page cap ----
+    def _c(cid, *lines):
+        return {"id": str(cid), "painted": True,
+                "text": "\n".join([f"#{cid}", *lines, R]), "box": None}
+    grid = [_c(105, "PASS"),                 # idx0 verdict, newest
+            _c(104, "Used for training"),    # idx1 training
+            _c(103),                         # idx2 none
+            _c(102, "FAIL"),                 # idx3 verdict
+            _c(101, "PASS")]                 # idx4 verdict, oldest
+    # the model ranks the trainset card FIRST and omits 103's neighbour
+    model_answer = [104, 999, 104, 101, 102, 103, 105]
+    ordered = cli._order_candidates(model_answer, grid, R)
+    if [c["id"] for c in ordered] != [105, 102, 101, 103, 104]:
+        failures.append(f"badge->recency order wrong: {ordered}")
+    if [c["badge"] for c in ordered] != ["pass", "fail", "pass", "none", "training"]:
+        failures.append(f"badge labels wrong: {ordered}")
+    # cap AFTER sort: the top 3 are the three verdict cards, never 104
+    if [c["id"] for c in ordered[:3]] != [105, 102, 101]:
+        failures.append("cap must apply after the badge sort")
+    # ids the DOM lacks are dropped; the model omitting a card omits it
+    if any(c["id"] == 999 for c in ordered):
+        failures.append("hallucinated id survived")
+    if cli._order_candidates([103], grid, R) != [{"id": 103, "badge": "none"}]:
+        failures.append("single-candidate ordering wrong")
+    if cli._order_candidates([], grid, R) != []:
+        failures.append("empty model answer must yield no candidates")
+
+    # ---- the RANKER end-to-end on a fake page: filter -> sort -> cap,
+    # prompt asks for EVERY plausible card (no per-page cap in the
+    # prompt), the ranking instruction stays ----
     from PIL import Image
     import io as _io
 
@@ -224,9 +277,7 @@ def main() -> int:
         viewport_size = {"width": 1600, "height": 1000}
 
         def evaluate(self, js):
-            if js is cli._LIBRARY_GRID_BBOX_JS:
-                return None   # no grid bbox: no growth, no crop
-            return ["101", "102", "103", "104", "105"]
+            return grid
 
     class _ThumbBrowser:
         page = _ThumbPage()
@@ -240,22 +291,30 @@ def main() -> int:
         def complete(self, prompt, schema=None, images=None, max_tokens=4000,
                      model=None):
             self.prompt = prompt
-            # ranked: 104 first, a hallucination, a duplicate, then more
-            return {"reason": "r",
-                    "product_captures": [104, 999, 104, 101, 105, 102]}
+            return {"reason": "r", "product_captures": model_answer}
 
     _stub = _ThumbBackend()
     _llm.set_backend(_stub)
     try:
-        got = cli._library_product_thumbs(_ThumbBrowser(), "R", "desc", top_n=3)
+        got = cli._library_product_thumbs(_ThumbBrowser(), R, "desc", top_n=3)
     finally:
         _llm.set_backend(None)
-    if got != [104, 101, 105]:
+    if [c["id"] for c in got] != [105, 102, 101]:
         failures.append(f"ranker order/cap wrong: {got}")
-    if "RANKED most likely first" not in getattr(_stub, "prompt", ""):
+    prompt_flat = " ".join(getattr(_stub, "prompt", "").split())
+    if "RANKED most likely first" not in prompt_flat:
         failures.append("thumbnail prompt lost the ranking instruction")
-    if "UP TO 3" not in " ".join(_stub.prompt.split()):
-        failures.append("thumbnail prompt lost the per-page candidate cap")
+    if "EVERY capture number" not in prompt_flat or "UP TO" in prompt_flat:
+        failures.append("thumbnail prompt must ask for every plausible card, "
+                        "not a capped list")
+    if "#105, #104, #103, #102, #101" not in prompt_flat:
+        failures.append("prompt ids not in grid order")
+
+    # ---- the pick record carries each click's badge; the per-page
+    # candidate order is logged ----
+    ps = inspect.getsource(cli.pick_library_capture)
+    if '"badge": badge' not in ps or "candidates (badge, then" not in ps:
+        failures.append("pick loop lost the badge record/log")
 
     # ---- the page-turn settle gate: after a pagination click the grid
     # must show NEW ids, fully painted, stable across two reads ----
@@ -414,6 +473,9 @@ def main() -> int:
     BOX = {"left": 265, "top": 419, "right": 890, "bottom": 1677}
 
     class _GridPage:
+        """The walk returns two cards whose container boxes union to
+        `box` (None -> empty grid)."""
+
         def __init__(self, box=BOX, fail_resize=False, fail_probe=False):
             self.box = box
             self.fail_resize = fail_resize
@@ -426,7 +488,15 @@ def main() -> int:
             if self.fail_probe:
                 raise RuntimeError("no dom")
             self.probes += 1
-            return dict(self.box) if self.box else None
+            if not self.box:
+                return []
+            b = self.box
+            return [{"id": "1", "painted": True, "text": "#1",
+                     "box": {"left": b["left"], "top": b["top"],
+                             "right": b["left"] + 10, "bottom": b["top"] + 10}},
+                    {"id": "2", "painted": True, "text": "#2",
+                     "box": {"left": b["right"] - 10, "top": b["bottom"] - 10,
+                             "right": b["right"], "bottom": b["bottom"]}}]
 
         def set_viewport_size(self, vp):
             if self.fail_resize:
@@ -524,22 +594,27 @@ def main() -> int:
     if "_library_grid_screenshot(" not in ts or "screenshot_bytes(" in ts:
         failures.append("ranker not wired to the grid screenshot")
 
-    # ---- 0.25.7 bug class: no raw newline in the new JS's literals ----
-    for js_name in ("_LIBRARY_CARD_STATE_JS", "_LIBRARY_GRID_BBOX_JS"):
-        for q in ('"', "'"):
-            for lit in re.findall(q + r"[^" + q + r"]*" + q,
-                                  getattr(cli, js_name)):
-                if "\n" in lit.replace("\\n", ""):
-                    failures.append(f"raw newline in {js_name} literal "
-                                    f"{lit[:30]!r}")
+    # ---- 0.25.7 bug class: no raw newline in the walk JS's literals ----
+    for q in ('"', "'"):
+        for lit in re.findall(q + r"[^" + q + r"]*" + q,
+                              cli._LIBRARY_CARD_WALK_JS):
+            if "\n" in lit.replace("\\n", ""):
+                failures.append(f"raw newline in walk-JS literal {lit[:30]!r}")
 
-    # ---- the three card walks stay in sync (same filter + detection) ----
-    for frag in ("r.width < 40 || r.width > 400", "img.getBoundingClientRect()",
-                 "/#\\d+/"):
-        for js_name in ("_LIBRARY_CARDS_JS", "_LIBRARY_CARD_STATE_JS",
-                        "_LIBRARY_GRID_BBOX_JS"):
-            if frag not in getattr(cli, js_name):
-                failures.append(f"{js_name} diverged on {frag!r}")
+    # ---- ONE card walk: every consumer derives from it (the three
+    # keep-in-sync siblings it replaced are gone) ----
+    for gone in ("_LIBRARY_CARDS_JS", "_LIBRARY_CARD_STATE_JS",
+                 "_LIBRARY_GRID_BBOX_JS"):
+        if hasattr(cli, gone):
+            failures.append(f"{gone} still exists — the card walk must be one")
+    for fn in (cli._library_card_ids, cli._library_grid_bbox,
+               cli._library_page_settled, cli._library_product_thumbs,
+               cli._library_first_capture):
+        src_fn = inspect.getsource(fn)
+        if "_library_cards(" not in src_fn and "_library_card_ids(" not in src_fn:
+            failures.append(f"{fn.__name__} does not derive from the card walk")
+    if 'page.evaluate(' in inspect.getsource(cli._library_page_settled):
+        failures.append("settle gate bypasses the card walk")
 
     # ---- spec: activated on the library step, after the filter ----
     spec = yaml.safe_load((REPO / "tasks" / "ov80i.yaml").read_text())
