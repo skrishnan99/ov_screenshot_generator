@@ -21,6 +21,13 @@ the search runs as a pure state machine):
 - nothing qualifies -> page 1 reset + first (newest) capture selected,
 - a page with no product-looking thumbnails costs zero clicks,
 - thumbnail-judge failure and click failure both degrade, never raise,
+- STRICT THUMBNAIL FILTER + RESERVE: the ranker's single call returns a
+  RECOGNIZABLE pool (the part's features can be made out) and a
+  PLAUSIBLE reserve; pass 1 clicks only the recognizable pool (a page
+  with nothing recognizable costs zero clicks); the reserve is clicked
+  only after the whole scan found no product+overlay, revisiting pages
+  with NO new thumbnail calls, under the shared click cap; best partial
+  spans both passes; each click records its pool,
 - the spec activates the hook on the library step, after the filter,
 - consistency by construction: the hook precedes the screenshot and the
   main-image download in the capture dispatch,
@@ -75,25 +82,33 @@ class _Rig:
     verdicts (product, overlay), a click/page log."""
 
     def __init__(self, page_thumbs, viewers, total_pages=None,
-                 thumb_crash=False, click_fails=()):
-        self.page_thumbs = page_thumbs          # page -> [capture ids]
+                 thumb_crash=False, click_fails=(), page_plausible=None):
+        self.page_thumbs = page_thumbs          # page -> [recognizable ids]
+        self.page_plausible = page_plausible or {}   # page -> [reserve ids]
         self.viewers = viewers                  # id -> (product, overlay)
-        self.total_pages = total_pages or max(page_thumbs, default=1)
+        self.total_pages = total_pages or max(
+            list(page_thumbs) + list(self.page_plausible), default=1)
         self.thumb_crash = thumb_crash
         self.click_fails = set(click_fails)
         self.page = 1
         self.selected = None
         self.clicked: list = []
         self.gotos: list = []
+        self.thumb_calls: list = []
         self.first_by_page = {p: (ids[0] if ids else 900 + p)
                               for p, ids in page_thumbs.items()}
 
     def product_thumbs(self, browser, recipe, part_desc="", top_n=3,
                        trace=None):
+        self.thumb_calls.append(self.page)
         if self.thumb_crash:
             raise RuntimeError("vision down")
-        return [{"id": i, "badge": "pass"}
-                for i in list(self.page_thumbs.get(self.page, []))[:top_n]]
+        return {"recognizable": [
+                    {"id": i, "badge": "pass"}
+                    for i in list(self.page_thumbs.get(self.page, []))[:top_n]],
+                "plausible": [
+                    {"id": i, "badge": "pass"}
+                    for i in list(self.page_plausible.get(self.page, []))[:top_n]]}
 
     def click(self, browser, cid):
         if cid in self.click_fails:
@@ -167,6 +182,57 @@ def main() -> int:
         failures.append(f"page 1 not exhausted first: {rig.clicked}")
     if rec["chosen"] != {"page": 2, "id": 20}:
         failures.append(f"page-2 winner missed: {rec}")
+
+    # ---- TWO PASSES: the plausible reserve is held during the scan and
+    # clicked only after the recognizable pools found no product+overlay;
+    # no thumbnail call is repeated; the click cap is shared ----
+    # page 1 has nothing recognizable (dark frames = reserve), page 2 has
+    # the part: pass 1 must cost ZERO clicks on page 1 and win on page 2
+    rig = _Rig({1: [], 2: [20]}, {20: (True, True)},
+               page_plausible={1: [11, 12, 13]})
+    rec = _run(rig)
+    if rig.clicked != [(2, 20)] or rec["tier"] != 1:
+        failures.append(f"reserve clicked during pass 1: {rig.clicked} {rec}")
+    if rec.get("reserve_pass"):
+        failures.append("reserve pass ran although pass 1 won")
+    # nothing recognizable anywhere, reserve holds the part: pass 2 finds
+    # it — after returning to the page — with no new thumbnail calls
+    rig = _Rig({1: [], 2: []}, {12: (True, True)}, total_pages=2,
+               page_plausible={1: [11, 12], 2: [21]})
+    rec = _run(rig)
+    if rec["chosen"] != {"page": 1, "id": 12} or rec["tier"] != 1:
+        failures.append(f"reserve pass missed the winner: {rec}")
+    if not rec.get("reserve_pass") or rig.gotos != [1]:
+        failures.append(f"reserve pass navigation wrong: gotos={rig.gotos} {rec}")
+    if rig.thumb_calls != [1, 2]:
+        failures.append(f"thumbnails re-judged in pass 2: {rig.thumb_calls}")
+    if [c["pool"] for c in rec["clicked"]] != ["plausible", "plausible"]:
+        failures.append(f"pool not recorded per click: {rec['clicked']}")
+    # recognizable found only tier 2 (product, no overlay): the reserve is
+    # still tried for a tier 1, and best partial spans both passes
+    rig = _Rig({1: [10]}, {10: (True, False), 11: (False, True)},
+               page_plausible={1: [11]})
+    rec = _run(rig)
+    # search order 10 (tier 2) then reserve 11 (tier 3); the winner is 10,
+    # re-selected by the jump-back since the reserve click moved off it
+    if rig.clicked != [(1, 10), (1, 11), (1, 10)] \
+            or rec["chosen"] != {"page": 1, "id": 10} or rec["tier"] != 2 \
+            or rig.selected != 10:
+        failures.append(f"best partial across passes wrong: {rig.clicked} {rec}")
+    # the click cap is shared: a pass-1 cap-out means no reserve pass
+    rig = _Rig({p: [p * 10 + i for i in range(3)] for p in range(1, 5)}, {},
+               total_pages=4, page_plausible={1: [99]})
+    rec = _run(rig, click_cap=6)
+    if len(rec["clicked"]) != 6 or rec.get("reserve_pass") \
+            or any(c["id"] == 99 for c in rec["clicked"]):
+        failures.append(f"cap not shared with the reserve pass: {rec}")
+    # a page whose reserve can't be reached again is skipped, noted
+    rig = _Rig({1: [], 2: []}, {}, total_pages=2, page_plausible={1: [11]})
+    rig.goto_page = lambda browser, n, notes=None: False
+    rec = _run(rig)
+    if rec["clicked"] or not any("could not return" in n
+                                 for n in rec.get("nav_notes", [])):
+        failures.append(f"unreachable reserve page not noted: {rec}")
 
     # ---- click cap counts ACROSS pages and stops the search (per-page
     # candidates are capped at 3, so 5 pages offer 15 > the 10 budget) ----
@@ -292,9 +358,10 @@ def main() -> int:
     if got != ranked:
         failures.append(f"grid position beat the model's rank: {got}")
 
-    # ---- the RANKER end-to-end on a fake page: filter -> sort -> cap,
-    # prompt asks for EVERY plausible card (no per-page cap in the
-    # prompt), the ranking instruction stays ----
+    # ---- the RANKER end-to-end on a fake page: two pools from one call
+    # (recognizable = click pool, plausible = reserve), each badge-sorted
+    # and capped; a card in BOTH lists is recognizable only; the prompt
+    # asks for the RECOGNIZABLE standard and both lists ----
     from PIL import Image
     import io as _io
 
@@ -318,7 +385,10 @@ def main() -> int:
         def complete(self, prompt, schema=None, images=None, max_tokens=4000,
                      model=None):
             self.prompt = prompt
-            return {"reason": "r", "product_captures": model_answer}
+            self.schema = schema
+            # 103 appears in BOTH lists; 777 is a hallucination in the reserve
+            return {"reason": "r", "product_captures": model_answer,
+                    "plausible_captures": [103, 777, 104]}
 
     _stub = _ThumbBackend()
     _llm.set_backend(_stub)
@@ -328,23 +398,48 @@ def main() -> int:
                                           trace=trace)
     finally:
         _llm.set_backend(None)
-    if [c["id"] for c in got] != [101, 102, 105]:
+    if [c["id"] for c in got["recognizable"]] != [101, 102, 105]:
         failures.append(f"ranker order/cap wrong: {got}")
-    # the trace records the raw model answer and the full order (WHY)
+    # 103 was recognizable -> not in the reserve; 104 was ALSO in the
+    # recognizable answer -> not in the reserve; 777 dropped => empty
+    if got["plausible"] != []:
+        failures.append(f"reserve must exclude recognizable ids + hallucinations: {got}")
     if trace.get("cards") != 5 or trace.get("model_ranked") != model_answer \
-            or trace.get("ordered") != [101, 102, 105, 103, 104]:
+            or trace.get("ordered") != [101, 102, 105, 103, 104] \
+            or trace.get("model_plausible") != [103, 777, 104] \
+            or trace.get("plausible_ordered") != []:
         failures.append(f"ranker trace incomplete: {trace}")
-    if 'rec.setdefault("pages", []).append(trace)' not in \
-            inspect.getsource(cli.pick_library_capture):
-        failures.append("per-page ranker trace not stored in the pick record")
+    # a genuinely separate reserve survives, badge-sorted and capped
+    _stub2 = _ThumbBackend()
+    _stub2.complete = lambda prompt, schema=None, images=None, max_tokens=0, \
+        model=None: {"reason": "r", "product_captures": [],
+                     "plausible_captures": [104, 101, 105, 103]}
+    _llm.set_backend(_stub2)
+    try:
+        got = cli._library_product_thumbs(_ThumbBrowser(), R, "desc", top_n=3)
+    finally:
+        _llm.set_backend(None)
+    if got["recognizable"] != [] \
+            or [c["id"] for c in got["plausible"]] != [101, 105, 103]:
+        failures.append(f"reserve ordering/cap wrong: {got}")
     prompt_flat = " ".join(getattr(_stub, "prompt", "").split())
-    if "RANKED most likely first" not in prompt_flat:
-        failures.append("thumbnail prompt lost the ranking instruction")
-    if "EVERY capture number" not in prompt_flat or "UP TO" in prompt_flat:
-        failures.append("thumbnail prompt must ask for every plausible card, "
-                        "not a capped list")
+    for must in ("RECOGNIZABLE", "product_captures", "plausible_captures",
+                 "too dark, blurred or featureless to recognize",
+                 "even if it could conceivably be the part",
+                 "RANK these most clearly recognizable first",
+                 "the part described above"):
+        if must not in prompt_flat:
+            failures.append(f"thumbnail prompt lost: {must!r}")
+    for gone in ("plausibly shows the part", "UP TO", "exposure or lighting"):
+        if gone in prompt_flat:
+            failures.append(f"thumbnail prompt kept the soft standard: {gone!r}")
     if "#105, #104, #103, #102, #101" not in prompt_flat:
         failures.append("prompt ids not in grid order")
+    if "plausible_captures" not in _stub.schema.get("required", []):
+        failures.append("schema does not require the reserve list")
+    # without an anchor the recognizability test is about a manufactured part
+    if "physical manufactured part" not in cli._recognizable_what(""):
+        failures.append("no-anchor recognizability subject wrong")
 
     # ---- the pick record carries each click's badge; the per-page
     # candidate order is logged ----

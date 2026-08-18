@@ -115,13 +115,17 @@ def main() -> int:
         overlay_criterion=cc.INSPECTION_OVERLAY_CRITERION)
     if f"1. product_image — {anchored_crit}" not in viewer_anchored:
         failures.append("viewer decision point does not carry the anchored criterion")
-    # the thumbnail PREFILTER stays soft (positive ID at ~100px would
-    # starve the search): preamble anchor + generic criterion
+    # the thumbnail prefilter is anchored to THE part and applies the
+    # RECOGNIZABLE standard (the plausible reserve is what keeps a strict
+    # filter from starving the search — see test_library_pick)
     thumbs = cli.LIBRARY_THUMBS_PROMPT.format(
         recipe_line=cli._anchor_line("R", DESC), ids="#1",
-        product_criterion=cc.PRODUCT_CRITERION, max_n=3)
-    if DESC not in thumbs or cc.PRODUCT_CRITERION not in thumbs:
-        failures.append("thumbnail prefilter lost its soft anchor pairing")
+        recognizable_what=cli._recognizable_what(DESC))
+    if DESC not in thumbs or "the part described above" not in thumbs \
+            or "RECOGNIZABLE" not in thumbs:
+        failures.append("thumbnail prefilter lost its anchor or its standard")
+    if "plausibly show" in thumbs:
+        failures.append("the thumbnail prefilter kept the 'plausibly' bar")
 
     # ---- evidence-first field order ----
     for name, schema in (("block", cli.BLOCK_CAPTURE_SCHEMA),

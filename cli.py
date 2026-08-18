@@ -1494,13 +1494,21 @@ def _library_grid_screenshot(browser) -> bytes:
 
 _SELECTED_CAPTURE_RE = re.compile(r"Capture\s+#(\d+)\s+from", re.I)
 
+# Two lists from one call: product_captures is the CLICK POOL — thumbnails
+# in which the part is RECOGNIZABLE; plausible_captures is the reserve —
+# could be the part but not recognizable at thumbnail scale (too dark,
+# blurred, featureless). The search clicks the recognizable pool first
+# and falls back to the reserve only when the whole scan found no
+# product+overlay capture (see pick_library_capture), so a strict filter
+# can never starve a genuinely dark recipe.
 LIBRARY_THUMBS_SCHEMA = {
     "type": "object",
     "properties": {
         "reason": {"type": "string"},
         "product_captures": {"type": "array", "items": {"type": "integer"}},
+        "plausible_captures": {"type": "array", "items": {"type": "integer"}},
     },
-    "required": ["reason", "product_captures"],
+    "required": ["reason", "product_captures", "plausible_captures"],
     "additionalProperties": False,
 }
 
@@ -1509,14 +1517,22 @@ cards, each labelled "#<number>" with a THUMBNAIL of that capture.{recipe_line}
 
 The capture numbers visible on this page are: {ids}.
 
-Which of these captures' thumbnails most likely show a real photograph of
-a physical part/product? {product_criterion}
+Sort these captures' thumbnails into two lists. Thumbnails never render
+inspection overlays — judge ONLY the photograph.
 
-Thumbnails never render inspection overlays — judge ONLY whether a real
-product photograph is likely present. Return product_captures as EVERY
-capture number from the list above whose thumbnail plausibly shows the
-part, RANKED most likely first. Omit numbers whose thumbnails clearly
-show nothing or clearly show something else."""
+product_captures — thumbnails in which {recognizable_what} is
+RECOGNIZABLE: you can actually make out its features in the thumbnail
+itself. A dim thumbnail in which the features are still recognizable
+counts. A thumbnail too dark, blurred or featureless to recognize
+anything does NOT count here, even if it could conceivably be the part
+at a bad exposure. RANK these most clearly recognizable first.
+
+plausible_captures — thumbnails that could be the part but in which it is
+NOT recognizable (dark, blurred, indistinct). RANK likeliest first.
+
+Omit thumbnails that show nothing (black, blank, grey, uniform) or
+clearly show something else. Give the reason FIRST — say what the
+recognizable thumbnails actually show — then the two lists."""
 
 LIBRARY_VIEWER_PROMPT = """This is the main capture viewer of a camera's Library page.{recipe_line}
 
@@ -1549,18 +1565,22 @@ def _recipe_line(recipe: str) -> str:
 
 
 def _anchor_line(recipe: str, part_desc: str = "") -> str:
-    """The SOFT product anchor — used only by the thumbnail prefilter,
-    which screens wide (positive identification at ~100px would starve
-    the search). The terminal viewer/block judges instead get the
-    anchored product criterion AT THE DECISION POINT
-    (capture_criteria.anchored_product_criterion)."""
+    """The thumbnail prefilter's part anchor: names THE part so the
+    recognizable/plausible split is about this part, not any object. The
+    terminal viewer/block judges get the anchored product criterion AT
+    THE DECISION POINT (capture_criteria.anchored_product_criterion)."""
     if part_desc:
         return (f"\nThe part being inspected, as seen in the recipe's "
-                f"template image: {part_desc}\nA product image must "
-                f"plausibly show THIS part — possibly at a different angle, "
-                f"zoom, exposure or lighting — not just any manufactured "
-                f"object.")
+                f"template image: {part_desc}\nThe question is whether "
+                f"THIS part is recognizable — possibly at a different angle "
+                f"or zoom — not just any manufactured object.")
     return _recipe_line(recipe)
+
+
+def _recognizable_what(part_desc: str = "") -> str:
+    """The subject of the thumbnail prompt's recognizability test."""
+    return ("the part described above" if part_desc
+            else "a real photograph of a physical manufactured part")
 
 
 # One vision call per run, over the template step's native-res download —
@@ -1614,48 +1634,64 @@ def describe_part_from_image(path) -> str | None:
 
 def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
                             top_n: int = LIBRARY_PAGE_CANDIDATES,
-                            trace: dict | None = None) -> list[dict]:
-    """The page's click candidates, in click order: one batched vision call
-    over the grid FILTERS to thumbnails plausibly showing the part, then
-    the deterministic badge sort orders them (verdict-tagged > untagged >
-    "Used for training", the model's rank within each group, recency as
-    the final tiebreak — see _order_candidates) and
-    only the top_n survive. The sort runs BEFORE the cap: a PASS-tagged
-    product card must be clicked ahead of a trainset one whatever the
-    model's own confidence order. Answers are validated against the DOM's
-    card list (hallucinated ids dropped, duplicates collapsed), so a wild
-    verdict can never click a nonexistent card. Returns [{id, badge}];
-    empty on any failure. `trace`, when given, receives the page's card
-    count, the model's raw ranked answer + reason and the full ordered
-    list — the manifest's record of WHY these candidates, in this order."""
-    from core import capture_criteria as cc, llm
+                            trace: dict | None = None) -> dict:
+    """The page's click candidates: one batched vision call over the grid
+    sorts thumbnails into a RECOGNIZABLE pool (the part's features can be
+    made out in the thumbnail) and a PLAUSIBLE reserve (could be the part,
+    not recognizable), then the deterministic badge sort orders each pool
+    (verdict-tagged > untagged > "Used for training", the model's rank
+    within each group, recency as the final tiebreak — see
+    _order_candidates) and only the top_n of each survive. The sort runs
+    BEFORE the cap: a PASS-tagged product card must be clicked ahead of a
+    trainset one whatever the model's own confidence order. Answers are
+    validated against the DOM's card list (hallucinated ids dropped,
+    duplicates collapsed), so a wild verdict can never click a nonexistent
+    card. Returns {"recognizable": [{id, badge}], "plausible": [...]};
+    both empty on any failure. `trace`, when given, receives the page's
+    card count, both raw model lists + the reason and both full ordered
+    lists — the manifest's record of WHY these candidates, in this order."""
+    from core import llm
     from core.llm import downscale_for_vision
 
+    empty = {"recognizable": [], "plausible": []}
     try:
         cards = _library_cards(browser)
         if not cards:
-            return []
+            return dict(empty)
         out = llm.complete(
             LIBRARY_THUMBS_PROMPT.format(
                 recipe_line=_anchor_line(recipe, part_desc),
                 ids=", ".join(f"#{c['id']}" for c in cards),
-                product_criterion=cc.PRODUCT_CRITERION,
+                recognizable_what=_recognizable_what(part_desc),
             ),
             schema=LIBRARY_THUMBS_SCHEMA,
             images=[downscale_for_vision(_library_grid_screenshot(browser))],
-            max_tokens=800, model=llm.SONNET,
+            max_tokens=900, model=llm.SONNET,
         )
-        model_ranked = [int(i) for i in out.get("product_captures", [])
-                        if str(i).lstrip("-").isdigit()]
-        ordered = _order_candidates(model_ranked, cards, recipe)
+
+        def _ints(key):
+            return [int(i) for i in out.get(key, []) or []
+                    if str(i).lstrip("-").isdigit()]
+
+        model_ranked = _ints("product_captures")
+        model_plausible = _ints("plausible_captures")
+        recognizable = _order_candidates(model_ranked, cards, recipe)
+        seen = {c["id"] for c in recognizable}
+        # a card the model put in BOTH lists is recognizable — never a
+        # reserve entry too
+        plausible = [c for c in _order_candidates(model_plausible, cards, recipe)
+                     if c["id"] not in seen]
         if trace is not None:
             trace.update({"cards": len(cards), "model_ranked": model_ranked,
+                          "model_plausible": model_plausible,
                           "model_reason": str(out.get("reason", ""))[:200],
-                          "ordered": [c["id"] for c in ordered]})
-        return ordered[:top_n]
+                          "ordered": [c["id"] for c in recognizable],
+                          "plausible_ordered": [c["id"] for c in plausible]})
+        return {"recognizable": recognizable[:top_n],
+                "plausible": plausible[:top_n]}
     except Exception as e:
         print(f"  warning: thumbnail judgement failed: {e}")
-        return []
+        return dict(empty)
 
 
 def judge_library_viewer(browser, recipe: str = "", part_desc: str = "") -> dict:
@@ -1876,21 +1912,62 @@ def pick_library_capture(browser, recipe: str = "",
     it was chosen; the caller screenshots and downloads afterwards, so all
     three artifacts describe the same capture.
 
-    Per page: one batched thumbnail judgement filters to product-looking
-    cards, the badge sort puts the likeliest-overlaid first (PASS/FAIL tag
-    > untagged > "Used for training", the model's rank within each), then each
-    is clicked and its viewer judged — the page is exhausted before moving
-    on. product+overlay short-circuits. On exhaustion (all pages,
-    page cap, or click cap) the best partial wins: product-no-overlay over
+    Pass 1 — per page: one batched thumbnail judgement sorts cards into a
+    RECOGNIZABLE pool (the part's features can be made out in the
+    thumbnail) and a PLAUSIBLE reserve; the badge sort puts the
+    likeliest-overlaid first (PASS/FAIL tag > untagged > "Used for
+    training", the model's rank within each); the recognizable pool is
+    clicked and each viewer judged — the page is exhausted before moving
+    on; the reserve is held. product+overlay short-circuits.
+    Pass 2 — only if pass 1 found no product+overlay and click budget
+    remains: revisit the pages that held a reserve and click it, in the
+    same order, under the same shared cap — NO new thumbnail judgements
+    (the lists were recorded in pass 1). A strict thumbnail filter thus
+    costs nothing when it works and cannot starve a genuinely dark
+    recipe. On exhaustion (all pages, page cap, or click cap) the best
+    partial across both passes wins: product-no-overlay over
     overlay-no-product, first-seen ties; nothing qualifying resets to page
-    1's newest capture — exactly today's behavior. Every grid the ranker
-    judges is settle-gated first (_library_page_settled) — a page that
-    never settles is judged as-is and noted in the record. Best-effort
-    like every capture hook: failures degrade, never fail the step."""
+    1's newest capture. Every grid the ranker judges is settle-gated first
+    (_library_page_settled) — a page that never settles is judged as-is
+    and noted in the record. Best-effort like every capture hook:
+    failures degrade, never fail the step."""
     from core.capture_criteria import LIBRARY_TIER_MEANING
 
     rec: dict = {"clicked": [], "chosen": None, "tier": None, "pages_scanned": 0}
     nav_notes: list = []
+    state = {"best": (5, None), "clicks": 0, "capped": False}
+
+    def judge(page: int, candidates: list, pool: str) -> bool:
+        """Click and judge candidates in order; True on a product+overlay
+        capture (recorded as chosen). Updates the shared click count, cap
+        flag and best partial."""
+        for cand in candidates:
+            cid, badge = cand["id"], cand["badge"]
+            if state["clicks"] >= click_cap:
+                print(f"  library pick: click cap ({click_cap}) reached; "
+                      f"stopping the search")
+                state["capped"] = True
+                return False
+            if not _click_library_capture(browser, cid):
+                print(f"  warning: could not select capture #{cid}; skipping")
+                continue
+            v = judge_library_viewer(browser, recipe, part_desc=part_desc)
+            state["clicks"] += 1
+            tier = (1 if v.get("product_image") and v.get("overlay")
+                    else 2 if v.get("product_image")
+                    else 3 if v.get("overlay") else 4)
+            rec["clicked"].append({"page": page, "id": cid, "badge": badge,
+                                   "pool": pool, "tier": tier,
+                                   "reason": str(v.get("reason", ""))[:160]})
+            if tier == 1:
+                rec["chosen"], rec["tier"] = {"page": page, "id": cid}, 1
+                print(f"  library pick: capture #{cid} (page {page}) is "
+                      f"product + overlay")
+                return True
+            if tier in (2, 3) and tier < state["best"][0]:
+                state["best"] = (tier, (page, cid))
+        return False
+
     try:
         # The entry grid gets the same settle gate as every page turn: the
         # filter's verdict proves cards rendered, not that their thumbnails
@@ -1901,53 +1978,56 @@ def pick_library_capture(browser, recipe: str = "",
         if not settled:
             _library_nav_note(nav_notes, "page 1 grid did not settle; "
                               "judging it as-is")
-        best = (5, None)  # (tier, (page, capture id))
-        clicks = 0
-        capped = False
+        reserve: list[tuple[int, list]] = []   # (page, plausible candidates)
         page = 1
         while page <= page_cap:
             rec["pages_scanned"] = page
             trace: dict = {"page": page}
-            candidates = _library_product_thumbs(browser, recipe, part_desc,
-                                                 trace=trace)
+            pools = _library_product_thumbs(browser, recipe, part_desc,
+                                            trace=trace)
             rec.setdefault("pages", []).append(trace)
-            if candidates:
+            recognizable = pools.get("recognizable", [])
+            plausible = pools.get("plausible", [])
+            if plausible:
+                reserve.append((page, plausible))
+            if recognizable:
                 print(f"  library pick: page {page} candidates (badge, then "
                       "model rank): " + ", ".join(
-                          f"#{c['id']} {c['badge']}" for c in candidates))
-            for cand in candidates:
-                cid, badge = cand["id"], cand["badge"]
-                if clicks >= click_cap:
-                    print(f"  library pick: click cap ({click_cap}) reached; "
-                          f"stopping the search")
-                    capped = True
-                    break
-                if not _click_library_capture(browser, cid):
-                    print(f"  warning: could not select capture #{cid}; skipping")
-                    continue
-                v = judge_library_viewer(browser, recipe, part_desc=part_desc)
-                clicks += 1
-                tier = (1 if v.get("product_image") and v.get("overlay")
-                        else 2 if v.get("product_image")
-                        else 3 if v.get("overlay") else 4)
-                rec["clicked"].append({"page": page, "id": cid, "badge": badge,
-                                       "tier": tier,
-                                       "reason": str(v.get("reason", ""))[:160]})
-                if tier == 1:
-                    rec["chosen"], rec["tier"] = {"page": page, "id": cid}, 1
-                    print(f"  library pick: capture #{cid} (page {page}) is "
-                          f"product + overlay")
-                    return rec
-                if tier in (2, 3) and tier < best[0]:
-                    best = (tier, (page, cid))
-            if capped or page == page_cap \
+                          f"#{c['id']} {c['badge']}" for c in recognizable)
+                      + (f"; {len(plausible)} plausible held in reserve"
+                         if plausible else ""))
+            elif plausible:
+                print(f"  library pick: page {page}: nothing recognizable; "
+                      f"{len(plausible)} plausible held in reserve")
+            if judge(page, recognizable, "recognizable"):
+                return rec
+            if state["capped"] or page == page_cap \
                     or not _library_next_page(browser, nav_notes,
                                               page_no=page + 1):
-                if page == page_cap and not capped:
+                if page == page_cap and not state["capped"]:
                     print(f"  library pick: page cap ({page_cap}) reached")
                 break
             page += 1
 
+        if reserve and not state["capped"]:
+            total = sum(len(c) for _, c in reserve)
+            print(f"  library pick: no product + overlay among recognizable "
+                  f"thumbnails; trying {total} plausible reserve candidate(s)")
+            rec["reserve_pass"] = True
+            current = rec["pages_scanned"]
+            for rpage, cands in reserve:
+                if state["capped"]:
+                    break
+                if rpage != current:
+                    if not _library_goto_page(browser, rpage, nav_notes):
+                        _library_nav_note(nav_notes, f"could not return to page "
+                                          f"{rpage} for its reserve; skipped")
+                        continue
+                    current = rpage
+                if judge(rpage, cands, "plausible"):
+                    return rec
+
+        best = state["best"]
         if best[1] is not None:
             bp, bid = best[1]
             last = rec["clicked"][-1] if rec["clicked"] else None
