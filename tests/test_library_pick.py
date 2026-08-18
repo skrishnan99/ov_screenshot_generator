@@ -246,9 +246,10 @@ def main() -> int:
     if not (cli.BADGE_VERDICT < cli.BADGE_NONE < cli.BADGE_TRAINING):
         failures.append("badge group order broken")
 
-    # ---- the ORDERING: model FILTERS (its rank is not the order), then
-    # badge group, then grid position (recency); hallucinated ids dropped,
-    # duplicates collapsed; sort happens BEFORE the per-page cap ----
+    # ---- the ORDERING: badge group first, the MODEL'S RANK within a
+    # group, grid position (recency) only as the final tiebreak;
+    # hallucinated ids dropped, duplicates collapsed; sort happens BEFORE
+    # the per-page cap ----
     def _c(cid, *lines):
         return {"id": str(cid), "painted": True,
                 "text": "\n".join([f"#{cid}", *lines, R]), "box": None}
@@ -257,23 +258,39 @@ def main() -> int:
             _c(103),                         # idx2 none
             _c(102, "FAIL"),                 # idx3 verdict
             _c(101, "PASS")]                 # idx4 verdict, oldest
-    # the model ranks the trainset card FIRST and omits 103's neighbour
+    # the model ranks the trainset card FIRST, then the OLDEST verdict
+    # card above the newest one; a hallucination and a duplicate thrown in
     model_answer = [104, 999, 104, 101, 102, 103, 105]
     ordered = cli._order_candidates(model_answer, grid, R)
-    if [c["id"] for c in ordered] != [105, 102, 101, 103, 104]:
-        failures.append(f"badge->recency order wrong: {ordered}")
+    # verdict group in MODEL order (101, 102, 105), then none, then training
+    if [c["id"] for c in ordered] != [101, 102, 105, 103, 104]:
+        failures.append(f"badge->model-rank order wrong: {ordered}")
     if [c["badge"] for c in ordered] != ["pass", "fail", "pass", "none", "training"]:
         failures.append(f"badge labels wrong: {ordered}")
     # cap AFTER sort: the top 3 are the three verdict cards, never 104
-    if [c["id"] for c in ordered[:3]] != [105, 102, 101]:
+    if [c["id"] for c in ordered[:3]] != [101, 102, 105]:
         failures.append("cap must apply after the badge sort")
-    # ids the DOM lacks are dropped; the model omitting a card omits it
     if any(c["id"] == 999 for c in ordered):
         failures.append("hallucinated id survived")
     if cli._order_candidates([103], grid, R) != [{"id": 103, "badge": "none"}]:
         failures.append("single-candidate ordering wrong")
     if cli._order_candidates([], grid, R) != []:
         failures.append("empty model answer must yield no candidates")
+
+    # the live page-2 shape that motivated model-rank-within-group: every
+    # card PASS, the model ranks the clearly-lit part first and the dark
+    # newest frames last — recency-within-group had inverted this
+    page2 = [_c(i, "PASS") for i in (2590, 2589, 2588, 2587, 2582, 2577, 2576)]
+    ranked = [2582, 2577, 2576, 2590, 2589, 2588, 2587]
+    got = [c["id"] for c in cli._order_candidates(ranked, page2, R)]
+    if got != ranked:
+        failures.append(f"model rank not preserved within one group: {got}")
+    # recency is only the FINAL tiebreak: with a total model order it
+    # never reorders — grid position must not beat rank
+    grid_rev = list(reversed(page2))
+    got = [c["id"] for c in cli._order_candidates(ranked, grid_rev, R)]
+    if got != ranked:
+        failures.append(f"grid position beat the model's rank: {got}")
 
     # ---- the RANKER end-to-end on a fake page: filter -> sort -> cap,
     # prompt asks for EVERY plausible card (no per-page cap in the
@@ -311,11 +328,11 @@ def main() -> int:
                                           trace=trace)
     finally:
         _llm.set_backend(None)
-    if [c["id"] for c in got] != [105, 102, 101]:
+    if [c["id"] for c in got] != [101, 102, 105]:
         failures.append(f"ranker order/cap wrong: {got}")
     # the trace records the raw model answer and the full order (WHY)
     if trace.get("cards") != 5 or trace.get("model_ranked") != model_answer \
-            or trace.get("ordered") != [105, 102, 101, 103, 104]:
+            or trace.get("ordered") != [101, 102, 105, 103, 104]:
         failures.append(f"ranker trace incomplete: {trace}")
     if 'rec.setdefault("pages", []).append(trace)' not in \
             inspect.getsource(cli.pick_library_capture):
@@ -332,7 +349,8 @@ def main() -> int:
     # ---- the pick record carries each click's badge; the per-page
     # candidate order is logged ----
     ps = inspect.getsource(cli.pick_library_capture)
-    if '"badge": badge' not in ps or "candidates (badge, then" not in ps:
+    if '"badge": badge' not in ps or "candidates (badge, then" not in ps \
+            or '"model rank): "' not in ps:
         failures.append("pick loop lost the badge record/log")
 
     # ---- the page-turn settle gate: after a pagination click the grid

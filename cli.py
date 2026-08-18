@@ -1284,7 +1284,7 @@ LIBRARY_PAGE_SCAN_CAP = 5
 LIBRARY_CLICK_CAP = 10
 # Per-page candidate budget: the thumbnail call FILTERS to product-bearing
 # cards, the badge sort orders them (verdict-tagged > untagged > trainset,
-# newest first within each), and only the top N get clicked, so the global
+# the model's rank within each), and only the top N get clicked, so the global
 # click budget spans pages instead of drowning on page 1 (newest-first
 # sorting fronts dim production triggers; the genuine part captures often
 # sit pages deep).
@@ -1358,7 +1358,8 @@ def _library_grid_bbox(browser) -> dict | None:
 # only cards showing THE part, the card's own text is the best available
 # predictor of a full AI overlay behind it: a PASS/FAIL tag means an
 # inspection ran (overlays likely); "Used for training" means a trainset
-# capture (least likely). Ties break by recency = grid position.
+# capture (least likely). Within a group the model's rank orders; recency
+# (grid position) is the final tiebreak.
 BADGE_VERDICT, BADGE_NONE, BADGE_TRAINING = 0, 1, 2
 _BADGE_NAMES = {BADGE_VERDICT: "verdict", BADGE_NONE: "none",
                 BADGE_TRAINING: "training"}
@@ -1384,9 +1385,15 @@ def _card_badge(text: str, recipe: str = "") -> tuple[int, str]:
 
 def _order_candidates(product_ids, cards, recipe: str = "") -> list[dict]:
     """The click order for a page: the model's product-bearing ids, sorted
-    by badge group then grid position (recency). Ids the DOM does not show
-    are dropped, duplicates collapsed. Returns [{id, badge}] — the sort is
-    stable and total, so the order is reproducible run to run."""
+    by badge group, then the MODEL'S RANK within the group, then grid
+    position (recency) as the final tiebreak. The model's rank encodes
+    how clearly THE part shows in the thumbnail — the signal that predicts
+    a product viewer — so it must survive inside a group: a live page had
+    every card PASS-tagged and recency-within-group inverted a correct
+    ranking, clicking the three newest dark frames while the clearly-lit
+    part sat 9th. Ids the DOM does not show are dropped, duplicates
+    collapsed. Returns [{id, badge}] — the sort is stable and total, so
+    the order is reproducible run to run."""
     by_id: dict[int, tuple[int, int, str]] = {}
     for idx, c in enumerate(cards):
         cid = int(c["id"])
@@ -1394,7 +1401,7 @@ def _order_candidates(product_ids, cards, recipe: str = "") -> list[dict]:
             group, label = _card_badge(c.get("text", ""), recipe)
             by_id[cid] = (group, idx, label)
     seen: set[int] = set()
-    picked = []
+    picked = []   # in model rank order
     for i in product_ids:
         try:
             i = int(i)
@@ -1403,7 +1410,8 @@ def _order_candidates(product_ids, cards, recipe: str = "") -> list[dict]:
         if i in by_id and i not in seen:
             seen.add(i)
             picked.append(i)
-    picked.sort(key=lambda i: (by_id[i][0], by_id[i][1]))
+    rank = {i: r for r, i in enumerate(picked)}
+    picked.sort(key=lambda i: (by_id[i][0], rank[i], by_id[i][1]))
     return [{"id": i, "badge": by_id[i][2]} for i in picked]
 
 
@@ -1610,7 +1618,8 @@ def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
     """The page's click candidates, in click order: one batched vision call
     over the grid FILTERS to thumbnails plausibly showing the part, then
     the deterministic badge sort orders them (verdict-tagged > untagged >
-    "Used for training", recency within each group — see _card_badge) and
+    "Used for training", the model's rank within each group, recency as
+    the final tiebreak — see _order_candidates) and
     only the top_n survive. The sort runs BEFORE the cap: a PASS-tagged
     product card must be clicked ahead of a trainset one whatever the
     model's own confidence order. Answers are validated against the DOM's
@@ -1869,7 +1878,7 @@ def pick_library_capture(browser, recipe: str = "",
 
     Per page: one batched thumbnail judgement filters to product-looking
     cards, the badge sort puts the likeliest-overlaid first (PASS/FAIL tag
-    > untagged > "Used for training", newest first within each), then each
+    > untagged > "Used for training", the model's rank within each), then each
     is clicked and its viewer judged — the page is exhausted before moving
     on. product+overlay short-circuits. On exhaustion (all pages,
     page cap, or click cap) the best partial wins: product-no-overlay over
@@ -1904,7 +1913,7 @@ def pick_library_capture(browser, recipe: str = "",
             rec.setdefault("pages", []).append(trace)
             if candidates:
                 print(f"  library pick: page {page} candidates (badge, then "
-                      "newest first): " + ", ".join(
+                      "model rank): " + ", ".join(
                           f"#{c['id']} {c['badge']}" for c in candidates))
             for cand in candidates:
                 cid, badge = cand["id"], cand["badge"]
