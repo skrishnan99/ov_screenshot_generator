@@ -88,6 +88,10 @@ def main() -> int:
     ]
     if args.headed:
         extractor_argv.append("--headed")
+    # The engineer's notes also ground the extractor's part description
+    # (what the capture picks anchor to), not just the deck's copy.
+    if args.context:
+        extractor_argv += ["--context", args.context]
     code = cli.main(extractor_argv)
     if code != 0:
         print(

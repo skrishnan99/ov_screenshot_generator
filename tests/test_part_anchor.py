@@ -89,6 +89,45 @@ def main() -> int:
         except Exception as e:
             failures.append(f"unreadable file raised: {e}")
 
+    # ---- the description call is GROUNDED: the resolved recipe name and
+    # the engineer's own context enter the prompt as interpretation aids,
+    # and identity guessing is forbidden — a field run's "automotive
+    # panel" guess for a dryer cover made the anchored judges reject every
+    # page of the actual part's captures ----
+    class _PromptSpy(_StubBackend):
+        def complete(self, prompt, schema=None, images=None, max_tokens=4000,
+                     model=None):
+            self.prompt = prompt
+            return super().complete(prompt, schema, images, max_tokens, model)
+
+    with tempfile.TemporaryDirectory() as td:
+        img = Path(td) / "raw.png"
+        from PIL import Image
+
+        Image.new("RGB", (64, 48), (30, 60, 90)).save(img)
+        spy = _PromptSpy({"description": DESC, "part_visible": True})
+        llm.set_backend(spy)
+        got = cli.describe_part_from_image(
+            img, recipe="Terminal Block Secadoras L8 Tapa",
+            context="we're inspecting terminal-block covers on dryer rear panels")
+        if got != DESC:
+            failures.append(f"grounded describe call mangled the description: {got!r}")
+        if "Terminal Block Secadoras L8 Tapa" not in spy.prompt \
+                or "dryer rear panels" not in spy.prompt:
+            failures.append("recipe name / engineer context missing from the part prompt")
+        if "Do NOT guess" not in spy.prompt or "INTERPRET" not in spy.prompt:
+            failures.append("identity-guess ban / interpret doctrine missing")
+        spy2 = _PromptSpy({"description": DESC, "part_visible": True})
+        llm.set_backend(spy2)
+        cli.describe_part_from_image(img)
+        if "Context (" in spy2.prompt:
+            failures.append("empty recipe+context still rendered a context block")
+        if "Do NOT guess" not in spy2.prompt:
+            failures.append("identity-guess ban must not depend on context")
+    src_main = inspect.getsource(cli.main)
+    if 'context=meta.get("user_context"' not in src_main:
+        failures.append("main does not pass user context to the part description")
+
     # ---- anchored prompts: the part description sits IN the product
     # criterion at the decision point, demanding positive identification —
     # a preamble anchor with a generic criterion at the numbered line lost
@@ -97,6 +136,12 @@ def main() -> int:
     anchored_crit = cc.anchored_product_criterion(DESC)
     if DESC not in anchored_crit or "positively identifiable" not in anchored_crit:
         failures.append(f"anchored criterion malformed: {anchored_crit[:80]}")
+    # features over labels — an anchor's wrong object-class guess must not
+    # be grounds for rejection, in the criterion AND the thumbnail anchor
+    if "FEATURES" not in anchored_crit or "never grounds" not in anchored_crit:
+        failures.append("anchored criterion lost the features-over-labels rule")
+    if "FEATURES" not in cli._anchor_line("R", DESC):
+        failures.append("thumbnail anchor line lost the features-over-labels rule")
     block_anchored = cli._block_capture_prompt("segmentation", "R", part_desc=DESC)
     if f"1. product_image — {anchored_crit}" not in block_anchored:
         failures.append("block decision point does not carry the anchored criterion")

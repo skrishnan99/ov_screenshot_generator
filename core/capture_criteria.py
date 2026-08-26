@@ -27,12 +27,21 @@ def anchored_product_criterion(part_desc: str) -> str:
     with a generic criterion at the numbered line lost to the local text
     (a judge passed an unidentifiable frame as 'plausibly' the part);
     positive identification is the bar, and a false negative is the safe
-    direction — the search just continues."""
+    direction — the search just continues.
+
+    FEATURES over labels: the description is matched on what it DESCRIBES
+    (shape, material, colour, geometry), never on any object-class guess
+    it contains — a field run's template misread as an "automotive panel"
+    made a judge reject every capture of the actual part over the wrong
+    class label alone."""
     return (
         f"does it show THE part being inspected? The part, as seen in the "
-        f"recipe's template image: {part_desc} TRUE only if features of "
-        f"THIS part are positively identifiable in the image; otherwise "
-        f"FALSE."
+        f"recipe's template image: {part_desc} Match on the described "
+        f"FEATURES — shape, material, colour, geometry; any object-class "
+        f"or industry guess in that description is secondary, and a "
+        f"mismatched class label alone is never grounds to reject an "
+        f"image whose features match. TRUE only if features of THIS part "
+        f"are positively identifiable in the image; otherwise FALSE."
     )
 
 # The carve-out BOTH judges need on the annotation side. Two facts about

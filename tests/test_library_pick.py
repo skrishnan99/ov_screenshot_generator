@@ -142,7 +142,7 @@ def _settled(browser, prev, max_wait_s=None, require_change=True,
 
 
 def _run(rig, page_cap=cli.LIBRARY_PAGE_SCAN_CAP, click_cap=cli.LIBRARY_CLICK_CAP,
-         settle=_settled):
+         settle=_settled, part_desc="", filter_verified=False):
     saved = (cli._library_product_thumbs, cli._click_library_capture,
              cli.judge_library_viewer, cli._library_next_page,
              cli._library_goto_page, cli._library_first_capture,
@@ -156,7 +156,9 @@ def _run(rig, page_cap=cli.LIBRARY_PAGE_SCAN_CAP, click_cap=cli.LIBRARY_CLICK_CA
         cli._library_first_capture = rig.first_capture
         cli._library_page_settled = settle
         return cli.pick_library_capture(object(), "R", page_cap=page_cap,
-                                        click_cap=click_cap)
+                                        click_cap=click_cap,
+                                        part_desc=part_desc,
+                                        filter_verified=filter_verified)
     finally:
         (cli._library_product_thumbs, cli._click_library_capture,
          cli.judge_library_viewer, cli._library_next_page,
@@ -580,6 +582,72 @@ def main() -> int:
     for text in ("Library\n77 Total Captures", "Library\n20 / page", ""):
         if _exp(text, 2) is not None:
             failures.append(f"unreadable texts must yield None: {text!r}")
+
+    # ---- ANCHOR CONTRADICTION GUARD: an anchored scan that yields ZERO
+    # candidates (recognizable or plausible) on every page of a grid the
+    # recipe filter VERIFIED does not fall to tier 4 — the cards are
+    # ground truth that the captures belong to the recipe, so the anchor
+    # is the suspect (a field run's template misread as an "automotive
+    # panel" zeroed all 3 pages and shipped the blank newest capture).
+    # The scan re-runs once from page 1 unanchored; recorded as
+    # anchor_fallback. ----
+    class _AnchorRig(_Rig):
+        """Anchored calls (non-empty part_desc) return empty pools; the
+        unanchored retry sees the real thumbnails."""
+
+        def product_thumbs(self, browser, recipe, part_desc="", top_n=3,
+                           trace=None):
+            self.thumb_calls.append((self.page, bool(part_desc)))
+            if part_desc:
+                return {"recognizable": [], "plausible": []}
+            return {"recognizable": [
+                        {"id": i, "badge": "pass"}
+                        for i in list(self.page_thumbs.get(self.page, []))[:top_n]],
+                    "plausible": [
+                        {"id": i, "badge": "pass"}
+                        for i in list(self.page_plausible.get(self.page, []))[:top_n]]}
+
+    rig = _AnchorRig({1: [11], 2: []}, {11: (True, True)}, total_pages=2)
+    rec = _run(rig, part_desc="a stamped bright-metal panel",
+               filter_verified=True)
+    if rec.get("chosen") != {"page": 1, "id": 11} or rec.get("tier") != 1:
+        failures.append(f"guard retry did not rescue the pick: {rec}")
+    if not rec.get("anchor_fallback") or rec.get("anchored") is not True:
+        failures.append(f"guard/anchoring not recorded: {rec}")
+    if "part_anchor" not in rec:
+        failures.append("anchor snippet missing from the pick record")
+    if 1 not in rig.gotos:
+        failures.append("guard retry did not return to page 1")
+    flags = [a for _, a in rig.thumb_calls]
+    if flags[:2] != [True, True] or False not in flags:
+        failures.append(f"retry order wrong (anchored first, then not): "
+                        f"{rig.thumb_calls}")
+    if not all("anchored" in p for p in rec.get("pages", [])):
+        failures.append("page traces lost their anchored flag")
+
+    # filter NOT verified: the zero-candidate verdict stands (tier 4) —
+    # without the cards' ground truth there is no contradiction to act on
+    rig = _AnchorRig({1: [11]}, {11: (True, True)}, total_pages=1)
+    rec = _run(rig, part_desc="a stamped bright-metal panel",
+               filter_verified=False)
+    if rec.get("anchor_fallback") or rec.get("tier") != 4:
+        failures.append(f"guard fired without filter verification: {rec}")
+
+    # already unanchored: nothing to fall back to
+    rig = _Rig({1: []}, {}, total_pages=1)
+    rec = _run(rig, filter_verified=True)
+    if rec.get("anchor_fallback") or rec.get("tier") != 4 \
+            or rec.get("anchored") is not False:
+        failures.append(f"guard fired without an anchor: {rec}")
+
+    # the anchored scan PRODUCED candidates (clicked, none chosen): its
+    # verdict is trusted — best partial ships, no retry
+    rig = _Rig({1: [21]}, {21: (True, False)}, total_pages=1)
+    rec = _run(rig, part_desc="a stamped bright-metal panel",
+               filter_verified=True)
+    if rec.get("anchor_fallback") or rec.get("tier") != 2:
+        failures.append(f"guard fired though the anchor ranked candidates: "
+                        f"{rec}")
 
     # ---- nav helpers: settle-gated, degradation noted, disabled Next
     # costs no wait ----

@@ -92,6 +92,15 @@ PYTHONUNBUFFERED=1 uv run --project "$PLUGIN_ROOT" python "$PLUGIN_ROOT/cli.py" 
   --url "<URL>" --recipe "<RECIPE>"
 ```
 
+**When the request describes the part or application in the engineer's own
+words** — "we're inspecting the terminal-block cover on dryer rear
+panels", or they gave a notes file — pass those words through with
+`--context "<their words>"` (literal text or a file path). It grounds the
+run's part identification, which every capture-pick judgment anchors to.
+Pass ONLY engineer-authored content, verbatim: never write your own
+summary of the camera or recipe, and omit the flag when they said nothing
+about the part — wrong context is worse than none.
+
 Run it in the background and report step progress (`== step:` lines) as it
 goes. Outputs land in `runs/<timestamp>/` under the current working
 directory. Do not start a second run in parallel against the same camera.

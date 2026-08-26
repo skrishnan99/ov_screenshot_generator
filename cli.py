@@ -1053,7 +1053,16 @@ def pick_annotated_capture(browser, block_type: str,
     like every capture hook: any failure leaves the viewer where it is and
     the capture proceeds — never fails the step.
     """
-    rec: dict = {"judged": [], "chosen": None, "tier": None}
+    rec: dict = {"judged": [], "chosen": None, "tier": None,
+                 "anchored": bool(part_desc)}
+    if part_desc:
+        rec["part_anchor"] = part_desc[:160]
+    else:
+        # Same loud degradation note as the library pick: the generic
+        # criterion has passed featureless frames before.
+        print("  capture pick: NO part description — judging with the "
+              "generic product criterion (run the template step for "
+              "anchored picks)")
     try:
         cur, total, sel = _capture_nav_state(browser)
 
@@ -1064,7 +1073,7 @@ def pick_annotated_capture(browser, block_type: str,
                     else 2 if v.get("product_image")
                     else 3 if v.get("annotated") else 4)
             rec["judged"].append({"index": idx, "tier": tier,
-                                  "reason": str(v.get("reason", ""))[:160]})
+                                  "reason": str(v.get("reason", ""))[:300]})
             return tier
 
         tier = judge(cur)
@@ -1577,12 +1586,19 @@ def _anchor_line(recipe: str, part_desc: str = "") -> str:
     """The thumbnail prefilter's part anchor: names THE part so the
     recognizable/plausible split is about this part, not any object. The
     terminal viewer/block judges get the anchored product criterion AT
-    THE DECISION POINT (capture_criteria.anchored_product_criterion)."""
+    THE DECISION POINT (capture_criteria.anchored_product_criterion).
+    FEATURES over labels, same as that criterion: a template misread as an
+    "automotive panel" once made this judge reject all three pages of the
+    actual part's captures over the wrong class label alone."""
     if part_desc:
         return (f"\nThe part being inspected, as seen in the recipe's "
                 f"template image: {part_desc}\nThe question is whether "
                 f"THIS part is recognizable — possibly at a different angle "
-                f"or zoom — not just any manufactured object.")
+                f"or zoom — not just any manufactured object. Match on the "
+                f"description's FEATURES (shape, material, colour, "
+                f"geometry); any object-class or industry guess in it is "
+                f"secondary, and a mismatched class label alone is never "
+                f"grounds to reject a thumbnail whose features match.")
     return _recipe_line(recipe)
 
 
@@ -1609,7 +1625,7 @@ PART_DESCRIPTION_SCHEMA = {
 }
 
 PART_DESCRIPTION_PROMPT = """This is the template image of a camera inspection recipe — the canonical
-reference view of the part being inspected.
+reference view of the part being inspected.{context_block}
 
 Describe the part in 2-3 short sentences of INVARIANT features — overall
 shape, material, colour, distinctive geometry (bores, holes, edges,
@@ -1617,19 +1633,50 @@ markings) — so a later judgment can recognise the same part at a different
 angle, zoom or exposure. Describe the part itself, never image quality and
 never UI elements.
 
+Describe only what is VISIBLE. Do NOT guess what product, machine or
+industry the part belongs to: an object-identity hypothesis the image alone
+cannot establish poisons every judgment made against this description. When
+the context above names the part, prefer its words for identity; never
+invent an identity beyond it.
+
 If the image does not clearly show a physical part (blank, uniform, a test
 pattern, or unrelated content), say so and set part_visible=false."""
 
 
-def describe_part_from_image(path) -> str | None:
+def _part_context_block(recipe: str, context: str) -> str:
+    """The part prompt's context section: the resolved recipe name (names
+    usually name the part or the inspection) and the engineer's own words
+    from the run request. Interpretation aids only — the prompt keeps the
+    image authoritative, and the block is absent when neither exists."""
+    lines = []
+    if recipe:
+        lines.append(f'The recipe is named "{recipe}" — recipe names '
+                     f"usually name the part or the inspection.")
+    if context:
+        lines.append("The engineer running this test said: "
+                     + " ".join(str(context).split())[:600])
+    if not lines:
+        return ""
+    return ("\n\nContext (use it to INTERPRET what you see; if the image "
+            "contradicts it, describe what is actually visible):\n"
+            + "\n".join(f"- {ln}" for ln in lines))
+
+
+def describe_part_from_image(path, recipe: str = "",
+                             context: str = "") -> str | None:
     """The part description for meta["part_description"], or None when the
-    template shows no usable part. Never raises."""
+    template shows no usable part. `recipe` and `context` (the engineer's
+    own words from the run request) ground the read — a field run described
+    a dryer cover panel as an "automotive panel", and the wrong identity
+    then poisoned every downstream pick judgment. Never raises."""
     from core import llm
     from core.llm import downscale_for_vision
 
     try:
         data = Path(path).read_bytes()
-        out = llm.complete(PART_DESCRIPTION_PROMPT, schema=PART_DESCRIPTION_SCHEMA,
+        prompt = PART_DESCRIPTION_PROMPT.format(
+            context_block=_part_context_block(recipe, context))
+        out = llm.complete(prompt, schema=PART_DESCRIPTION_SCHEMA,
                            images=[downscale_for_vision(data)], max_tokens=600,
                            model=llm.SONNET)
         if out.get("part_visible") and str(out.get("description", "")).strip():
@@ -1691,9 +1738,11 @@ def _library_product_thumbs(browser, recipe: str, part_desc: str = "",
         plausible = [c for c in _order_candidates(model_plausible, cards, recipe)
                      if c["id"] not in seen]
         if trace is not None:
+            # 600, not 200: a field investigation needed the ranker's full
+            # reasoning and the manifest had only the first 200 chars.
             trace.update({"cards": len(cards), "model_ranked": model_ranked,
                           "model_plausible": model_plausible,
-                          "model_reason": str(out.get("reason", ""))[:200],
+                          "model_reason": str(out.get("reason", ""))[:600],
                           "ordered": [c["id"] for c in recognizable],
                           "plausible_ordered": [c["id"] for c in plausible]})
         return {"recognizable": recognizable[:top_n],
@@ -1933,7 +1982,8 @@ def _library_first_capture(browser):
 def pick_library_capture(browser, recipe: str = "",
                          page_cap: int = LIBRARY_PAGE_SCAN_CAP,
                          click_cap: int = LIBRARY_CLICK_CAP,
-                         part_desc: str = "") -> dict:
+                         part_desc: str = "",
+                         filter_verified: bool = False) -> dict:
     """Leave the library viewer on the best available capture and say how
     it was chosen; the caller screenshots and downloads afterwards, so all
     three artifacts describe the same capture.
@@ -1956,14 +2006,36 @@ def pick_library_capture(browser, recipe: str = "",
     1's newest capture. Every grid the ranker judges is settle-gated first
     (_library_page_settled) — a page that never settles is judged as-is
     and noted in the record. Best-effort like every capture hook:
-    failures degrade, never fail the step."""
+    failures degrade, never fail the step.
+
+    ANCHOR CONTRADICTION GUARD: when the ANCHORED scan yields ZERO
+    candidates — recognizable or plausible — across every page of a grid
+    the recipe filter VERIFIED (filter_verified: the cards provably carry
+    this recipe's name), tier 4 is not accepted yet. The cards are ground
+    truth that these captures belong to the recipe; a judge that rejected
+    all of them contradicts that, and the anchor — the one unverified
+    input in the loop — is the suspect (a field run's template misread as
+    an "automotive panel" zeroed all three pages and shipped the blank
+    newest capture). The scan re-runs ONCE from page 1 unanchored, under
+    the same shared caps, before the tier-4 reset; recorded as
+    anchor_fallback."""
     from core.capture_criteria import LIBRARY_TIER_MEANING
 
-    rec: dict = {"clicked": [], "chosen": None, "tier": None, "pages_scanned": 0}
+    rec: dict = {"clicked": [], "chosen": None, "tier": None,
+                 "pages_scanned": 0, "anchored": bool(part_desc)}
+    if part_desc:
+        rec["part_anchor"] = part_desc[:160]
+    else:
+        # The generic criterion accepts any manufactured part — a weaker
+        # judge that has passed featureless frames before. Loud, so a run
+        # without a template step can't silently claim anchored quality.
+        print("  library pick: NO part description — judging with the "
+              "generic product criterion (run the template step for "
+              "anchored picks)")
     nav_notes: list = []
-    state = {"best": (5, None), "clicks": 0, "capped": False}
+    state = {"best": (5, None), "clicks": 0, "capped": False, "candidates": 0}
 
-    def judge(page: int, candidates: list, pool: str) -> bool:
+    def judge(page: int, candidates: list, pool: str, anchor: str) -> bool:
         """Click and judge candidates in order; True on a product+overlay
         capture (recorded as chosen). Updates the shared click count, cap
         flag and best partial."""
@@ -1977,14 +2049,15 @@ def pick_library_capture(browser, recipe: str = "",
             if not _click_library_capture(browser, cid):
                 print(f"  warning: could not select capture #{cid}; skipping")
                 continue
-            v = judge_library_viewer(browser, recipe, part_desc=part_desc)
+            v = judge_library_viewer(browser, recipe, part_desc=anchor)
             state["clicks"] += 1
             tier = (1 if v.get("product_image") and v.get("overlay")
                     else 2 if v.get("product_image")
                     else 3 if v.get("overlay") else 4)
             rec["clicked"].append({"page": page, "id": cid, "badge": badge,
-                                   "pool": pool, "tier": tier,
-                                   "reason": str(v.get("reason", ""))[:160]})
+                                   "pool": pool, "anchored": bool(anchor),
+                                   "tier": tier,
+                                   "reason": str(v.get("reason", ""))[:300]})
             if tier == 1:
                 rec["chosen"], rec["tier"] = {"page": page, "id": cid}, 1
                 print(f"  library pick: capture #{cid} (page {page}) is "
@@ -1994,26 +2067,24 @@ def pick_library_capture(browser, recipe: str = "",
                 state["best"] = (tier, (page, cid))
         return False
 
-    try:
-        # The entry grid gets the same settle gate as every page turn: the
-        # filter's verdict proves cards rendered, not that their thumbnails
-        # painted — and the ranker must never judge grey tiles.
-        settled, _ = _library_page_settled(
-            browser, [], require_change=False,
-            expected=_library_settle_expectation(browser, 1, nav_notes))
-        if not settled:
-            _library_nav_note(nav_notes, "page 1 grid did not settle; "
-                              "judging it as-is")
+    def run_scan(anchor: str) -> bool:
+        """One full scan under `anchor`: pass 1 over the pages, then that
+        scan's plausible-reserve pass. Shares the click budget, cap flag,
+        candidate count and best partial with any other scan of this pick.
+        True when a product+overlay capture was chosen. The caller settles
+        or navigates the grid to page 1 before calling."""
+        anchored = bool(anchor)
         reserve: list[tuple[int, list]] = []   # (page, plausible candidates)
         page = 1
         while page <= page_cap:
-            rec["pages_scanned"] = page
-            trace: dict = {"page": page}
-            pools = _library_product_thumbs(browser, recipe, part_desc,
+            rec["pages_scanned"] = max(rec["pages_scanned"], page)
+            trace: dict = {"page": page, "anchored": anchored}
+            pools = _library_product_thumbs(browser, recipe, anchor,
                                             trace=trace)
             rec.setdefault("pages", []).append(trace)
             recognizable = pools.get("recognizable", [])
             plausible = pools.get("plausible", [])
+            state["candidates"] += len(recognizable) + len(plausible)
             if plausible:
                 reserve.append((page, plausible))
             if recognizable:
@@ -2025,8 +2096,8 @@ def pick_library_capture(browser, recipe: str = "",
             elif plausible:
                 print(f"  library pick: page {page}: nothing recognizable; "
                       f"{len(plausible)} plausible held in reserve")
-            if judge(page, recognizable, "recognizable"):
-                return rec
+            if judge(page, recognizable, "recognizable", anchor):
+                return True
             if state["capped"] or page == page_cap \
                     or not _library_next_page(browser, nav_notes,
                                               page_no=page + 1):
@@ -2040,7 +2111,7 @@ def pick_library_capture(browser, recipe: str = "",
             print(f"  library pick: no product + overlay among recognizable "
                   f"thumbnails; trying {total} plausible reserve candidate(s)")
             rec["reserve_pass"] = True
-            current = rec["pages_scanned"]
+            current = page
             for rpage, cands in reserve:
                 if state["capped"]:
                     break
@@ -2050,8 +2121,37 @@ def pick_library_capture(browser, recipe: str = "",
                                           f"{rpage} for its reserve; skipped")
                         continue
                     current = rpage
-                if judge(rpage, cands, "plausible"):
+                if judge(rpage, cands, "plausible", anchor):
+                    return True
+        return False
+
+    try:
+        # The entry grid gets the same settle gate as every page turn: the
+        # filter's verdict proves cards rendered, not that their thumbnails
+        # painted — and the ranker must never judge grey tiles.
+        settled, _ = _library_page_settled(
+            browser, [], require_change=False,
+            expected=_library_settle_expectation(browser, 1, nav_notes))
+        if not settled:
+            _library_nav_note(nav_notes, "page 1 grid did not settle; "
+                              "judging it as-is")
+
+        if run_scan(part_desc):
+            return rec
+
+        if (part_desc and filter_verified and state["candidates"] == 0
+                and not state["capped"]):
+            # See ANCHOR CONTRADICTION GUARD in the docstring.
+            rec["anchor_fallback"] = True
+            print("  library pick: the anchored judge rejected every card "
+                  "of a filter-VERIFIED grid — the anchor is the suspect; "
+                  "retrying once unanchored")
+            if _library_goto_page(browser, 1, nav_notes):
+                if run_scan(""):
                     return rec
+            else:
+                _library_nav_note(nav_notes, "could not return to page 1 "
+                                  "for the unanchored retry")
 
         best = state["best"]
         if best[1] is not None:
@@ -2728,6 +2828,13 @@ def main(argv: list[str] | None = None) -> int:
         "Note: later steps may depend on earlier steps' end state.",
     )
     ap.add_argument(
+        "--context",
+        help="Engineer-provided context for this run — a file path or literal "
+        "text, in THEIR words (what part/application is being inspected). "
+        "Recorded in meta.json as user_context and used to ground the part "
+        "description that anchors the capture picks.",
+    )
+    ap.add_argument(
         "--llm-backend",
         choices=["api", "claude-code", "agent-sdk"],
         default=os.environ.get("SG_LLM_BACKEND", "agent-sdk"),
@@ -2770,6 +2877,21 @@ def main(argv: list[str] | None = None) -> int:
     desc_queue: list[tuple[Path, dict]] = []
     # Extra per-run structured data (e.g. image-area bboxes) -> meta.json.
     meta: dict = {}
+    # Engineer-provided context (a file path or literal text): recorded
+    # verbatim, and injected into the part-description prompt — a wrong
+    # part identity there once poisoned every pick judgment of a run.
+    if args.context:
+        ctx = args.context
+        try:
+            p = Path(ctx)
+            if p.is_file():
+                ctx = p.read_text()
+        except OSError:
+            pass  # literal text long enough to break Path(); use as-is
+        ctx = ctx.strip()
+        if ctx:
+            meta["user_context"] = ctx
+            print(f"user context: {ctx[:100]}{'...' if len(ctx) > 100 else ''}")
     try:
         browser.goto(origin)
 
@@ -2985,9 +3107,14 @@ def main(argv: list[str] | None = None) -> int:
             # viewer on a capture that actually shows the product with its
             # inspection overlays (searched, not taken on faith).
             if step.get("pick_library_capture"):
+                # The filter verdict feeds the anchor contradiction guard:
+                # a verified grid whose every card the anchored judge
+                # rejects indicts the anchor, not the grid.
+                _lf = step_record.get("library_filter") or {}
                 step_record["library_pick"] = pick_library_capture(
                     browser, recipe_name or args.recipe,
-                    part_desc=meta.get("part_description", ""))
+                    part_desc=meta.get("part_description", ""),
+                    filter_verified=_lf.get("verified") == "ok")
             if step.get("foreach_models"):
                 capture_per_model(
                     browser, step, out, step_record, desc_queue, base_ctx, meta
@@ -3093,7 +3220,9 @@ def main(argv: list[str] | None = None) -> int:
                         # yields no anchor — enrichment, never a gate.
                         if step.get("describe_part"):
                             desc = describe_part_from_image(
-                                out.run_dir / img_info["file"])
+                                out.run_dir / img_info["file"],
+                                recipe=recipe_name or args.recipe,
+                                context=meta.get("user_context", ""))
                             if desc:
                                 meta["part_description"] = desc
                                 print(f"  part description: {desc[:110]}")
