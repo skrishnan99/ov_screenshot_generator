@@ -594,9 +594,10 @@ def main() -> int:
             pass
 
     class _NavPage:
-        def __init__(self, next_cls="", has_page_one=False):
+        def __init__(self, next_cls="", has_page_one=False, body=""):
             self.next_cls = next_cls
             self.has_page_one = has_page_one
+            self.body = body
 
         def query_selector(self, sel):
             if sel == "li.ant-pagination-next":
@@ -606,6 +607,8 @@ def main() -> int:
             return None
 
         def evaluate(self, js):
+            if js.strip().startswith("document.body"):
+                return self.body
             return []
 
     settle_calls = []
@@ -630,6 +633,44 @@ def main() -> int:
         ok = cli._library_next_page(_TurnBrowser(_NavPage("disabled")), [])
         if ok or len(settle_calls) != 1:
             failures.append("disabled Next clicked or settle-waited")
+
+        # An early scan end at a page that SHOULD exist is never silent (a
+        # field run skipped page 3 of 3 and the pick record could not say
+        # why): with readable total/page-size texts saying page 3 holds 13
+        # cards, a disabled Next records the reason; past the true last
+        # page the same disabled Next is the scan's normal end and notes
+        # nothing; a raising Next click is always noted.
+        body3 = "Library\n53 Total Captures\n20 / page"
+        notes = []
+        ok = cli._library_next_page(
+            _TurnBrowser(_NavPage("disabled", body=body3)), notes, page_no=3)
+        if ok or not any("should hold 13" in n for n in notes):
+            failures.append(f"early end at an existing page not noted: "
+                            f"ok={ok} notes={notes}")
+        notes = []
+        ok = cli._library_next_page(
+            _TurnBrowser(_NavPage("disabled",
+                                  body="Library\n40 Total Captures\n"
+                                       "20 / page")), notes, page_no=3)
+        if ok or any("should hold" in n for n in notes):
+            failures.append(f"normal last-page end must stay quiet: {notes}")
+
+        class _BoomEl(_NavEl):
+            def click(self):
+                raise RuntimeError("intercepted by overlay")
+
+        class _BoomPage(_NavPage):
+            def query_selector(self, sel):
+                if sel == "li.ant-pagination-next":
+                    return _BoomEl()
+                return None
+
+        notes = []
+        ok = cli._library_next_page(
+            _TurnBrowser(_BoomPage(body=body3)), notes, page_no=3)
+        if ok or not any("page turn to page 3 failed" in n for n in notes):
+            failures.append(f"raising Next click not noted: ok={ok} "
+                            f"notes={notes}")
         settle_calls.clear()
         cli._library_page_settled = _spy_settle(True)
         ok = cli._library_goto_page(

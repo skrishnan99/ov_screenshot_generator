@@ -1866,15 +1866,32 @@ def _library_settle_expectation(browser, page_no: int | None,
 def _library_next_page(browser, notes: list | None = None,
                        page_no: int | None = None) -> bool:
     """Click Next and settle on the destination page (page_no, when the
-    caller knows it, gives the gate its exact expected card count)."""
+    caller knows it, gives the gate its exact expected card count).
+
+    Returns False when no page turn happened. When the destination SHOULD
+    exist — the page's own total/page-size texts say page_no holds cards —
+    the reason is recorded via `notes`: a scan that ends early must never
+    end silently (a field run skipped page 3 of 3 and the pick record
+    could not say why, or even that it had). Ending past the true last
+    page (expected 0 cards) stays quiet — that is the scan's normal end.
+    """
     try:
         prev = _library_card_ids(browser)
         expected = _library_settle_expectation(browser, page_no, notes)
+        should_exist = expected is not None and expected > 0
         nxt = browser.page.query_selector("li.ant-pagination-next")
         if nxt is None or "disabled" in (nxt.get_attribute("class") or ""):
+            if should_exist:
+                state = "absent" if nxt is None else "disabled"
+                _library_nav_note(notes, f"Next is {state} though page "
+                                  f"{page_no} should hold {expected} "
+                                  f"card(s); the scan ends early")
             return False
         nxt.click()
-    except Exception:
+    except Exception as e:
+        _library_nav_note(notes, f"page turn to page {page_no} failed "
+                          f"({str(e).splitlines()[0][:120]}); the scan "
+                          f"ends early")
         return False
     settled, ids = _library_page_settled(browser, prev, expected=expected)
     if not settled:
