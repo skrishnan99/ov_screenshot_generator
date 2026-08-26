@@ -344,13 +344,18 @@ mode: instead of a Node-RED flow, the pass/fail logic is defined by rule builder
 mixes the rules' selected values with page chrome (navigation, capture preview metadata, \
 buttons) — ignore the chrome entirely.
 
-Domain knowledge for interpreting the rules:
-- "Classification Rules" rows read like: <ROI scope> <condition> <class> — e.g. "All ROIs \
-match zero" means every region's classification prediction must be the class "zero" for the \
-check to pass.
-- "Segmentation Rules" group per inspection type; rows read like: <defect class> <metric> \
-<aggregation> <comparator> <threshold> — e.g. "Defect Pixel Count Lowest <= 50" bounds the \
-defect mask's pixel count.
+Domain knowledge for interpreting the rules (the page follows one of two layouts):
+- OV80i layout — "Classification Rules" rows read like: <ROI scope> <condition> <class> — \
+e.g. "All ROIs match zero" means every region's classification prediction must be the class \
+"zero" for the check to pass. "Segmentation Rules" group per inspection type; rows read \
+like: <defect class> <metric> <aggregation> <comparator> <threshold> — e.g. "Defect Pixel \
+Count Lowest <= 50" bounds the defect mask's pixel count.
+- OV20i layout ("Basic IO Block") — numbered sections: "Save images" (which frames persist \
+to the Library); "Rules" (each rule checks an AI metric or PLC input against a value; \
+"No rules — inspection always passes" means exactly that); "Overall result" (the rules \
+combine by AND — "All rules pass" — or OR — "Any rule passes"); "Digital Outputs (DO)" \
+(which of the two DO pins are driven, from a rule or the overall result, with latch/pulse \
+and N.O./N.C. polarity).
 - Multiple rules and rule groups combine into the overall verdict; describe the composition \
 as shown. Rules reference the recipe's models / inspection types by name.
 - The combined result is the camera's pass/fail verdict for each inspection cycle.

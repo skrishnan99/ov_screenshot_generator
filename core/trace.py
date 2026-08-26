@@ -18,7 +18,12 @@ from pathlib import Path
 
 from core.paths import traces_dir
 
-FIND_ATTEMPTS = 4
+# 8 x 1.5s: the OV20i's "Edit this recipe?" dialog repeatedly took longer
+# than the old ~6s window to render (3 consecutive runs), failing an
+# otherwise-perfect replay into a ~40s agent fallback. A longer window
+# only changes how long replay WAITS for a target to appear — never which
+# target it picks; a genuinely missing target now costs 12s, not 6.
+FIND_ATTEMPTS = 8
 FIND_RETRY_MS = 1500
 
 

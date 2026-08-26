@@ -192,8 +192,12 @@ slides:
         where: {trained: true}
         optional: true
         expects: >
-          The Inspection Setup screen with {model.name} selected and its
-          regions of interest drawn on the part — where THIS model looks.
+          The inspection-regions screen with {model.name}'s regions of
+          interest drawn on the part — where THIS model looks. On
+          multi-model cameras this is the Inspection Setup screen with
+          {model.name} selected; on single-model cameras it is the Region
+          of Interest (ROIs) editor step, which shows the regions without
+          naming any model — that still matches.
     tokens:
       text:
         llm: >
@@ -208,7 +212,7 @@ slides:
     where: {trained: true}
     tier: 3
     step: true
-    title: "Step {step}: Training — {model.name} ({model.type_title})"
+    title: "Step {step}: Training — {model.name}{model.title_suffix}"
     hint: >
       One split slide, like the house setup templates: the block page
       on the left at about 55% width. In the right-hand column the WHAT
@@ -311,6 +315,10 @@ slides:
   # --request) is. train_imgs is the LARGEST training-image count any
   # model used, derived deterministically in build_context (em dash when
   # unstated).
+  # ALWAYS the classifier card, for every recipe composition — segmentation
+  # included — matching the ov80i's behavior. A conditional segmenter-card
+  # variant (concise_results_segmenter, mean IoU) was built and REVERTED at
+  # the user's request on 2026-08-26; do not reintroduce it without asking.
   - id: results
     skeleton: concise_results_classifier
     tokens:

@@ -111,12 +111,16 @@ def check_variant(variant: str) -> bool:
         f"variant not supported yet (no {task_spec.name}); supported: "
         + ", ".join(sorted(p.stem for p in (paths.PACKAGE_ROOT / 'tasks').glob('*.yaml'))),
     )
+    # Legacy Gen-A deck specs (decks/<variant>.yaml) exist only for some
+    # variants; deck generation now goes through the overview-deck skill,
+    # whose spec is variant-resolved. Informational, never a failure.
     deck_spec = paths.PACKAGE_ROOT / "decks" / f"{variant}.yaml"
-    ok &= _check(
-        f"deck spec for variant {variant}",
-        deck_spec.exists(),
-        f"deck generation not supported yet for {variant}; supported: "
-        + ", ".join(sorted(p.stem for p in (paths.PACKAGE_ROOT / 'decks').glob('*.yaml'))),
+    _check(
+        f"legacy deck spec for variant {variant}"
+        if deck_spec.exists()
+        else f"no legacy deck spec for {variant} (fine — decks are built by "
+        f"the overview-deck skill)",
+        True,
     )
     return bool(ok)
 

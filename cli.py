@@ -768,10 +768,19 @@ def _is_basic_io_page(browser) -> bool:
         if _node_red_frame(browser) is not None:
             return False
         text = browser.page.evaluate("document.body.innerText") or ""
-        return "Pass/Fail & IO Logic" in text and (
+        # OV80i basic layout
+        if "Pass/Fail & IO Logic" in text and (
             "Classification Rules" in text
             or "Segmentation Rules" in text
             or "Advanced Mode" in text
+        ):
+            return True
+        # OV20i basic layout: "Basic IO Block" heading with the numbered
+        # Rules / Overall result / Digital Outputs sections.
+        return "Basic IO Block" in text and (
+            "Overall result" in text
+            or "Digital Outputs" in text
+            or "Advanced Mode (Node-RED)" in text
         )
     except Exception:
         return False
@@ -2108,7 +2117,16 @@ def _attempt_library_filter(page, recipe: str, count_before) -> tuple[str, str]:
     box = page.query_selector("#recipe")
     if box is None or not box.is_visible():
         return "no-filter-control", ""
-    box.click()
+    # Click the ant-select CONTAINER, not the inner input: on the OV20i the
+    # combobox input sits UNDER the selection overlay and never receives
+    # pointer events (a 10s click timeout, live-observed — the same lesson
+    # _MODEL_SELECT_JS carries). fill() needs no pointer and still targets
+    # the input itself. The OV80i container takes the click identically.
+    container = box.evaluate_handle("el => el.closest('.ant-select') || el")
+    try:
+        container.as_element().click(timeout=5000)
+    except Exception:
+        box.click(timeout=5000)  # unexpected DOM: try the input directly
     box.fill(recipe)
     page.wait_for_timeout(1200)
     option = next(
@@ -2199,7 +2217,15 @@ def filter_library_by_recipe(browser, recipe: str) -> dict:
                 rec["attempts"].append("library page never became ready")
                 continue
             count_before = _library_count(page)
-            status, detail = _attempt_library_filter(page, recipe, count_before)
+            # An attempt that RAISES (a click timeout, a detached node) is a
+            # degraded attempt, not a reason to skip the retry and the
+            # verification below — the field case that motivated this was an
+            # agent-filtered grid whose backstop crash also skipped the
+            # verdict that would have reported it clean.
+            try:
+                status, detail = _attempt_library_filter(page, recipe, count_before)
+            except Exception as e:
+                status, detail = "attempt-error", str(e).splitlines()[0][:160]
             rec["attempts"].append(f"{status}: {detail}" if detail else status)
             if status == "filtered":
                 rec["filtered"] = True
@@ -2226,6 +2252,17 @@ def filter_library_by_recipe(browser, recipe: str) -> dict:
 # the "of N" on separate lines, hence the bounded any-character gap.
 _CAPTURE_TOTAL_RE = re.compile(r"source\s+capture:?[\s\S]{0,40}?\bof\s+(\d+)", re.I)
 
+# The OV20i block page states the total as "Total Captures: N" in its
+# INITIAL view — the "Source Capture: n of N" readout only appears once
+# Previous has entered the capture-review state. Colon required: the
+# Library page's "131 Total Captures" (number first) must NOT match.
+_TOTAL_CAPTURES_RE = re.compile(r"total\s+captures:\s*([\d,]+)", re.I)
+
+
+def _block_capture_total(text: str) -> int | None:
+    m = _CAPTURE_TOTAL_RE.search(text) or _TOTAL_CAPTURES_RE.search(text)
+    return int(m.group(1).replace(",", "")) if m else None
+
 
 def harvest_block_total(browser, want_type: str, meta: dict, source: str) -> None:
     """Read the block page's total capture count and record it for every
@@ -2235,14 +2272,13 @@ def harvest_block_total(browser, want_type: str, meta: dict, source: str) -> Non
     class-bar harvest, which needs the pre-"Previous" view. Deterministic
     (regex over page text); enrichment only — never fails the step."""
     try:
-        m = _CAPTURE_TOTAL_RE.search(browser.page_text(20000))
-        if not m:
+        total = _block_capture_total(browser.page_text(20000))
+        if total is None:
             print(
-                "  warning: no 'Source Capture: n of N' readout found; "
-                "total captures not recorded"
+                "  warning: no 'Source Capture: n of N' / 'Total Captures: N' "
+                "readout found; total captures not recorded"
             )
             return
-        total = int(m.group(1))
         models = [mm for mm in meta.get("models", []) if mm.get("type") == want_type]
         for mm in models:
             entry = meta.setdefault("model_stats", {}).setdefault(
@@ -2260,6 +2296,87 @@ def harvest_block_total(browser, want_type: str, meta: dict, source: str) -> Non
         print(f"  total captures for {want_type}: {total} ({len(models)} model(s))")
     except Exception as e:
         print(f"  warning: total captures not recorded: {e}")
+
+
+def detect_recipe_model(browser, meta: dict) -> None:
+    """Single-model variants (OV20i): a recipe carries exactly ONE AI model,
+    and the editor overview's waterfall names its type — step 4 reads
+    "Classification" or "Segmentation"; there is no Models section to
+    enumerate. Seed the sanctioned meta["models"] envelope from that text so
+    every downstream consumer (stats harvest, pick judges, deck slices) keys
+    on the same roster contract multi-model variants fill on the ROI page.
+    Deterministic; warns and leaves the roster unset on any failure, so
+    downstream hooks no-op loudly rather than guess."""
+    try:
+        text = browser.page.evaluate("document.body.innerText") or ""
+        counts = {
+            t: len(re.findall(rf"\b{t}\b", text))
+            for t in ("Classification", "Segmentation")
+        }
+        best = max(counts, key=lambda t: counts[t])
+        if counts[best] == 0:
+            print("  warning: neither Classification nor Segmentation appears "
+                  "on the editor overview; model roster not seeded")
+            return
+        if all(counts.values()):
+            print(f"  note: both block types appear on the overview {counts}; "
+                  f"taking the more frequent")
+        meta["models"] = [
+            {"name": best, "type": best.lower(), "slug": slugify(best)}
+        ]
+        print(f"  recipe model: {best} ({best.lower()})")
+    except Exception as e:
+        print(f"  warning: recipe model detection failed: {e}")
+
+
+def _block_type(value, meta: dict) -> str:
+    """A step flag's block type: the literal value, or — for "auto"
+    (single-model variants, where the spec cannot know the type) — the
+    seeded roster's one model type. Empty string when auto cannot resolve;
+    every consumer already warns-and-continues on an unknown type."""
+    value = str(value)
+    if value != "auto":
+        return value
+    models = meta.get("models") or []
+    if not models:
+        print("  warning: block type is 'auto' but the model roster is empty")
+        return ""
+    return models[0].get("type", "")
+
+
+def harvest_aligner_choice(browser, meta: dict) -> None:
+    """OV20i alignment page: record whether the aligner is in use from the
+    "Use the aligner?" button pair — the selected side carries the primary
+    style. Recorded as a recipe skip_aligner fact with the single-token
+    value the deck's toggle evaluation resolves without a model call.
+    Enrichment only: warns and continues on any failure or ambiguity."""
+    try:
+        got = browser.page.evaluate("""() => {
+          const out = {};
+          for (const b of document.querySelectorAll('button')) {
+            const t = (b.innerText || '').trim();
+            if (t === 'Yes, use it' || t === 'No, skip it')
+              out[t] = (b.className || '').includes('ant-btn-primary');
+          }
+          return out;
+        }""") or {}
+        if len(got) < 2:
+            print("  warning: 'Use the aligner?' buttons not found; "
+                  "aligner state not recorded")
+            return
+        if got.get("Yes, use it") == got.get("No, skip it"):
+            print(f"  warning: aligner choice ambiguous ({got}); not recorded")
+            return
+        skipped = bool(got.get("No, skip it"))
+        meta.setdefault("facts", []).append({
+            "subject": "recipe",
+            "property": "skip_aligner",
+            "value": "on" if skipped else "off",
+            "source": "alignment page toggle",
+        })
+        print(f"  aligner: {'skipped' if skipped else 'in use'}")
+    except Exception as e:
+        print(f"  warning: aligner choice harvest failed: {e}")
 
 
 def capture_block_per_model(
@@ -2773,9 +2890,17 @@ def main(argv: list[str] | None = None) -> int:
 
             if step_record["layer"] == "agent" and not step.get("always_agent"):
                 if result.actions:
+                    # The CANONICAL resolved name, never the step's own
+                    # matched_recipe: agents on non-recipe steps sometimes
+                    # fill that field with whatever they matched ("Region of
+                    # Interest (ROIs)"), and when that junk appears in a
+                    # click's row context the action is marked recipe_scoped
+                    # — which replay can then never satisfy (it demands the
+                    # resolved recipe name in the row). Same trust rule as
+                    # run_resolved above, extended to the trace store.
                     trace_store.save(
                         variant, version_key, step_id,
-                        result.actions, result.matched_recipe,
+                        result.actions, run_resolved or "",
                     )
                     print(f"  trace saved for {variant}/{version_key}")
                 else:
@@ -2790,12 +2915,21 @@ def main(argv: list[str] | None = None) -> int:
                 "step": step_id,
                 "intent": step.get("goal", ""),
             }
+            # Single-model variants: seed the roster from the editor
+            # overview's waterfall (there is no Models section to enumerate).
+            if step.get("detect_recipe_model"):
+                detect_recipe_model(browser, meta)
+            # OV20i alignment page: record the "Use the aligner?" choice.
+            if step.get("harvest_aligner_choice"):
+                harvest_aligner_choice(browser, meta)
             # Stats steps run on a block page's INITIAL view — before the
             # screenshot step's "Previous" click swaps the class panel to the
             # annotation state and its bars disappear. One harvest per model
             # of the block's type, all read from the same shared panel.
+            # (On the OV20i the class panel persists after Previous, so the
+            # same step may carry stats, total, pick and screenshot at once.)
             if step.get("collect_block_stats"):
-                want_type = step["collect_block_stats"]
+                want_type = _block_type(step["collect_block_stats"], meta)
                 stat_models = [
                     m for m in meta.get("models", []) if m.get("type") == want_type
                 ]
@@ -2808,7 +2942,8 @@ def main(argv: list[str] | None = None) -> int:
             # agent already clicked Previous and waited for the image.
             if step.get("collect_block_total"):
                 harvest_block_total(
-                    browser, step["collect_block_total"], meta, f"{step['id']} page"
+                    browser, _block_type(step["collect_block_total"], meta),
+                    meta, f"{step['id']} page"
                 )
             if step.get("expect_download") and browser.downloads:
                 dl_name = step.get(
@@ -2883,7 +3018,7 @@ def main(argv: list[str] | None = None) -> int:
                 # flag's value names the block type for the vision judge.
                 if step.get("pick_annotated_capture"):
                     step_record["capture_pick"] = pick_annotated_capture(
-                        browser, str(step["pick_annotated_capture"]),
+                        browser, _block_type(step["pick_annotated_capture"], meta),
                         recipe=recipe_name or args.recipe,
                         part_desc=meta.get("part_description", ""))
                 if step.get("close_node_red_panels"):
@@ -2909,6 +3044,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 step_record["screenshot"] = out.rel(shot)
                 desc_queue.append((shot, base_ctx))
+                # Single-model variants: also record this capture on the model
+                # envelope — the sanctioned join the deck's ladders key on
+                # (block_screenshot, view_rois_screenshot, roi_screenshot).
+                if step.get("envelope_key") and meta.get("models"):
+                    meta["models"][0][step["envelope_key"]] = out.rel(shot)
                 if step.get("capture_image_bbox"):
                     bbox = main_image_bbox(browser, png)
                     if bbox:

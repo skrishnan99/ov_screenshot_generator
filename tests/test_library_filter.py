@@ -55,7 +55,7 @@ class _FakeEl:
     def inner_text(self):
         return self.text
 
-    def click(self):
+    def click(self, timeout=None):
         self._page.clicked.append(self.text or self.kind)
         if self.kind == "option":
             self._page.selected = self.text
@@ -64,6 +64,20 @@ class _FakeEl:
 
     def fill(self, value):
         self._page.filled.append((self.kind, value))
+
+    def evaluate_handle(self, js):
+        # The filter clicks the input's closest .ant-select container (the
+        # OV20i's input sits under the selection overlay). The fake's
+        # container forwards to the same click log.
+        return _FakeHandle(_FakeEl(self._page, kind=f"{self.kind}-container"))
+
+
+class _FakeHandle:
+    def __init__(self, el):
+        self._el = el
+
+    def as_element(self):
+        return self._el
 
 
 class _FakeKeyboard:

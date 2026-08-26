@@ -1,0 +1,155 @@
+{
+  "steps": {
+    "enter_recipe_editor": {
+      "matched_recipe": "Terminal Block Secadoras L8 Tapa (imported)",
+      "branch": "active",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Edit",
+          "ctx": "Terminal Block Secadoras L8 Tapa (imported) Active Type: Classification (accurate) Description for Recipe 1 (i",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Open Editor",
+          "ctx": "Edit this recipe? Editing a recipe will stop any currently active recipe. Cancel Open Editor",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "imaging_setup": {
+      "matched_recipe": "",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Review",
+          "ctx": "1 Imaging Setup Frame the part. Set exposure, gain, and the trigger. Review",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "template_image": {
+      "matched_recipe": "",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "Recipe Editor",
+          "ctx": "Recipe Editor / 1 Imaging Setup Alignment Region of Interest (ROIs) 4 Classification Trigger 6 Basic IO Block",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Review",
+          "ctx": "2 Alignment Search Area Track the orientation of an object to adjust inspection regions dynamically regardless",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "inspection_rois": {
+      "matched_recipe": "",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "Recipe Editor",
+          "ctx": "Recipe Editor / Imaging Setup 2 Alignment Region of Interest (ROIs) 4 Classification Trigger 6 Basic IO Block",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Review",
+          "ctx": "3 Region of Interest (ROIs) ROI Mark the area of the image where defects should be inspected. Review",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "review_labeling": {
+      "matched_recipe": "",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "3 Review Labeling",
+          "ctx": "1 About Classification 2 Capture & Label 3 Review Labeling 4 Train 5 Live Preview 6 Test",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "train_status": {
+      "matched_recipe": "",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "4 Train",
+          "ctx": "1 About Classification 2 Capture & Label 3 Review Labeling 4 Train 5 Live Preview 6 Test",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "trigger_setup": {
+      "matched_recipe": "",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "Recipe Editor",
+          "ctx": "Recipe Editor / Imaging Setup Alignment Region of Interest (ROIs) 4 Classification Trigger 6 Basic IO Block",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Review",
+          "ctx": "5 Trigger Mode PLC Trigger No runtime parameters for this mode. Pick what fires the camera \u2014 manual, hardware ",
+          "recipe_scoped": false
+        }
+      ]
+    },
+    "library": {
+      "matched_recipe": "Terminal Block Secadoras L8 Tapa (imported)",
+      "branch": "unknown",
+      "actions": [
+        {
+          "action": "click",
+          "tag": "a",
+          "text": "Library",
+          "ctx": "IN PRODUCTION HMI Library Haystack",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click",
+          "tag": "input",
+          "text": "",
+          "ctx": "Filter by Recipe Filter by Pass / Fail",
+          "recipe_scoped": false
+        },
+        {
+          "action": "click_text",
+          "text": "Terminal Block Secadoras L8 Tapa (imported)",
+          "recipe_scoped": true
+        },
+        {
+          "action": "click",
+          "tag": "button",
+          "text": "Search",
+          "ctx": "Search 131 Total Captures Sort By: Newest First",
+          "recipe_scoped": false
+        }
+      ]
+    }
+  }
+}

@@ -423,6 +423,13 @@ class AgentSdkBackend:
 
     name = "agent-sdk"
     ATTEMPTS = 3
+    # Flaky one-shot session deaths observed live on inputs that succeed on
+    # other runs: the CLI's own structured-output enforcement giving up, and
+    # a turn-cap hit. They surface BOTH ways — as an is_error ResultMessage
+    # and as an exception raised from the SDK's stream — so both paths below
+    # consult this list. A fresh session retry is the fix; anything else
+    # stays fatal (availability errors must reach the tier ladder).
+    TRANSIENT_MARKERS = ("valid structured output", "maximum number of turns")
 
     def __init__(self, query_fn=None):
         self._query = query_fn  # test seam; resolved lazily from the SDK
@@ -439,12 +446,27 @@ class AgentSdkBackend:
                     f"Respond again with output matching the required schema exactly."
                 )
                 # Availability failures, refusals and transport errors raise
-                # straight through — only structured-output validation retries.
-                result = self._invoke_once(ask, schema, img_files, model)
+                # straight through — structured-output validation retries,
+                # and so do the CLI's TRANSIENT session deaths (which can
+                # arrive as a raised exception OR an is_error result).
+                try:
+                    result = self._invoke_once(ask, schema, img_files, model)
+                except (LLMError, LLMRefusal):
+                    raise
+                except Exception as e:
+                    msg = str(e)
+                    if any(m in msg for m in self.TRANSIENT_MARKERS):
+                        errors.append(msg[:300])
+                        continue
+                    raise
                 if result.stop_reason == "refusal":
                     raise LLMRefusal("model refused the request")
                 if result.is_error:
-                    raise LLMError(f"agent-sdk backend error: {str(result.result)[:500]}")
+                    err = str(result.result)[:300]
+                    if any(m in err for m in self.TRANSIENT_MARKERS):
+                        errors.append(err)
+                        continue
+                    raise LLMError(f"agent-sdk backend error: {err}")
                 if not schema:
                     return result.result or ""
                 try:
@@ -478,11 +500,14 @@ class AgentSdkBackend:
             setting_sources=[],
             tools=["Read"] if img_files else [],
             permission_mode="bypassPermissions",
-            # Text-only calls once capped at 2 turns; a live structured
-            # describe_io_rules died on "maximum number of turns (2)" — the
-            # json_schema output round-trip can itself take a turn. 4 keeps
-            # one-shot calls bounded with room for that.
-            max_turns=8 if img_files else 4,
+            # Text-only calls once capped at 2 turns, then 4; live
+            # structured describe_io_rules calls died at BOTH ceilings
+            # ("maximum number of turns (N)") — the json_schema round-trip
+            # takes turns of its own, and a turn-cap death is neither
+            # retried (not a validation failure) nor tier-laddered (not
+            # availability), so it silently costs the artifact. 8 matches
+            # the image-call budget; these are one-shot calls either way.
+            max_turns=8,
             max_buffer_size=SDK_BUFFER_BYTES,
             output_format=(
                 {"type": "json_schema", "schema": schema} if schema else None

@@ -236,6 +236,12 @@ def build_context(run_dir: Path) -> Context:
         # Slide-text form of the type ("Segmentation"), for titles like
         # "Training — Model 2 (Classification)".
         m["type_title"] = (m.get("type") or "").title()
+        # The training slide's " (Type)" suffix — empty when the model's
+        # NAME already is its type (single-model cameras seed the roster
+        # that way), so "Training — Classification (Classification)"
+        # cannot happen.
+        redundant = m["type_title"].strip().lower() == str(m.get("name", "")).strip().lower()
+        m["title_suffix"] = "" if redundant or not m["type_title"] else f" ({m['type_title']})"
         subj = f"model: {m.get('name', '')}".lower()
         last = next((val for (sj, pr), val in facts.items()
                      if sj.lower() == subj and "last_trained" in pr.lower()), None)

@@ -68,6 +68,11 @@ the slides, and the text must be carried (split across slides is fine, but
 nothing dropped, nothing added). Your only decision is the arrangement:
 which layout(s), what goes together, how it reads best.
 
+Use the FEWEST slides that hold the content. Never spin a stray sentence
+off into a continuation slide — an imageless slide needs enough text to
+justify existing (several sentences or bullet lines); otherwise fold that
+text into the other slide's fields (para, bullets, footnote).
+
 Available layouts and their text fields:
 - figure: one image + caption. For one strong image.
 - split: one image + card_title/intro/para/bullets/footnote. Image left,
@@ -157,6 +162,17 @@ def validate_arrangement(slides: list[dict], image_paths: list[str],
                 problems.append(f"slide {i}: rows entries must be 1-5 'label | detail' lines")
     if sorted(used) != sorted(image_paths):
         problems.append(f"images used {sorted(used)} != content images {sorted(image_paths)}")
+    # Anti-padding: in a multi-slide arrangement, an imageless slide carrying
+    # only a scrap of text is a continuation that should not exist (a real
+    # build shipped a lone sentence rattling in an empty statement card).
+    if len(slides) > 1:
+        for i, s in enumerate(slides):
+            if not s.get("images"):
+                total = sum(len(str(v)) for v in (s.get("text") or {}).values())
+                if total < 180:
+                    problems.append(
+                        f"slide {i}: imageless continuation with only {total} chars "
+                        f"of text — fold it into the other slide(s) instead")
     return problems
 
 

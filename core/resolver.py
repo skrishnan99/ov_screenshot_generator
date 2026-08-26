@@ -269,8 +269,9 @@ models, each group heading attributed to its model (e.g. "Trumpet Front - Model 
 
 Extract the labelling statistics for the model "{model}" only:
 
-1. total_captures: the page shows a capture navigator like "Source Capture: <n> of <total>" —
-   report the <total>. Use -1 if no such readout appears in the text.
+1. total_captures: the page shows a capture navigator like "Source Capture: <n> of <total>"
+   (on some camera models it reads "Total Captures: <total>" instead) — report the <total>.
+   Use -1 if no such readout appears in the text.
 
 2. classes: the page has a class panel (often headed "Inspection Types") listing ROI groups
    (headings like "Trumpet Front - {model}"), each holding one colored bar per class. In the

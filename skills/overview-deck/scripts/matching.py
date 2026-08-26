@@ -361,12 +361,14 @@ def _model_block_path(run_dir: Path, model: dict, manifest: dict) -> str | None:
     p = _existing(run_dir, model.get("block_screenshot"))
     if p:
         return p
-    step = f"{model.get('type', '')}_block"
-    for a in manifest.get("assets", []):
-        if a.get("kind") == "screenshot" and a.get("step") == step:
-            p = _existing(run_dir, a.get("path"))
-            if p:
-                return p
+    # "model_block" is the single-model variants' generic block step id
+    # (OV20i: one model per recipe, so the spec cannot name the type).
+    for step in (f"{model.get('type', '')}_block", "model_block"):
+        for a in manifest.get("assets", []):
+            if a.get("kind") == "screenshot" and a.get("step") == step:
+                p = _existing(run_dir, a.get("path"))
+                if p:
+                    return p
     return None
 
 
@@ -391,7 +393,7 @@ def _pick_tier(manifest: dict, block_type: str) -> int | None:
     The record is ground truth from PIXELS at capture time — strictly
     better evidence than re-judging the lossy vision description."""
     for s in manifest.get("steps", []):
-        if s.get("id") == f"{block_type}_block":
+        if s.get("id") in (f"{block_type}_block", "model_block"):
             tier = (s.get("capture_pick") or {}).get("tier")
             return tier if isinstance(tier, int) and 1 <= tier <= 4 else None
     return None

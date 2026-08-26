@@ -1,0 +1,456 @@
+variant: ov20i
+# The app requires a visit to the origin first to establish its session;
+# hitting /recipes cold shows "You do not have permission to access this
+# page." (same behavior as the ov80i, verified live on gsab605685).
+entry_path: /
+#
+# OV20i vs OV80i, the facts this spec encodes (probed live, 2026-08-25):
+# - The Recipe Editor is a numbered 6-step WATERFALL (Imaging Setup,
+#   Alignment, Region of Interest (ROIs), Classification|Segmentation,
+#   Trigger, IO Block), each behind a "Review" / "Start step N" button.
+#   Alignment/ROIs/block pages live under block-UUID URLs, so their
+#   postconditions are text-shaped, never URL-shaped.
+# - A recipe carries exactly ONE AI model (classification or segmentation);
+#   there is no Models section, no Train Models table, no training report.
+#   The roster is seeded from the waterfall (detect_recipe_model) and block
+#   steps use the "auto" type.
+# - The block page's initial Capture & Label view shows "Total Captures: N";
+#   the "Source Capture: n of N | Go" navigator appears after Previous.
+#   The class panel (Inspection Types bars) persists after Previous on
+#   CLASSIFICATION recipes but swaps to the annotation tools on
+#   SEGMENTATION ones (probed live on both) — so stats get their own
+#   pre-"Previous" step, the same split the ov80i uses.
+# - The recipe list's rename pencils read "Edit" via aria-label — only the
+#   row's real Edit BUTTON opens the editor dialog.
+# - Trigger is its own step (new vs ov80i); IO has Basic ("Basic IO Block")
+#   and Advanced (embedded Node-RED) modes.
+steps:
+  - id: enter_recipe_editor
+    path: /recipes
+    goal: |
+      You are on the All Recipes page of an OV20i camera. Recipes are listed as
+      rows with a status pill (Active/Inactive), a type line ("Type:
+      Classification (accurate)" or "Type: Segmentation (accurate)"), a PLC
+      Recipe ID, and per-row controls. The list can take up to a minute to
+      render — if only the sidebar is visible, use wait_seconds (10-15s) and
+      take fresh snapshots until the recipe rows appear.
+
+      Find the recipe that best matches this user-provided (approximate) name: "{recipe}"
+
+      Then open its editor:
+      - If that recipe is marked Active: click the "Edit" BUTTON on the right
+        side of its row (a prominent standalone button). CAUTION: the small
+        pencil icons next to the recipe name and next to the PLC Recipe ID are
+        inline RENAME controls that can also appear as "Edit" in snapshots —
+        never click those. If you accidentally open an inline text editor,
+        press Escape without typing and continue.
+      - If it is marked Inactive: click its "Activate" button, then in the
+        dialog that appears choose the option that activates it and opens the
+        editor.
+      - When a confirmation dialog appears (e.g. "Edit this recipe?" explaining
+        that editing stops the active recipe), click "Open Editor" (or the
+        equivalent proceed option).
+
+      NEVER click the red trash/delete icons, "Delete", "Export Recipes",
+      "Import", or "New".
+
+      The editor opens on an overview page showing a numbered waterfall of
+      steps (Imaging Setup, Alignment, Region of Interest (ROIs),
+      Classification or Segmentation, Trigger, IO Block). Wait until it has
+      fully loaded before finishing.
+    postcondition: |
+      The Recipe Editor overview for the matched recipe is open: the URL
+      matches /recipes/<number>/editor, the matched recipe's name is visible
+      (breadcrumb), and the numbered waterfall of steps (Imaging Setup ...
+      IO Block) is shown.
+    success_url_regex: "/recipes/\\d+/editor"
+    success_text:
+      - "Imaging Setup"
+      - "IO Block"
+    # One model per recipe; its type is read from the waterfall into
+    # meta["models"] — the roster contract everything downstream keys on.
+    detect_recipe_model: true
+    screenshot: "01_editor_overview"
+
+  - id: imaging_setup
+    # No path: continues from the editor overview opened by the previous step.
+    goal: |
+      You are on the Recipe Editor overview page (numbered waterfall of
+      steps). Open the "Imaging Setup" step: click the button inside the
+      numbered "Imaging Setup" card (labeled "Review", or "Start step 1" if
+      the step was never completed).
+
+      The Imaging Setup page shows the camera view beside imaging controls
+      (image rotation, lens distortion, focus, exposure, gain, gamma, white
+      balance, LED lighting, photometric control). The camera view may be
+      EMPTY in PLC/Hardware trigger modes — that is the page's true state and
+      is fine.
+
+      Do ONLY the navigation: do not change any slider, toggle or setting, and
+      NEVER click "Reset", "Readjust white balance", "Focus View" or any
+      capture control. Wait until the page has fully loaded before finishing
+      (use wait_seconds 5-8s after it appears).
+
+      If any confirmation dialogs appear along the way, read them and choose
+      the option that proceeds; do not cancel or abandon the flow.
+    postcondition: |
+      The Imaging Setup page is open and loaded: imaging controls such as
+      "Exposure (ms)", "Gain" and "Gamma" are visible, and this is no longer
+      the editor overview.
+    success_text:
+      - "Exposure (ms)"
+    check_recipe: false
+    # Record the camera-view area's pixel bbox into meta.json as
+    # imaging_setup_img_bbox — the template composite renders into it.
+    capture_image_bbox: true
+    screenshot: "02_imaging_setup"
+
+  - id: template_image
+    # No path: continues from the Imaging Setup page. The OV20i's template
+    # image is the Alignment step's REFERENCE CAPTURE; this step id stays
+    # "template_image" because the imaging composite and the matcher's
+    # native-image catalog key on it.
+    goal: |
+      You are on the Imaging Setup page. Go back to the Recipe Editor overview
+      (click "Recipe Editor" in the breadcrumb at the top left), then open the
+      "Alignment" step: click the button inside the numbered "Alignment" card
+      (labeled "Review", or "Start step 2").
+
+      The Alignment page opens on its "Capture & Configure" sub-step: the
+      recipe's reference capture with the aligner's key-edge regions and masks
+      drawn on it, beside numbered controls ("Reference capture taken", "Use
+      the aligner?", "Restrict search area", "Find Key Edges and Features",
+      "Mask areas to ignore", "Settings").
+
+      Do ONLY the navigation: NEVER click "Re-capture" (it replaces the
+      recipe's reference photo on a production camera), never click "Yes, use
+      it" / "No, skip it", never "Rectangle", "Draw mask", "Erase mask" or
+      "Clear all masks", and do not draw or change any setting. Call
+      wait_for_image_load and finish when the reference image has fully
+      rendered (or judge with a screenshot at its ceiling).
+    postcondition: |
+      The Alignment page is open on its Capture & Configure view: the
+      reference capture is displayed and the "Use the aligner?" controls are
+      visible.
+    success_text:
+      - "Use the aligner?"
+    check_recipe: false
+    wait_image_loaded:
+      interval_s: 7
+      max_wait_s: 60
+    # Save the reference capture at native resolution (raw + overlay layers +
+    # composite) and record how in meta.json.
+    download_main_image: true
+    # Describe the part from that raw reference image — it anchors the
+    # block/library pick judges to THE part being inspected.
+    describe_part: true
+    # Record whether the aligner is in use ("Yes, use it" vs "No, skip it")
+    # as the recipe's skip_aligner fact for the deck's aligner slide.
+    harvest_aligner_choice: true
+    screenshot: "03_alignment"
+
+  - id: inspection_rois
+    # No path: continues from the Alignment page.
+    goal: |
+      You are on the Alignment page. Go back to the Recipe Editor overview
+      (breadcrumb "Recipe Editor"), then open the "Region of Interest (ROIs)"
+      step: click the button inside that numbered card (labeled "Review", or
+      "Start step 3"). If the page opens on a different sub-step (e.g. "About
+      Regions of Interest" or "Inspection Types"), click the "ROIs" entry in
+      the sub-step strip near the top so the ROI editor view is shown.
+
+      The ROIs view shows the reference capture with the inspection regions
+      drawn on it, beside the ROI table (ROI Name / Inspection Type) and
+      transformation controls.
+
+      Do ONLY the navigation: NEVER click "Add ROI", "Add Grid", "Ignore
+      Regions", "Delete all", any pencil or trash icon, and do not draw, move
+      or resize anything on the image. Call wait_for_image_load and finish
+      when the image has fully rendered.
+    postcondition: |
+      The ROIs editor view is open: the reference capture with its drawn
+      regions and the ROI table ("Add ROI" visible) are shown.
+    success_text:
+      - "Add ROI"
+    check_recipe: false
+    wait_image_loaded:
+      interval_s: 7
+      max_wait_s: 60
+    envelope_key: roi_screenshot
+    screenshot: "04_roi"
+
+  - id: model_block_stats
+    # No path: continues from the ROIs page. The block page's INITIAL
+    # Capture & Label view is the one whose class panel shows the per-class
+    # labelled counts; on SEGMENTATION recipes clicking Previous swaps that
+    # panel to the annotation tools and the bars disappear (classification
+    # keeps them — the split costs nothing there). Same pre-"Previous"
+    # harvest pattern as the ov80i's *_block_stats steps.
+    goal: |
+      You are on the ROIs page. Go back to the Recipe Editor overview
+      (breadcrumb "Recipe Editor"), then open the recipe's AI model step: the
+      numbered waterfall card labeled either "Classification" or
+      "Segmentation" — click its button ("Review", or "Start step 4" when it
+      was never finished). The page opens on its "Capture & Label" sub-step:
+      a capture viewer on the left; on the right the capture navigation
+      ("Total Captures: N", Previous / Next) and the class panel
+      ("Inspection Types" with one colored bar per class).
+
+      Do ONLY the navigation: do NOT click "Previous" or "Next", do not open
+      any modal, NEVER click "Capture to Label" / "Import to Label" /
+      "Manage classes", and do not change any setting — this step only
+      brings up the page's initial view. Use wait_seconds (3-5s) and a fresh
+      snapshot to make sure the page has fully loaded before finishing.
+    postcondition: |
+      The recipe's AI block page is open on its initial Capture & Label view
+      (no modal open, Previous not clicked), with the Inspection Types class
+      panel visible.
+    success_text:
+      - "Capture & Label"
+    check_recipe: false
+    always_agent: true
+    collect_block_stats: auto
+
+  - id: model_block
+    # No path: continues from the block page's initial view left by the
+    # stats step above. This step clicks Previous to load a real capture —
+    # which is exactly why the stats harvest ran BEFORE it. "auto" resolves
+    # the block type from the seeded roster.
+    goal: |
+      You should be on the recipe's AI block page (its "Capture & Label"
+      sub-step), opened by the previous step. If you are not, go back to the
+      Recipe Editor overview (breadcrumb "Recipe Editor") and open the
+      numbered waterfall card labeled either "Classification" or
+      "Segmentation" ("Review", or "Start step 4").
+
+      NEVER click "Capture to Label" or "Import to Label" (they take/add real
+      captures on a production camera), never click "Manage classes", never
+      click "Save Annotations" or any annotation tool, and do not label or
+      paint anything.
+
+      Then load a real capture into the viewer: call wait_for_button_enabled
+      with text "Previous" — capture data can take a while to load, and the
+      tool waits adaptively:
+        - If it reports Previous enabled, click Previous, then call
+          wait_for_image_load to wait until the capture image has fully
+          rendered. When it reports loaded, finish. If it reports the image
+          still not loaded after its maximum wait, take a screenshot yourself
+          to judge the state, then finish on the page as it is.
+        - If it reports Previous still disabled with the page settled (or no
+          Previous at all), finish on the page as it is.
+        - If it reports the ceiling was hit with the page still changing, take
+          a fresh snapshot to judge the state yourself, then proceed.
+    postcondition: |
+      The recipe's AI block page is open on its Capture & Label view, fully
+      loaded, with a capture loaded in the viewer when a clickable Previous
+      button existed.
+    success_text:
+      - "Capture & Label"
+    check_recipe: false
+    # The flow branches on live data (Previous clickable? which block type?),
+    # which a recorded trace cannot re-evaluate.
+    always_agent: true
+    max_model_calls: 40
+    # Stats live on the model_block_stats step above (pre-Previous view) —
+    # a harvest here would OVERWRITE its entry with the post-Previous
+    # panel, which on segmentation recipes carries no class bars.
+    collect_block_total: auto
+    # Search the source captures for a product+annotated frame before the
+    # screenshot (best-partial ladder, capped scan, anchored to the part).
+    pick_annotated_capture: auto
+    wait_image_loaded:
+      interval_s: 7
+      max_wait_s: 60
+    envelope_key: block_screenshot
+    screenshot: "05_model_training"
+
+  - id: review_labeling
+    # No path: continues from the block page. The labeled-ROI grid is this
+    # variant's "View All ROIs" equivalent — the deck's training-slide
+    # ladder falls back to it when the block capture is weak. The tab is
+    # named by block type: "Review Labeling" on classification recipes,
+    # "Review Annotations" on segmentation ones (probed live on both).
+    goal: |
+      You are on the recipe's AI block page (Capture & Label view, possibly
+      with a capture loaded). In the sub-step strip near the top of the page,
+      click the review tab: it is labeled "Review Labeling" on classification
+      recipes and "Review Annotations" on segmentation recipes. The view
+      shows a grid of every captured ROI with its class label or painted
+      mask (e.g. "Showing 37 ROIs").
+
+      Do ONLY the navigation: never click "Select all", "Load Unlabeled", any
+      filter, any label chip or mask-opacity control, and never relabel or
+      repaint anything. The grid's thumbnails load progressively — call
+      wait_for_image_load and finish when it reports loaded (or judge with a
+      screenshot at its ceiling).
+    postcondition: |
+      The review view is open — "Review Labeling" (classification) or
+      "Review Annotations" (segmentation): the ROI grid ("Showing ... ROIs")
+      is shown and its thumbnails have rendered.
+    success_text:
+      - "Inspect every captured ROI"
+    check_recipe: false
+    wait_image_loaded:
+      interval_s: 7
+      max_wait_s: 90
+    envelope_key: view_rois_screenshot
+    screenshot: "06_review_labeling"
+
+  - id: train_status
+    # No path: continues from the block page. There is no Train Models table
+    # and no training report on this variant — the Train sub-step's presets
+    # and "Last Training: <timestamp>" line are the training record.
+    goal: |
+      You are on the recipe's AI block page. In the sub-step strip near the
+      top, click "Train". The Train view shows the training preset card(s)
+      (Development and/or Production), an "Advanced Settings" control, and
+      the last-training timestamp ("Last Training: ...") when the model has
+      been trained.
+
+      CRITICAL: do NOT click "Development", "Production", "Retrain" or
+      "Advanced Settings" — clicking a preset or Retrain STARTS A TRAINING
+      RUN on the camera. Do only the navigation and wait for the view to
+      render fully.
+    postcondition: |
+      The Train view is open: "Train Model" and the training presets are
+      visible, and no training was started.
+    success_text:
+      - "Train Model"
+    check_recipe: false
+    screenshot: "07_train_status"
+
+  - id: trigger_setup
+    # No path: continues from the block page. New step vs the ov80i: the
+    # trigger has its own waterfall card on this variant.
+    goal: |
+      You are on the recipe's AI block page. Go back to the Recipe Editor
+      overview (breadcrumb "Recipe Editor"), then open the "Trigger" step:
+      click the button inside the numbered "Trigger" card (labeled "Review").
+
+      The Trigger page lists the available trigger modes (Manual HMI Trigger,
+      Hardware Trigger, PLC Trigger, Interval Trigger, Aligner Trigger,
+      Node-RED Trigger) with the currently selected one highlighted, and an
+      "Active trigger" panel showing its parameters.
+
+      CRITICAL: do NOT click any trigger mode card and do not change any
+      parameter — selecting a mode reconfigures a production camera.
+      Navigation only; wait until the page has fully loaded.
+    postcondition: |
+      The Trigger page is open and loaded: the trigger mode list and the
+      "Active trigger" panel are visible, and no mode was changed.
+    success_text:
+      - "Active trigger"
+    check_recipe: false
+    screenshot: "08_trigger"
+
+  - id: io_node_red_view
+    # No path: continues from the Trigger page. Captures the IO page as a
+    # deliverable BEFORE the export step opens any dialog over it.
+    goal: |
+      You are on the Trigger page. Go back to the Recipe Editor overview
+      (breadcrumb "Recipe Editor"), then open the IO step: click the button
+      inside the numbered "IO Block" card (labeled "Review"). Wait for the
+      page to fully load (use wait_seconds, 5-10s — it can take a while).
+
+      The IO page has TWO valid layouts, and either one completes this step:
+      - BASIC mode: a "Basic IO Block" page with numbered sections — Save
+        images, Rules, Overall result, Digital Outputs (DO) — and an
+        "Advanced Mode (Node-RED)" button.
+      - ADVANCED mode: an embedded Node-RED flow editor canvas (its content
+        may be marked [iframe] in snapshots).
+
+      Do ONLY the navigation: NEVER click "Advanced Mode (Node-RED)",
+      "Switch to Basic", or any Basic/Advanced mode switch (switching modes
+      changes the recipe's IO configuration), NEVER click "Deploy" or
+      "Save & Deploy" (they push pending changes live on a production
+      camera), never "Save & Go to Recipe Editor", never "Take a capture &
+      test rules", never "Add rule", and do not change any rule, output or
+      toggle. Finish once either layout is visible and has finished loading,
+      with no dialog covering it.
+    postcondition: |
+      The IO page is open and fully loaded in either layout — the Basic IO
+      Block rules page, or the Node-RED flow editor canvas — with no dialog
+      covering it.
+    success_text:
+      - "IO Block"
+    check_recipe: false
+    screenshot: "09_io_block"
+    # Advanced mode: capture only the embedded Node-RED iframe. Basic mode
+    # has no iframe and degrades (with a warning) to the full-page capture.
+    screenshot_iframe: true
+    close_node_red_panels: true
+    max_model_calls: 25
+    always_agent: true
+
+  - id: io_node_red
+    # No path: continues from the loaded IO page. Produces the exported
+    # Node-RED flow JSON in Advanced mode; in Basic mode a deterministic
+    # pre-step gate harvests the rules page text instead and skips this
+    # step before any agent turns are spent.
+    goal: |
+      The IO page should already be open from the previous step, in ADVANCED
+      mode: an embedded Node-RED flow editor canvas (may be marked [iframe]
+      in snapshots). This step exports the flow JSON.
+
+      Click ONCE on an empty spot of the flow canvas to give it keyboard
+      focus — NEVER click "Deploy" (it pushes pending flow changes live on a
+      production camera), never "Switch to Basic" or any mode switch, and do
+      not click any node; an empty patch of the canvas grid is enough. Then
+      call press_keys with "ControlOrMeta+e".
+      That opens Node-RED's Export dialog; click "Download" in it for the
+      current flow. This triggers a JSON download of the flow, captured
+      automatically — you do not need to look for the downloaded file.
+
+      The Node-RED editor loads slowly and re-renders: after opening
+      anything, use wait_seconds (5-10s) BEFORE taking the snapshot you act
+      on. If a click times out with "element may be covered or gone", the
+      page changed under you — do not retry the same ref; wait a few
+      seconds, take a fresh snapshot, and re-locate the control.
+
+      If any confirmation dialogs appear along the way, read them and choose
+      the option that proceeds; do not cancel or abandon the flow.
+    postcondition: |
+      The Node-RED export dialog's Download was clicked for the current flow
+      (a JSON download was triggered).
+    check_recipe: false
+    skip_when_basic_io: true
+    expect_download: true
+    download_as: node_red_flow.json
+    max_model_calls: 35
+    always_agent: true
+
+  - id: library
+    # No path: continues from the IO page.
+    goal: |
+      You may be on a recipe editor or IO page. If any modal, export dialog,
+      or settings dialog is open, close it first (Close / Ok / X / Cancel).
+
+      Then click "Library" in the left sidebar to open the Library page. If
+      the left sidebar is not visible, first use the breadcrumb/back controls
+      to return to the main camera UI. Wait until the page has fully loaded —
+      the capture grid renders slowly; use wait_seconds and check again.
+
+      Once the Library page is open, filter it to this recipe: open the
+      "Filter by Recipe" dropdown, choose exactly "{recipe}" (other recipes
+      may have similar names — pick the exact match), click "Search", and
+      wait until the capture grid shows the filtered results.
+
+      NEVER click "Delete All", any capture checkbox, or any red/danger
+      control.
+    postcondition: |
+      The Library page is open and fully loaded, filtered to the recipe's
+      captures.
+    # The Library is a global page — the recipe name is not expected on it
+    # (and with zero matching captures the filtered grid may not show it).
+    check_recipe: false
+    # Deterministic backstop for the recipe filter (applied fresh every run),
+    # before the vision wait and the main-image download.
+    filter_library_recipe: true
+    # Leave the viewer on the best capture (product + inspection overlay,
+    # searched) BEFORE the screenshot and main-image download.
+    pick_library_capture: true
+    wait_image_loaded:
+      interval_s: 7
+      max_wait_s: 60
+    download_main_image: true
+    screenshot: "10_library"
